@@ -85,6 +85,6 @@ describe("AVAILABLE_MODELS", () => {
   it("includes openrouter models", () => {
     const openrouterModels = AVAILABLE_MODELS.filter((m) => m.provider === "openrouter");
     expect(openrouterModels.length).toBeGreaterThan(0);
-    expect(openrouterModels.some((m) => m.id === "openrouter/claude-3.5-sonnet")).toBe(true);
+    expect(openrouterModels.some((m) => m.id === "openrouter/claude-sonnet-5")).toBe(true);
   });
 });
