@@ -1,0 +1,38 @@
+# Garage configuration for local development, mounted at /etc/garage.toml.
+#
+# The published `dxflrs/garage` image is built FROM scratch: it ships the
+# /garage binary and nothing else, so this file has to come from the host --
+# `garage` reads /etc/garage.toml by default and exits if it is missing.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+
+# One node holding one copy of every object: what `--single-node` requires.
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+# The address the CLI connects to when it is not told one with `--rpc-host`,
+# and the address a peer would dial. The compose service name is what both
+# containers can resolve; without it the CLI falls back to 127.0.0.1:3901,
+# which in the bootstrap container is the bootstrap container.
+rpc_public_addr = "garage:3901"
+# Development-only cluster secret. It has to be a fixed value because this file
+# is mounted into both containers as static config: there is nowhere to generate
+# one at first boot that the server and the bootstrap CLI would agree on, and the
+# RPC handshake needs both to present the same bytes. Safe to commit because the
+# RPC port is not published. Anyone deploying this outside local development must
+# generate their own.
+rpc_secret = "0ea5b1c4a9f37d6288b0e4c2f5a91d3746b8ce02f1a4d5907c3e6b8a1d2f4705"
+
+# Must match S3_REGION in .env: the S3 API rejects a client that signs for a
+# different region.
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+
+# The bucket-website server on 3902, published by docker-compose.yml.
+[s3_web]
+bind_addr = "[::]:3902"
+root_domain = ".web.garage.localhost"
+
+[admin]
+api_bind_addr = "[::]:3903"

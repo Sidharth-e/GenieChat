@@ -1,0 +1,270 @@
+import { tool } from "langchain";
+import * as z from "zod";
+import type { MemoryCategory } from "@/lib/types";
+export const createSaveMemoryTool = (
+  userId: string,
+  userName: string = "",
+  userEmail: string = "",
+) =>
+  tool(
+    async (input) => {
+      try {
+        const { VectorMemoryStore } =
+          await import("@/lib/memory/vector-memory-store");
+        const memoryStore = new VectorMemoryStore();
+
+        const memory = await memoryStore.createMemory({
+          userId,
+          userName,
+          userEmail,
+          content: input.content,
+          category: input.category as MemoryCategory | undefined,
+        });
+
+        return JSON.stringify({
+          success: true,
+          message: `Memory saved: "${input.content}"`,
+          memory_id: memory.id,
+          note: "This information will be remembered in all future conversations.",
+        });
+      } catch (error) {
+        return JSON.stringify({
+          error: `Failed to save memory: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    },
+    {
+      name: "save_memory",
+      description:
+        "Save a fact, preference, instruction, or professional detail to long-term memory. Use this when the user shares personal/professional information, preferences, or asks you to remember something. Examples: 'My name is John', 'I prefer dark mode', 'Always respond in French', 'I am a software developer at Acme'.",
+      schema: z.object({
+        content: z
+          .string()
+          .describe(
+            "The memory to remember. Be concise but complete. Example: 'User prefers concise responses', 'User's favorite color is blue', or 'User works as a backend engineer'.",
+          ),
+        category: z
+          .enum(["preference", "fact", "instruction", "professional", "other"])
+          .optional()
+          .describe(
+            "Category of the memory. 'preference' for likes/dislikes, 'fact' for personal info, 'instruction' for how to behave, 'professional' for work/career context, 'other' for misc.",
+          ),
+      }),
+    },
+  );
+
+export const createEditMemoryTool = (userId: string) =>
+  tool(
+    async (input) => {
+      try {
+        const { VectorMemoryStore } =
+          await import("@/lib/memory/vector-memory-store");
+        const memoryStore = new VectorMemoryStore();
+
+        let existingMemory = null as Awaited<
+          ReturnType<typeof memoryStore.getMemory>
+        >;
+
+        if (input.memory_id) {
+          existingMemory = await memoryStore.getMemory(input.memory_id);
+        } else if (input.target_content) {
+          const allMemories = await memoryStore.getMemories(userId);
+          const target = input.target_content.trim().toLowerCase();
+          existingMemory =
+            allMemories.find(
+              (m) => m.content.trim().toLowerCase() === target,
+            ) ||
+            allMemories.find(
+              (m) =>
+                m.content.toLowerCase().includes(target) ||
+                target.includes(m.content.toLowerCase()),
+            ) ||
+            null;
+        }
+
+        if (!existingMemory) {
+          return JSON.stringify({
+            error:
+              "Memory not found. Provide a valid memory_id or target_content from an existing memory.",
+          });
+        }
+
+        if (existingMemory.userId !== userId) {
+          return JSON.stringify({
+            error: "Access denied: you can only edit your own memories.",
+          });
+        }
+
+        const updates: {
+          content?: string;
+          category?: MemoryCategory;
+        } = {};
+
+        if (input.content !== undefined) {
+          updates.content = input.content.trim();
+        }
+        if (input.category !== undefined) {
+          updates.category = input.category;
+        }
+
+        const updatedMemory = await memoryStore.updateMemory(
+          existingMemory.id,
+          updates,
+        );
+
+        if (!updatedMemory) {
+          return JSON.stringify({
+            error: `Failed to update memory with id: ${existingMemory.id}`,
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          message: "Memory updated successfully.",
+          memory_id: updatedMemory.id,
+          content: updatedMemory.content,
+          category: updatedMemory.category,
+          note: "Memory has been re-indexed for future semantic retrieval.",
+        });
+      } catch (error) {
+        return JSON.stringify({
+          error: `Failed to edit memory: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    },
+    {
+      name: "edit_memory",
+      description:
+        "Update an existing long-term memory entry. Use this when the user asks to correct, refine, or change previously saved personal/professional information, preferences, or instructions.",
+      schema: z
+        .object({
+          memory_id: z
+            .string()
+            .optional()
+            .describe("Optional memory ID to edit (preferred when known)."),
+          target_content: z
+            .string()
+            .optional()
+            .describe(
+              "Optional current memory content to identify the memory when ID is unknown.",
+            ),
+          content: z
+            .string()
+            .optional()
+            .describe("Updated memory text. Keep it concise and specific."),
+          category: z
+            .enum([
+              "preference",
+              "fact",
+              "instruction",
+              "professional",
+              "other",
+            ])
+            .optional()
+            .describe("Optional updated category for this memory."),
+        })
+        .refine(
+          (data) =>
+            data.memory_id !== undefined || data.target_content !== undefined,
+          {
+            message:
+              "Provide memory_id or target_content to locate the memory.",
+          },
+        )
+        .refine(
+          (data) => data.content !== undefined || data.category !== undefined,
+          {
+            message: "At least one of content or category must be provided.",
+          },
+        ),
+    },
+  );
+
+export const createDeleteMemoryTool = (userId: string) =>
+  tool(
+    async (input) => {
+      try {
+        const { VectorMemoryStore } =
+          await import("@/lib/memory/vector-memory-store");
+        const memoryStore = new VectorMemoryStore();
+
+        let existingMemory = null as Awaited<
+          ReturnType<typeof memoryStore.getMemory>
+        >;
+
+        if (input.memory_id) {
+          existingMemory = await memoryStore.getMemory(input.memory_id);
+        } else if (input.target_content) {
+          const allMemories = await memoryStore.getMemories(userId);
+          const target = input.target_content.trim().toLowerCase();
+          existingMemory =
+            allMemories.find(
+              (m) => m.content.trim().toLowerCase() === target,
+            ) ||
+            allMemories.find(
+              (m) =>
+                m.content.toLowerCase().includes(target) ||
+                target.includes(m.content.toLowerCase()),
+            ) ||
+            null;
+        }
+
+        if (!existingMemory) {
+          return JSON.stringify({
+            error:
+              "Memory not found. Provide a valid memory_id or target_content from an existing memory.",
+          });
+        }
+
+        if (existingMemory.userId !== userId) {
+          return JSON.stringify({
+            error: "Access denied: you can only delete your own memories.",
+          });
+        }
+
+        const deleted = await memoryStore.deleteMemory(existingMemory.id);
+        if (!deleted) {
+          return JSON.stringify({
+            error: `Failed to delete memory with id: ${existingMemory.id}`,
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          message: "Memory deleted successfully.",
+          memory_id: existingMemory.id,
+          note: "Memory removed from both persistent storage and vector index.",
+        });
+      } catch (error) {
+        return JSON.stringify({
+          error: `Failed to delete memory: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    },
+    {
+      name: "delete_memory",
+      description:
+        "Delete an existing long-term memory entry. Use this when the user asks to forget or remove previously saved personal information.",
+      schema: z
+        .object({
+          memory_id: z
+            .string()
+            .optional()
+            .describe("Optional memory ID to delete (preferred when known)."),
+          target_content: z
+            .string()
+            .optional()
+            .describe(
+              "Optional current memory content to identify the memory when ID is unknown.",
+            ),
+        })
+        .refine(
+          (data) =>
+            data.memory_id !== undefined || data.target_content !== undefined,
+          {
+            message:
+              "Provide memory_id or target_content to locate the memory.",
+          },
+        ),
+    },
+  );

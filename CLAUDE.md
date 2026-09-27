@@ -1,0 +1,167 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Maintenance
+
+Keep this file current. After any significant change — new features, architecture shifts, new dependencies, convention changes, env var additions, deployment changes — update the relevant section. Stale docs are worse than no docs.
+
+## Project Overview
+
+**GenieChat** — an enterprise AI chat interface built with Next.js 16 (App Router). It supports multi-model conversations across two providers — Ollama (Ollama Cloud by default, or a self-hosted daemon) and Google Gemini — plus multi-agent orchestration, tool execution, workflow automation, and workspace features (notes). Authentication is GitHub via NextAuth.js. Data is stored in MongoDB, accessed through the official `mongodb` driver. Object storage is self-hosted Garage behind the S3 API, referenced by canonical `s3://bucket/key` refs and signed on read, so no durable URL is ever stored. Deployed to Azure Web App via GitHub Actions on push to `master`.
+
+Chat completions and text embeddings both come from Ollama. Embeddings feed the Azure AI Search vector indexes used by agent-document RAG and memory; `EMBEDDING_VECTOR_DIMENSIONS` (1536) is the shared index contract and must match the configured `OLLAMA_EMBEDDING_MODEL` output width.
+
+## Commands
+
+```bash
+pnpm dev              # Start dev server (localhost:3000)
+pnpm dev:secure       # Dev server with NODE_TLS_REJECT_UNAUTHORIZED=0
+pnpm build            # Production build (Next.js standalone output)
+pnpm lint             # ESLint (next/core-web-vitals + typescript)
+pnpm type-check       # TypeScript type checking (tsc --noEmit)
+pnpm test             # Runs Vitest unit tests
+pnpm test:watch       # Runs Vitest in watch mode
+pnpm test:coverage    # Runs Vitest with coverage
+pnpm ci:check         # Runs type-check + lint + test
+pnpm db:setup         # Creates all 18 collections and their indexes; idempotent and safe to re-run
+pnpm storage:check    # Exercises the Garage S3 client: put, presign, fetch, delete, NOT_FOUND
+```
+
+Package manager is **pnpm** (v11.1.2, `node-linker=hoisted`). Node >= 20 required.
+
+`tsx` is the standalone Node runner for scripts that must run outside the Next.js build and the Vitest test environment — `scripts/setup-mongodb.ts` is such a script: a dev/ops bootstrap rather than application code.
+
+## Architecture
+
+### Route Groups (App Router)
+
+- `app/(main)/` — authenticated pages: chat, agent-chat, multi-agent-chat, swarm-chat, auto, agents, prompts, tools, MCP, webhooks, artifacts, memories, workflow, workspace, admin, settings
+- `app/(forms)/` — form-based CRUD pages: agents, prompts, tools, MCP, webhooks, workflow (separate layout, no chat sidebar)
+- `app/api/` — API routes for chat streaming, agents, workflows, arena, secrets, storage, etc.
+- `app/login/` — login page
+- `app/preview/`, `app/share/` — standalone views
+
+### Server-Side Core (`lib/`)
+
+- `lib/env.ts` — Zod-validated environment variables. Fails fast if required vars missing. Uses build placeholders during `next build`.
+- `lib/config.ts` — Centralized config object consuming `env.ts`. All Azure service configs, model defaults, and feature settings live here.
+- `lib/storage/` — object storage on Garage's S3 API. `ref.ts` parses and formats `s3://bucket/key` refs and is pure and unit-tested; `s3-core.ts` holds the operations; `s3-client.ts` is the `"server-only"` layer that binds `config.storage` to them; `index.ts` re-exports the public surface. `ref.ts` and `s3-core.ts` deliberately import neither `@/lib/config` nor `@/lib/env` — only `s3-client.ts` may, which keeps the reference format and the operations testable without environment configuration. `constants/storage.ts` holds the bucket names and the presigned-URL TTLs.
+- `lib/docling/` — document parsing on the self-hosted `docling-serve` sidecar. `response.ts` maps a conversion response to `ConvertedDocument` and is pure and unit-tested; `client.ts` is the `"server-only"` layer that performs the HTTP call; `index.ts` re-exports the public surface. `constants/docling.ts` holds the per-request `document_timeout` and the TableFormer mode. See [Document Parsing (Docling)](#document-parsing-docling).
+- `lib/redis-client.ts` — Shared ioredis connections, one per named consumer, with a per-consumer circuit breaker. `getRedisClient(name, options)` returns a discriminated result (`ready` / `unconfigured` / `circuit-open`) so each caller picks its own degradation policy. See [Redis](#redis).
+- `lib/mongodb/` — MongoDB data layer using the official `mongodb` driver. `client.ts` provides synchronous collection accessors that connect lazily on first use. Most `*-store.ts` files hold exactly one document shape, but some span more — `workflow-store.ts` spans workflows, rich workflows and executions — and one collection can back several stores — `tools` backs `tool-store.ts`, `secret-store.ts` and `api-key-store.ts`.
+- `lib/langchain/` — LLM orchestration layer:
+  - `model-factory.ts` — creates LangChain `BaseChatModel` instances from model IDs. Central place for all provider wiring (Google and Ollama only — the `ProviderKey` union in `lib/types.ts` is the source of truth).
+  - `model-config.ts` — `AVAILABLE_MODELS` array defining all supported models and their capabilities, plus `DEFAULT_MODEL_ID` used wherever a caller has no model of its own.
+  - `chat-service.ts` — single-agent streaming chat.
+  - `agent-service.ts` — agent-based chat with tools.
+  - `multi-agent-service.ts` — multi-agent orchestration (LangGraph supervisor).
+  - `workflow-execution-service.ts` — runs automated workflow steps.
+- `lib/auth/` — NextAuth.js config with the GitHub provider, role resolution from the `GITHUB_*_USERNAMES` allowlists (`role-resolution.ts`), and no token refresh — the session carries no provider tokens.
+- `lib/tool/` — Tool system: `default-tools.ts` (built-in tools), `custom-tool-converter.ts` (user-defined tools).
+- `lib/stores/` — Zustand client-side stores (agents, threads, chat settings, sidebar, workflows, etc.).
+- `lib/ai-actions/` — Server actions for agents, prompts, tools, and user search (`user-actions.ts`).
+
+### Client-Side Patterns
+
+- **State management**: Zustand stores in `lib/stores/` with `persist` middleware for local storage. Auth store in `lib/auth/store.ts`. Machine state store in `lib/stores/machine-state-store.ts`.
+- **Data fetching**: TanStack React Query. Custom hooks in `hooks/` (`use-*-queries.ts` pattern) wrap API calls with query/mutation logic.
+- **Chat hooks**: `hooks/use-chat.ts` (standard), `hooks/use-agent-chat.ts` (agent), `hooks/use-multi-agent-chat.ts` (multi-agent), `hooks/use-arena-chat.ts` (arena mode).
+- **Navigation**: Permanent 64px icon rail (`components/layout/nav-rail.tsx`) with flyout groups replaces collapsible sidebar. Machine State panel (`components/chat/machine-state-panel.tsx`) provides inspector panel on conversation routes.
+- **UI components**: `components/ui/` (primitives via Radix UI + CVA), domain components organized by feature (`components/chat/`, `components/agents/`, `components/workflow/`, etc.).
+- **Rich text**: BlockNote editor for rich text input, React Markdown for message rendering (with remark-gfm, remark-math, rehype-katex, mermaid, syntax highlighting).
+- **Styling**: Editorial monochrome system (cold neutral tokens in `globals.css`, neutral `--accent`), Newsreader serif, Inter sans, JetBrains Mono, near-square radii (`--radius: 4px`). Tailwind CSS v4 with `tailwind-merge` and `clsx`. Theme system via `next-themes` with custom `ThemeProvider`.
+- **Path alias**: `@/*` maps to project root.
+
+### Authentication Flow
+
+Middleware in `proxy.ts` (not `middleware.ts`) protects all routes except `/login`, `/api/auth`, `/api/agents/v1`, and static assets. GitHub OAuth with JWT strategy, 30-day sessions. There is no token refresh — a GitHub OAuth App token does not expire and issues no refresh token, so the session carries no provider tokens. Roles are resolved from the `GITHUB_ADMIN_USERNAMES` / `GITHUB_MANAGER_USERNAMES` / `GITHUB_VIEWER_USERNAMES` allowlists, with the role already stored on the user record taking precedence; an unlisted login falls back to the default role.
+
+### Removed With the Provider Change
+
+The switch to GitHub OAuth deleted the Microsoft Graph integration and the workspace surface built on it: inbox mail, meetings, reminders, DevOps, repo-context, CrossLayer, and AD-group-based sharing. The AI header notification feed (its store, the header bell and its settings block) and the sidebar entries pointing at the deleted routes went with them. User-to-user sharing survives, via `lib/ai-actions/user-actions.ts`, as do chat, agents, prompts, tools, webhooks, workflows, memories, notes and deep research.
+
+### Environment Variables
+
+Required: `MONGODB_URI` (and optional `MONGODB_DB_NAME`, defaulting to `geniechat`). In production, also requires `NEXTAUTH_SECRET` (>= 32 chars), `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SECRET_ENCRYPTION_KEY`, `CRON_SECRET`, `REDIS_URL`. Chat, embeddings and web search need `OLLAMA_API_KEY` (for Ollama Cloud) and `EXA_API_KEY`; `GOOGLE_API_KEY` enables the Gemini models. `GITHUB_ADMIN_USERNAMES`, `GITHUB_MANAGER_USERNAMES` and `GITHUB_VIEWER_USERNAMES` are optional — an unset allowlist grants nobody that role, and a role already stored on the user record still takes precedence. `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_FORCE_PATH_STYLE` configure object storage and are optional as well: `S3_PUBLIC_ENDPOINT` is a second endpoint because SigV4 signs the Host header, so a URL presigned against an internal service name fails in a browser that resolves that name differently, and `S3_REGION` must match Garage's `s3_region` or every signature fails validation. `DOCLING_SERVE_URL`, `DOCLING_SERVE_API_KEY` and `DOCLING_SERVE_TIMEOUT_MS` configure the document-parsing sidecar and are optional too — see [Document Parsing (Docling)](#document-parsing-docling). All other Azure/API vars are optional. See `lib/env.ts` for the full schema.
+
+**When adding a new env var:** update all four — `lib/env.ts` (schema + `superRefine` if prod-required), its `buildPlaceholders` map if prod-required (otherwise `pnpm build` fails validation, since `next build` runs with `NODE_ENV=production`), `.env.example` (value + comment), and Azure App Service Configuration if prod-required. `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` still need adding there.
+
+### Redis
+
+One `REDIS_URL` connection string feeds both Redis consumers — rate limiting (`lib/api/rate-limit.ts`) and deep-research checkpoint caching (`lib/mongodb/deep-research-store.ts`). Each gets its own named client from `lib/redis-client.ts`, because they want opposite failure behaviour: the rate limiter fails fast and rejects with a 503 when Redis is down, while the checkpoint cache fails soft to MongoDB. `RateLimitResult.storage` is the one field on either interface that no caller reads.
+
+`docker compose up -d` starts a local Redis for development (`docker-compose.yml`, loopback-only, no password). Production must point `REDIS_URL` at a Redis the Web App can reach — Azure Web App cannot host one itself, so that means a Container App, a VM, or an external provider. TLS is selected by the `rediss://` scheme; credentials go in the URL's userinfo.
+
+### Object Storage (Garage)
+
+Chat attachments, generated images, agent documents and deep-research reports live in self-hosted Garage behind the S3 API. Documents store a canonical `s3://bucket/key` ref rather than a durable URL, and every read presigns a fresh URL from that ref — so a shared link expires (`STORAGE_TTL` in `constants/storage.ts`), and a rotated key invalidates every outstanding presigned URL while the stored reference itself stays intact. See [Server-Side Core](#server-side-core-lib) for the module layout.
+
+`docker compose up -d` starts a single-node Garage alongside Redis (`docker-compose.yml`). The five buckets — `chat-documents`, `chat-images`, `reports`, `agent-documents` and `generated-images` — are ensured and granted to the application key by `scripts/garage-bootstrap.sh`, run by the `garage-bootstrap` compose service; it is idempotent and verifies the grant count rather than trusting `bucket list`. Garage's S3 API port (3900) is bound to all interfaces because **the browser, not only the app, fetches presigned URLs**; the web UI and admin API stay loopback-only.
+
+`garage.toml` ships a development-only fixed `rpc_secret`, and **any deployment beyond local development must generate its own** — the committed value is safe here only because the RPC port is unpublished locally. In production Garage must likewise be reachable by the **browser**, not only the Web App, for the same presigned-URL reason; `S3_PUBLIC_ENDPOINT` is how those two addresses are told apart.
+
+### Document Parsing (Docling)
+
+Document parsing runs on a self-hosted `docling-serve` sidecar (port 5001, loopback-only, since only the app talks to it), built from `scripts/docling.Dockerfile` to add the LibreOffice layer the published image omits — not for the legacy Office formats, which Docling 2.93.0 rejects with or without it, but for DrawingML/VML rendering inside DOCX. `DOCLING_SERVE_URL`, `DOCLING_SERVE_API_KEY` and `DOCLING_SERVE_TIMEOUT_MS` configure it and are optional: an unset or unreachable service degrades to empty extraction rather than blocking boot. The page cap and size cap that bound a conversion are container settings in `docker-compose.yml` (`DOCLING_SERVE_MAX_NUM_PAGES`, `DOCLING_SERVE_MAX_FILE_SIZE`) — both default to `sys.maxsize` upstream, so the compose file supplies the only limit there is.
+
+### Deployment
+
+CI/CD via `.github/workflows/master-dev.yml`: pnpm install, build, test, then deploy standalone bundle to Azure Web App "geniechat-dev". `output: "standalone"` is enabled in `next.config.mjs` (requires Windows Developer Mode or admin for local builds due to symlinks). The Web App needs `REDIS_URL` set in its Configuration — see [Redis](#redis) — and cannot host Redis itself. It also needs Garage reachable by the **browser**, not only from the app, because presigned URLs are fetched directly — see [Object Storage (Garage)](#object-storage-garage). The `docling-serve` sidecar is currently **local development only**, so the Web App has no `DOCLING_SERVE_URL` and needs it set once a host for the sidecar exists, alongside the `REDIS_URL` it already needs. Until then nothing is parsed in production, and in chat that is deliberately not silent: plain-text attachments are still decoded directly because they bypass the sidecar, and a binary attachment produces a turn carrying an explicit notice that the file could not be read — so a misconfigured deployment makes itself visible in use rather than looking like a model that ignored the document. Agent documents go through the RAG path instead, where a conversion failure is logged and the document is attached unindexed. See [Document Parsing (Docling)](#document-parsing-docling).
+
+## Next.js 16 (Breaking Changes)
+
+This project uses **Next.js 16**, which has breaking changes from earlier versions. Before writing or modifying any Next.js-specific code (routing, middleware/proxy, config, APIs), **read the relevant guide in `node_modules/next/dist/docs/`**. Key changes:
+
+- **`middleware.ts` is deprecated → use `proxy.ts`** with `export function proxy()`. File must be named `proxy.ts` at project root.
+- APIs, conventions, and file structure may differ from training data. Heed deprecation notices in the docs.
+
+## Key Conventions
+
+- **Unit tests:** Pure-logic functions in `lib/` must have unit tests in the matching path under `tests/lib/`. Use Vitest. Test files cover all exported functions; use factory helpers (not inline object literals) for complex types. Run `pnpm test` to verify. Files that require I/O (MongoDB, Redis, S3 (Garage), LangChain services) are integration-test candidates — do not unit test them with mocks.
+
+- **MongoDB documents:** `_id` carries the string id from `generateId()`
+  (uuidv7) — never an ObjectId. `lib/mongodb/common.ts`'s `hydrateDocument()`
+  is the place `_id` becomes `id`; use it on every read. The one deliberate
+  second site is `toUserRecord` (`user-store.ts:31-34`), which performs the same
+  conversion for the `users` collection — `hydrateDocument`'s `LacksMongoId` guard
+  (`common.ts:38`, applied at `:45`) is what keeps the two from drifting.
+- **Dates are stored as ISO 8601 strings**, not `Date` objects, because ISO
+  strings sort lexicographically in chronological order and queries depend on
+  that. **Three stored fields are the exception, all real `Date`s**: the
+  webhook-invocation `expiresAt` (its TTL index requires one) and `createdAt` on
+  `ChatDocument` and `ChatCitationDocument` (`lib/mongodb/common.ts:361`, `:385`
+  — Azure AI Search documents that are never API responses). **Do not compare an
+  ISO string against one of these**: MongoDB's comparison is type-bracketed, so a
+  string bound selects no BSON `Date` and the query silently matches nothing.
+- API routes stream responses using async generators yielding typed event objects (`{ type: "token" | "tool_start" | "tool_end" | ... }`).
+- **Collections are scoped by `userId`.** MongoDB has no partition key, so a query
+  that omits `userId` on a user-scoped collection is a cross-user read. Where a store
+  method is addressed by the owning user, `userId` comes first
+  (`threads_userId_lastMessageAt` is `{ userId: 1, lastMessageAt: -1 }`).
+  **This is a convention, not an invariant the store layer enforces.** Accessors
+  addressed by an unguessable identifier take no `userId` at all — `getTool(toolId)`,
+  `getMemory(memoryId)`, `getMCPServer(serverId)`, `deleteThread(threadId)` — and
+  ownership for those is enforced by hand at the route
+  (`app/api/memories/[id]/route.ts` rejects `memory.userId !== user.id`), which makes
+  that route check load-bearing rather than belt-and-braces. Two nearby accessors are
+  guarded differently rather than by ownership: `getAllUsers()` takes no argument at all
+  and sits behind RBAC (`app/api/admin/users/route.ts`'s `requirePermission("users:manage")`),
+  and `findByHash(hash)` is the API-key authentication path, where the hash *is* the
+  credential (`api-key-store.ts:78`, reached from `lib/api/agent-api-auth.ts:37`). Nor is
+  `userId` always first when both are present (`getById(id, userId)`,
+  `getTask(taskId, userId)`), and not every index on a user-scoped collection leads with
+  it — `documents_type_chatThreadId_isDeleted` is `{ type: 1, chatThreadId: 1,
+  isDeleted: 1 }`.
+- The `config` object in `lib/config.ts` is the single source of truth for service configuration — never read `process.env` directly in application code outside `lib/env.ts`.
+- ESLint treats `@typescript-eslint/no-explicit-any`, `prefer-const`, and `react/no-unescaped-entities` as warnings, not errors.
+- Server-only code uses the `"server-only"` import guard.
+- Logging uses `pino` via `lib/logger.ts` (with `pino-pretty` in dev).
+- **Colors:** Only use CSS custom properties defined in `app/globals.css` (`--blue`, `--blue-bg`, `--blue-border`, `--purple`, `--green`, `--red`, `--amber`, `--accent`, `--text-*`, `--bg-*`, `--border-*`, etc.) and their Tailwind theme bridges. Never use raw Tailwind color utilities like `bg-blue-500`, `text-purple-600`, etc. — use the design system variables or pre-built pill classes (`.pill-blue`, `.pill-purple`, `.pill-green`, `.pill-red`, `.pill-amber`) instead.
+- **Folder structure & modularity (strictly enforced):**
+  - Follow existing folder structure. Never create new folders unless absolutely required.
+  - Before creating a component, check if a reusable one already exists in `components/`. If it does, use it. Only create new ones when nothing fits.
+  - Components live in `components/`, API routes in `app/api/`, services in `lib/`, constants in `constants/`, types in `lib/types.ts`. Enforce this separation at all times.
+  - Page files (`app/(main)/*/page.tsx`, `app/(forms)/*/page.tsx`) must only import and compose — never define components inline. Extract all components to `components/`.
+  - Always clean up unused code: dead imports, unused variables, stale functions, orphaned files. Do this proactively on every change — even if the mess predates your edit, fix it immediately.
+  - If you encounter any violation of the above (inline component in a page, misplaced file, unused import, etc.), correct it on the spot regardless of whether it was part of the original task.

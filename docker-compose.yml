@@ -1,0 +1,376 @@
+# Local development services: Redis, Garage for S3-compatible object storage,
+# and docling-serve for document parsing.
+#
+#   docker compose up -d      # start
+#   docker compose ps         # health
+#   docker compose down       # stop (keeps the volumes)
+#   docker compose down -v    # stop and wipe cached state
+#
+# Point the app at them with REDIS_URL=redis://localhost:6379 and
+# S3_ENDPOINT=http://localhost:3900. S3_REGION must stay `garage` to match
+# `s3_region` in garage.toml, or every signed request fails validation.
+#
+# Document parsing needs DOCLING_SERVE_URL=http://localhost:5001. Unlike the
+# other two this one fails quietly when omitted: an unconfigured docling
+# degrades to empty extraction rather than erroring, so a developer who skips
+# it gets chat that works and silently reads nothing from attachments.
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: geniechat-redis
+    # Bound to loopback: this instance has no password, so it must never be
+    # reachable from outside the host. Production runs its own Redis with auth.
+    ports:
+      - "127.0.0.1:6379:6379"
+    command:
+      - redis-server
+      # Append-only persistence so deep-research checkpoints survive a restart.
+      # Rate-limit windows are disposable either way.
+      - --appendonly
+      - "yes"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  garage:
+    image: dxflrs/garage:v2.4.1
+    container_name: geniechat-garage
+    # Only the S3 API is published on all interfaces, because presigned URLs are
+    # fetched directly by the browser and a loopback-bound Garage renders every
+    # image broken. The web UI and admin API are for a developer on this machine
+    # and stay on loopback like redis above -- the admin API has no token
+    # configured, so it has no business on a shared network. This instance is for
+    # development only and its key is in .env.
+    ports:
+      - "3900:3900"            # S3 API -- must be browser-reachable
+      - "127.0.0.1:3902:3902"  # web UI
+      - "127.0.0.1:3903:3903"  # admin API
+    environment:
+      # GARAGE_DEFAULT_* creates the access key and the one default bucket on
+      # first boot; `--single-node` below is what removes the manual
+      # `layout assign` / `layout apply` steps.
+      GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in .env}
+      GARAGE_DEFAULT_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY in .env}
+      GARAGE_DEFAULT_BUCKET: chat-documents
+    command:
+      - /garage
+      - server
+      - --single-node
+      - --default-bucket
+    volumes:
+      # The image is FROM scratch, so this has to be mounted: `garage` reads
+      # /etc/garage.toml by default and exits when it is missing.
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage-data:/var/lib/garage/data
+      - garage-meta:/var/lib/garage/meta
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  # One-shot: creates the four buckets GARAGE_DEFAULT_BUCKET does not cover and
+  # grants the key on all five. Exits when done; not a long-running service.
+  garage-bootstrap:
+    # `dxflrs/garage` ships the /garage binary in a scratch image -- no shell,
+    # so it cannot run the script below. This builds a shell around that same
+    # pinned binary; see scripts/garage-bootstrap.Dockerfile.
+    build:
+      context: ./scripts
+      dockerfile: garage-bootstrap.Dockerfile
+    container_name: geniechat-garage-bootstrap
+    depends_on:
+      garage:
+        condition: service_healthy
+    environment:
+      # Garage names the default key "default access key"; see the script.
+      GARAGE_KEY_NAME: default access key
+    entrypoint: ["/bin/bash", "/bootstrap/garage-bootstrap.sh"]
+    volumes:
+      - ./scripts/garage-bootstrap.sh:/bootstrap/garage-bootstrap.sh:ro
+      # The CLI administers the cluster over RPC, not S3, so it needs the rpc
+      # secret and address from the config and the node config the server wrote
+      # on first boot.
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+    restart: "no"
+
+  docling:
+    # Built locally from scripts/docling.Dockerfile rather than pulled: the
+    # published image omits LibreOffice. Read that file for what the layer does
+    # and, importantly, what it does not — it is not what makes the legacy
+    # Office formats work.
+    build:
+      context: ./scripts
+      dockerfile: docling.Dockerfile
+    image: geniechat-docling:local
+    container_name: geniechat-docling
+    # Loopback only. Unlike Garage, the browser never fetches from this
+    # service — only the app talks to it — so it takes the redis binding.
+    # Point the app at it with DOCLING_SERVE_URL=http://localhost:5001.
+    ports:
+      - "127.0.0.1:5001:5001"
+    environment:
+      # Sizing rule for both of these, and the argument does not rest on a
+      # measurement: eng_loc_num_workers x OMP_NUM_THREADS should cover the
+      # host's cores once, not many times over. 2 x 5 = 10 on a 10-core host.
+      # Supporting it, Task 1's own A/B on one 12-page document measured ~0.8
+      # s/page at OMP=4 against ~0.6 s/page at OMP=10 — an 18.6% gain for 2.5x
+      # the threads, because docling's layout models do not parallelise much
+      # past a few. That gain sits inside this host's wall-clock noise, so it is
+      # the core-matching rule above that decides 5: it costs a little
+      # single-document latency against OMP=10 and buys not spreading 40 threads
+      # across 10 cores when two conversions run at once.
+      #
+      # Both are compose interpolation variables read from the host
+      # environment or .env — overridable without editing this file, and
+      # deliberately absent from lib/env.ts and .env.example because the app
+      # never reads them.
+      OMP_NUM_THREADS: ${DOCLING_OMP_NUM_THREADS:-5}
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: ${DOCLING_ENG_LOC_NUM_WORKERS:-2}
+      # Each local orchestrator worker otherwise builds its own converter
+      # manager, and with eng_loc_share_models at its default of false a worker
+      # does not take the orchestrator's shared manager
+      # (docling_jobkit/orchestrators/local/worker.py:39-42), so each worker
+      # pays for its own models. Measured, this is the difference between
+      # surviving concurrency and being OOM-killed: 4 workers converting 4
+      # documents at once all succeeded with this true, and killed the container
+      # at the 6g limit with it false — the requests dropped at the transport
+      # layer, so the client saw an abort instead of the structured failure the
+      # timeout ordering below exists to produce.
+      #
+      # It lowers the per-worker cost; it does NOT decouple the floor from the
+      # worker count, which is why the count stays at 2. The floor was probed on
+      # the anon series at 2 workers only, so it is the mechanism here and not a
+      # second number — no anon floor for a higher count exists to quote.
+      # Series-independent, 8 workers converting 8 documents at once still
+      # OOM-killed the container at 6g. Models load lazily on first conversion,
+      # so a container that has never served a request sits near the cold anon
+      # floor — 0.766GiB and 0.771GiB measured — regardless of worker count; the
+      # pre-warm figure is not headroom.
+      DOCLING_SERVE_ENG_LOC_SHARE_MODELS: "true"
+      # Both of these default to sys.maxsize upstream — the service ships with
+      # no page and no size limit at all. Setting them supplies the only limit
+      # there is; it is not tightening a default.
+      #
+      # The page cap is derived from ANON, not from `memory.peak`. Peak counts
+      # reclaimable page cache, so `peak == max` on its own cannot distinguish
+      # "committed memory reached the wall" from "cache filled the remaining
+      # space" — and a container with swap can push anonymous pages out rather
+      # than die. So the probe samples `anon` and `file` from memory.stat
+      # separately and reports them as separate high-water marks. They are not
+      # close: at the two-up peak they differ by an order of magnitude, so the
+      # pressure is real committed memory and not cache.
+      #
+      # The governing case is TWO-UP, not one-up: this service runs two
+      # orchestrator workers precisely so two conversions can run at once, so a
+      # cap that only fits one document reintroduces the concurrency OOM the
+      # worker count was reduced to fix. Measured, two-up, two DIFFERENT sources
+      # (a 12-page and an 8-page document, each repeated to the cap):
+      #
+      #   cap   anon peak   margin under 6g   file peak   swap peak   max hits
+      #   100   5.714GiB    0.286GiB          0.136GiB    0.402GiB    1626
+      #    75   5.340GiB    0.660GiB          0.744GiB    0.391GiB    1343
+      #
+      # At both caps the pair returned HTTP 200 status='success', dropped no
+      # requests, left RestartCount unchanged and produced no `oom` or `die`
+      # event. "max hits" is the delta of the `max` counter in
+      # /sys/fs/cgroup/memory.events across the phase — the cgroup hit its
+      # ceiling that many times and survived on kernel reclaim, so `anon peak`
+      # is a floor on demand, not a ceiling on it. `swap peak` is what the
+      # container actually pushed out under memory.swap.max (6GiB).
+      #
+      # What matters more than the cap is the floor, and it does not come back.
+      # A warm container holds this much anon with NOTHING in flight:
+      #
+      #   anon                      100-page run   75-page run
+      #   cold                           0.766GiB      0.771GiB
+      #   post-warm (12-page)            1.891GiB      1.872GiB
+      #   after one cap-sized document   2.637GiB      2.325GiB
+      #   after a concurrent pair        4.635GiB      4.390GiB
+      #
+      # and it stays there idle — 4.639 -> 4.612GiB over 150s on one run,
+      # 4.384 -> 4.383GiB over 90s on the other. The pair is what sets the high
+      # figure, and that is worth separating from the passage of documents:
+      # six SEQUENTIAL cap-sized documents on one fresh container settle at
+      # 3.763GiB, not 4.6GiB, and their per-document anon deltas do not climb —
+      # 0.948, 0.458, 0.056, 0.271, -0.169, 0.261GiB. The last four sit in
+      # 3.40-3.76GiB with no monotonic trend, and `memory.events`' `max` counter
+      # stayed 0 for every one of them. So the ratchet is BOUNDED rather than
+      # open-ended, and concurrency, not the accumulation of documents, is what
+      # raises the floor.
+      #
+      # "One-up never touches the ceiling" is true of a FRESH container only, and
+      # this comment must not be read as "single documents are safe". Both sides
+      # of the comparison below are one series — `memory.peak`, the TRANSIENT
+      # high-water of a single conversion, which is a different thing from the
+      # idle floor and is not what the cap is sized on. On a fresh container one
+      # cap-sized document peaks at 4.331GiB; the same document on a container
+      # that has served six peaks at 5.727GiB — still short of the limit, `max`
+      # delta 0 throughout, but 0.27GiB away from it where the fresh case had
+      # 1.67GiB. The margin for single-document use is consumed by the floor, so
+      # it is a property of the container's history and not of the document.
+      #
+      # That is why a smaller cap buys less than it looks like it should: the
+      # transient scales with pages, the floor does not.
+      #
+      # Fixture caveat: each fixture is one document's pages repeated to the cap,
+      # so a repeated page may be cheaper than a distinct one and the per-document
+      # cost above may be a floor rather than a bound.
+      #
+      # History, so none of this is re-derived: 300 came from a time budget and
+      # was never checked against memory — one 300-page document peaked at
+      # 5.920GiB of `memory.peak`, 98.7% of the 6g limit, and two of them
+      # OOM-kill the container outright, which remains the one genuinely fatal
+      # measurement here. 100 was chosen on `memory.peak` and re-derived on anon
+      # above. (A ~4.6GiB two-up figure that circulated earlier was a 13.3MiB/page
+      # extrapolation from two points on one fixture, not a measurement, and it
+      # under-called the peak.)
+      #
+      # The time bound is comfortable and does not set the cap. One-up, 100 pages
+      # measures 76.1s and 78.2s across runs and 75 pages 58.1s and 80.5s,
+      # against the 300s `document_timeout` the app sends. A concurrent pair
+      # measures 173.6s at the 100-page cap and 226.6s at 75 — 2.3x and 2.8x
+      # one-up, both inside the timeout. The one exception on record is a
+      # 75-page pair at 908s and 910s per request: an order of magnitude beyond
+      # the ~±20% spread the one-up repeats show, unexplained, and not
+      # reproduced — the same probe at the same cap later measured 226.6s. If it
+      # did recur under the `document_timeout` the app sends, the pair would be
+      # ended at 300s by the service — with `status: "partial_success"` and no
+      # content at all, which is not itself an error status; the client reports
+      # it as an error only via the empty-content guard (constants/docling.ts
+      # carries the measurement) — not by the app's 360s AbortSignal. That
+      # backstop stays for a hung connection, and it is not what would close this
+      # case out. Do not scale anything from these figures.
+      #
+      # The work is the born-digital case. A scanned page engages OCR and costs
+      # far more; the cap cannot distinguish the two, and `document_timeout` is
+      # what bounds a scanned document, failing it cleanly rather than letting it
+      # run.
+      #
+      # Verified in Task 1: this cap REJECTS rather than truncating, so a
+      # document over it errors instead of silently returning its first N pages.
+      #
+      # 150000000 is set above the RAG path's 100MB upload limit — the largest
+      # file the app will ever send — so this cap can never be the thing that
+      # rejects a file the app itself accepted. It exists at all because upstream
+      # defaults it to `sys.maxsize`, making the compose file the only limit
+      # there is; a file this large is a memory question rather than a time one,
+      # which is why the bound is on size and `document_timeout` covers the rest.
+      #
+      # The service compares the DECODED size, not the base64 the app sends —
+      # `InputDocument.__init__` sets `filesize = path_or_stream.getbuffer().nbytes`
+      # over the stream docling-serve builds from `base64.b64decode(...)` — so a
+      # 100MB decoded file passes a 100MB limit, and the margin above is not there
+      # to absorb base64 expansion.
+      DOCLING_SERVE_MAX_NUM_PAGES: 100
+      DOCLING_SERVE_MAX_FILE_SIZE: 150000000
+      # Above the app's own DOCLING_SERVE_TIMEOUT_MS (360s) and above the
+      # per-request `document_timeout` (300s), so the service is always the
+      # authority that ends the conversion and the app's AbortSignal stays a
+      # genuine transport backstop for a hung connection.
+      DOCLING_SERVE_MAX_SYNC_WAIT: 600
+      # One uvicorn process. Concurrency here comes from the orchestrator
+      # workers above, not from uvicorn; raising this multiplies the model set
+      # again, which is the trap that produced the OOM.
+      UVICORN_WORKERS: 1
+    # Model weights are baked into the image at build time, so this is weight
+    # loading rather than a download — generous, but not minutes.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    # A backstop for the leak, NOT a sizing target: docling-serve is known to
+    # grow and not return to baseline, and this turns that into a restart rather
+    # than a slow death of the host.
+    #
+    # That restart is the DESIGNED outcome, not a defect to be engineered away.
+    # On this host 6g will be reached in ordinary use — two cap-sized documents
+    # converting at once get there (see the counters below) — and the container
+    # restarting is the limit doing its job. What is NOT acceptable is presenting
+    # it as harmless, because of what it costs the caller: in-flight requests are
+    # dropped at the transport layer with no status line and no error body, so the
+    # app sees a connection abort rather than the mapped response body that
+    # DOCLING_SERVE_MAX_SYNC_WAIT and `document_timeout` are ordered to produce.
+    # It is worth avoiding where it is cheap to avoid — which is at the
+    # concurrency, not by shrinking the cap (below).
+    #
+    # The lever when that cost is not acceptable is a host with more RAM, and the
+    # limit and the page cap move together when it arrives: re-probe both against
+    # the new host before raising either, because the two bound the same request
+    # and a limit that goes up while the cap stays put is exactly how the
+    # concurrency OOM comes back.
+    #
+    # Read the measurement below before changing either number, because it says
+    # the leak — not the page cap — is what this limit is actually holding back.
+    #
+    # It is sized against the TWO-UP case, and against ANON rather than
+    # `memory.peak`: peak counts reclaimable page cache, so a peak that reaches
+    # this limit may be nothing but cache the kernel can drop. Two cap-sized
+    # (100-page) documents converting concurrently, from two different sources:
+    #
+    #   anon peak      5.714GiB    margin under this limit: 0.286GiB
+    #   file peak      0.136GiB    (so the peak is not cache — anon is ~95% of it)
+    #   swap peak      0.402GiB    (out of memory.swap.max, also 6GiB)
+    #   memory.current 5.999GiB    (high-water of `current` for the phase;
+    #                               `memory.peak` was not sampled on that run,
+    #                               and `current` is not sized on either)
+    #   memory.events  `max` counter +1626 for that phase
+    #
+    # At the 75-page cap the same probe gives anon 5.340GiB, a 0.660GiB margin,
+    # file 0.744GiB, swap 0.391GiB, a `current` high-water of 6.000GiB and +1343.
+    # Nothing was killed at either cap
+    # (both HTTP 200 status='success', OOMKilled false, RestartCount unchanged,
+    # 0 requests dropped), so neither fit rests on margin — both reached the
+    # ceiling and survived on reclaim and swap.
+    #
+    # The binding number is the floor, not the cap, and the floor's cause is
+    # concurrency rather than the passage of documents. Anon settles at 4.4-4.6GiB
+    # IDLE after a warm-up plus a concurrent pair (4.639 -> 4.612GiB over 150s
+    # idle, 4.384 -> 4.383GiB over 90s — it does not come back), which is within
+    # ~1.4GiB of this limit before anything is converted. Six SEQUENTIAL
+    # cap-sized documents, by contrast, settle at 3.763GiB with no monotonic
+    # climb and never once moved the `max` counter, so a single-document dev
+    # session is not what drives the container into this limit — a concurrent
+    # pair is. Lowering the cap lowers the transient and not that floor, so a
+    # smaller cap does not restore the margin it looks like it should; at 300 the
+    # container was OOM-killed outright and at 100 and 75 it survives two-up,
+    # which is the whole of what the cap controls.
+    #
+    # Fresh versus ratcheted matters for single-document use too, and this
+    # comment should not be read as "one document always fits". Both sides of the
+    # comparison are one series — `memory.peak`, the TRANSIENT high-water of that
+    # one conversion, which is not the idle floor above and is not what this
+    # limit is sized on: one cap-sized document on a FRESH container peaks at
+    # 4.331GiB, but the same document on a container that has served six peaks at
+    # 5.727GiB — short of the limit and still not a `max` hit, but 0.27GiB away
+    # where the fresh case had 1.67GiB. The headroom belongs to the container's
+    # history, not to the document.
+    #
+    # Models load lazily on first conversion, so a container that has never
+    # served a request sits near 0.77GiB of anon where a warm one settles near
+    # 1.87GiB; the pre-warm figure is not headroom and must not be used to size
+    # this.
+    #
+    # 6g is also the practical ceiling on a development host: the Docker VM
+    # reports 7.748GiB in total, so a larger limit is not merely unnecessary but
+    # unreachable — a container asking for 8g dies on the VM's limit first, with
+    # OOMKilled=true but sampled memory well under its own ceiling, which reads
+    # like a cgroup kill and is not one. Do not size this above the VM.
+    mem_limit: 6g
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  garage-data:
+  garage-meta:
