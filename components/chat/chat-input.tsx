@@ -309,9 +309,6 @@ export function ChatInput({
   const [pendingUploads, setPendingUploads] = React.useState<PendingUpload[]>(
     [],
   );
-  const [removingAttachmentIds, setRemovingAttachmentIds] = React.useState<
-    string[]
-  >([]);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [isListening, setIsListening] = React.useState(false);
   const recognitionRef = React.useRef<SpeechRecognition | null>(null);
@@ -333,7 +330,6 @@ export function ChatInput({
     const signatures = new Set<string>();
 
     for (const attachment of attachments ?? []) {
-      if (removingAttachmentIds.includes(attachment.id)) continue;
       signatures.add(
         getUploadSignature(
           attachment.fileName,
@@ -356,7 +352,7 @@ export function ChatInput({
     }
 
     return signatures;
-  }, [attachments, removingAttachmentIds, pendingUploads, getUploadSignature]);
+  }, [attachments, pendingUploads, getUploadSignature]);
 
   const formatDuplicateUploadMessage = React.useCallback(
     (duplicates: string[]) => {
@@ -773,29 +769,22 @@ export function ChatInput({
     }
   };
 
-  const handleRemoveAttachment = async (attachment: ChatAttachment) => {
-    if (removingAttachmentIds.includes(attachment.id)) return;
+  const handleRemoveAttachment = React.useCallback(
+    (attachment: ChatAttachment) => {
+      removeDraftAttachment(contextKey, attachment.id);
+      setErrorMessage(null);
 
-    setRemovingAttachmentIds((prev) => [...prev, attachment.id]);
-    setErrorMessage(null);
-
-    await new Promise((resolve) => setTimeout(resolve, 180));
-
-    if (attachment.ref) {
-      try {
+      if (attachment.ref) {
         const params = new URLSearchParams({ ref: attachment.ref });
-        await fetch(`/api/chat/upload/${attachment.id}?${params}`, {
+        fetch(`/api/chat/upload/${attachment.id}?${params}`, {
           method: "DELETE",
+        }).catch((error) => {
+          logger.error({ error }, "Failed to delete attachment from storage");
         });
-      } catch (error) {
-        logger.error({ error }, "Failed to delete attachment from storage");
       }
-    }
-    removeDraftAttachment(contextKey, attachment.id);
-    setRemovingAttachmentIds((prev) =>
-      prev.filter((id) => id !== attachment.id),
-    );
-  };
+    },
+    [contextKey, removeDraftAttachment],
+  );
 
   const handleSubmit = () => {
     if (isUploading) return;
@@ -931,11 +920,7 @@ export function ChatInput({
   };
 
   const renderAttachments = attachments;
-  const activeAttachments = React.useMemo(
-    () =>
-      renderAttachments.filter((a) => !removingAttachmentIds.includes(a.id)),
-    [renderAttachments, removingAttachmentIds],
-  );
+  const activeAttachments = attachments;
   const hasAttachmentRail =
     renderAttachments.length > 0 || pendingUploads.length > 0;
   const showResearchDepthSelector =
@@ -964,171 +949,158 @@ export function ChatInput({
           {errorMessage && (
             <motion.div
               key="error"
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
-              className="px-3 sm:px-4 pt-3 pb-0"
+              className="overflow-hidden"
             >
-              <div className="flex items-center gap-2 bg-red-500/10 rounded-lg p-2 w-fit">
-                <X className="h-4 w-4 text-red-500" />
-                <span className="text-sm text-red-500">{errorMessage}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 cursor-pointer text-red-500 hover:text-red-400"
-                  onClick={() => setErrorMessage(null)}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+              <div className="px-3 sm:px-4 pt-3 pb-0">
+                <div className="flex items-center gap-2 bg-red-500/10 rounded-lg p-2 w-fit">
+                  <X className="h-4 w-4 text-red-500" />
+                  <span className="text-sm text-red-500">{errorMessage}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 cursor-pointer text-red-500 hover:text-red-400"
+                    onClick={() => setErrorMessage(null)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* Attachments Grid */}
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {hasAttachmentRail && (
             <motion.div
               key="attachment-rail"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.15, ease: "easeOut" }}
-              className="px-3 sm:px-4 pt-3 pb-0"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+              className="overflow-hidden"
             >
-              <div className="flex gap-2 overflow-x-auto overflow-y-hidden pt-1 pb-1 pr-0.5 [scrollbar-width:thin]">
-                <AnimatePresence mode="popLayout">
-                  {renderAttachments.map((attachment) => {
-                    const isRemoving = removingAttachmentIds.includes(
-                      attachment.id,
-                    );
-                    return attachment.type === "image" ? (
-                      <motion.div
-                        key={`attachment-${attachment.id}`}
-                        layout
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{
-                          opacity: isRemoving ? 0 : 1,
-                          scale: isRemoving ? 0.9 : 1,
-                        }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ duration: 0.15 }}
-                        className={cn(
-                          "relative shrink-0",
-                          isRemoving && "pointer-events-none",
-                        )}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={attachment.previewUrl}
-                          alt={attachment.fileName}
-                          className="h-20 w-20 object-cover rounded-lg border border-tertiary/10"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute top-1 right-1 h-5 w-5 cursor-pointer rounded-full bg-secondary/80 text-foreground border border-tertiary/15 hover:bg-secondary shadow-sm [&_svg]:size-2.5 p-0"
-                          onClick={() => handleRemoveAttachment(attachment)}
-                          disabled={isRemoving}
+              <div className="px-3 sm:px-4 pt-3 pb-0">
+                <div className="flex gap-2 overflow-x-auto overflow-y-hidden pt-1 pb-1 pr-0.5 [scrollbar-width:thin]">
+                  <AnimatePresence mode="popLayout">
+                    {renderAttachments.map((attachment) => {
+                      return attachment.type === "image" ? (
+                        <motion.div
+                          key={`attachment-${attachment.id}`}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.15 }}
+                          className="relative shrink-0"
                         >
-                          <X className="h-2.5 w-2.5" />
-                        </Button>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key={`attachment-${attachment.id}`}
-                        layout
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{
-                          opacity: isRemoving ? 0 : 1,
-                          scale: isRemoving ? 0.9 : 1,
-                        }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ duration: 0.15 }}
-                        className={cn(
-                          "shrink-0 flex items-center gap-2 bg-tertiary/5 rounded-lg p-2 border border-tertiary/10",
-                          isRemoving && "pointer-events-none",
-                        )}
-                      >
-                        <div className="h-8 w-8 rounded-md bg-secondary flex items-center justify-center shrink-0 text-tertiary/70">
-                          <FileText className="h-4 w-4" />
-                        </div>
-                        <div className="flex flex-col min-w-0 max-w-[150px]">
-                          <span className="text-sm font-medium truncate text-tertiary">
-                            {attachment.fileName}
-                          </span>
-                          <span className="text-xs text-tertiary/50">
-                            Document
-                          </span>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 ml-1 cursor-pointer text-tertiary/50 hover:text-tertiary"
-                          onClick={() => handleRemoveAttachment(attachment)}
-                          disabled={isRemoving}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </motion.div>
-                    );
-                  })}
-
-                  {pendingUploads.map((upload) =>
-                    upload.type === "image" ? (
-                      <motion.div
-                        key={`pending-${upload.id}`}
-                        layout
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 0.7, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ duration: 0.15 }}
-                        className="relative shrink-0"
-                      >
-                        {upload.previewUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={upload.previewUrl}
-                            alt={upload.fileName}
+                            src={attachment.previewUrl}
+                            alt={attachment.fileName}
                             className="h-20 w-20 object-cover rounded-lg border border-tertiary/10"
                           />
-                        ) : (
-                          <div className="h-20 w-20 rounded-lg border border-tertiary/10 bg-tertiary/5" />
-                        )}
-                        <div className="absolute inset-0 rounded-lg bg-black/10 flex items-center justify-center">
-                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key={`pending-${upload.id}`}
-                        layout
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ duration: 0.15 }}
-                        className="shrink-0 flex items-center gap-2 rounded-lg p-2 border border-dashed border-primary/35 bg-primary/5"
-                      >
-                        <div className="h-8 w-8 rounded-md bg-secondary flex items-center justify-center shrink-0 text-tertiary/70">
-                          <FileText className="h-4 w-4" />
-                        </div>
-                        <div className="flex flex-col min-w-0 max-w-[150px]">
-                          <span className="text-sm font-medium truncate text-tertiary">
-                            {upload.fileName}
-                          </span>
-                          <span className="text-xs text-tertiary/50">
-                            Uploading...
-                          </span>
-                        </div>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                      </motion.div>
-                    ),
-                  )}
-                </AnimatePresence>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-1 right-1 h-5 w-5 cursor-pointer rounded-full bg-secondary/80 text-foreground border border-tertiary/15 hover:bg-secondary shadow-sm [&_svg]:size-2.5 p-0"
+                            onClick={() => handleRemoveAttachment(attachment)}
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </Button>
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key={`attachment-${attachment.id}`}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.15 }}
+                          className="shrink-0 flex items-center gap-2 bg-tertiary/5 rounded-lg p-2 border border-tertiary/10"
+                        >
+                          <div className="h-8 w-8 rounded-md bg-secondary flex items-center justify-center shrink-0 text-tertiary/70">
+                            <FileText className="h-4 w-4" />
+                          </div>
+                          <div className="flex flex-col min-w-0 max-w-[150px]">
+                            <span className="text-sm font-medium truncate text-tertiary">
+                              {attachment.fileName}
+                            </span>
+                            <span className="text-xs text-tertiary/50">
+                              Document
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 ml-1 cursor-pointer text-tertiary/50 hover:text-tertiary"
+                            onClick={() => handleRemoveAttachment(attachment)}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </motion.div>
+                      );
+                    })}
+
+                    {pendingUploads.map((upload) =>
+                      upload.type === "image" ? (
+                        <motion.div
+                          key={`pending-${upload.id}`}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 0.7, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.15 }}
+                          className="relative shrink-0"
+                        >
+                          {upload.previewUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={upload.previewUrl}
+                              alt={upload.fileName}
+                              className="h-20 w-20 object-cover rounded-lg border border-tertiary/10"
+                            />
+                          ) : (
+                            <div className="h-20 w-20 rounded-lg border border-tertiary/10 bg-tertiary/5" />
+                          )}
+                          <div className="absolute inset-0 rounded-lg bg-black/10 flex items-center justify-center">
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          </div>
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key={`pending-${upload.id}`}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.15 }}
+                          className="shrink-0 flex items-center gap-2 rounded-lg p-2 border border-dashed border-primary/35 bg-primary/5"
+                        >
+                          <div className="h-8 w-8 rounded-md bg-secondary flex items-center justify-center shrink-0 text-tertiary/70">
+                            <FileText className="h-4 w-4" />
+                          </div>
+                          <div className="flex flex-col min-w-0 max-w-[150px]">
+                            <span className="text-sm font-medium truncate text-tertiary">
+                              {upload.fileName}
+                            </span>
+                            <span className="text-xs text-tertiary/50">
+                              Uploading...
+                            </span>
+                          </div>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                        </motion.div>
+                      ),
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </motion.div>
           )}
@@ -1268,32 +1240,34 @@ export function ChatInput({
           {showResearchDepthSelector && (
             <motion.div
               key="depth-selector"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
-              className="flex items-center flex-wrap gap-2 px-3 sm:px-4 pb-2"
+              className="overflow-hidden"
             >
-              <span className="text-xs text-tertiary/60">Research depth:</span>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {depthOptions.map((option) => (
-                  <Button
-                    key={option.value}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={disabled || isLoading}
-                    onClick={() => onDeepResearchDepthChange(option.value)}
-                    className={cn(
-                      "h-7 rounded-full px-3 text-xs border transition-colors cursor-pointer",
-                      deepResearchDepth === option.value
-                        ? "bg-primary/10 text-primary border-primary/30 hover:bg-primary/20"
-                        : "text-tertiary/70 border-tertiary/20 hover:bg-tertiary/5 hover:text-tertiary",
-                    )}
-                  >
-                    {option.label}
-                  </Button>
-                ))}
+              <div className="flex items-center flex-wrap gap-2 px-3 sm:px-4 pb-2">
+                <span className="text-xs text-tertiary/60">Research depth:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {depthOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={disabled || isLoading}
+                      onClick={() => onDeepResearchDepthChange(option.value)}
+                      className={cn(
+                        "h-7 rounded-full px-3 text-xs border transition-colors cursor-pointer",
+                        deepResearchDepth === option.value
+                          ? "bg-primary/10 text-primary border-primary/30 hover:bg-primary/20"
+                          : "text-tertiary/70 border-tertiary/20 hover:bg-tertiary/5 hover:text-tertiary",
+                      )}
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </motion.div>
           )}
