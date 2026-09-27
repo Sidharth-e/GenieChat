@@ -998,7 +998,7 @@ export function ChatInput({
               transition={{ duration: 0.15, ease: "easeOut" }}
               className="px-3 sm:px-4 pt-3 pb-0"
             >
-              <div className="flex gap-2 overflow-x-auto overflow-y-hidden pb-1 pr-0.5 [scrollbar-width:thin]">
+              <div className="flex gap-2 overflow-x-auto overflow-y-hidden pt-1 pb-1 pr-0.5 [scrollbar-width:thin]">
                 <AnimatePresence mode="popLayout">
                   {renderAttachments.map((attachment) => {
                     const isRemoving = removingAttachmentIds.includes(
@@ -1030,7 +1030,7 @@ export function ChatInput({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="absolute -top-2 -right-2 h-5 w-5 cursor-pointer rounded-full bg-primary text-tertiary border border-tertiary/10 hover:bg-tertiary/10"
+                          className="absolute top-1 right-1 h-5 w-5 cursor-pointer rounded-full bg-secondary/80 text-foreground border border-tertiary/15 hover:bg-secondary shadow-sm [&_svg]:size-2.5 p-0"
                           onClick={() => handleRemoveAttachment(attachment)}
                           disabled={isRemoving}
                         >
