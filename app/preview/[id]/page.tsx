@@ -40,7 +40,7 @@ export default async function PreviewPage({
     seen.add(code);
     extractedCodeBlocks.push(code);
   };
-  const codeBlockRegex = /```(react-canvas)\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```(?:react-canvas|canvas)\n([\s\S]*?)```/g;
 
   messages.forEach((msg) => {
     if (msg.role !== "assistant") return;
@@ -61,7 +61,7 @@ export default async function PreviewPage({
     if (msg.content) {
       let match;
       while ((match = codeBlockRegex.exec(msg.content)) !== null) {
-        addBlock(match[2].trim().replace(/\n$/, ""));
+        addBlock(match[1].trim().replace(/\n$/, ""));
       }
     }
   });

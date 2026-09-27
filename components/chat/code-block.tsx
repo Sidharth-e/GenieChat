@@ -146,7 +146,7 @@ export function CodeBlock({
     return <ChartRenderer content={String(children).replace(/\n$/, "")} />;
   }
 
-  if (language === "react-canvas") {
+  if (language === "react-canvas" || language === "canvas") {
     return (
       <div className="my-4 pl-3 pr-2.5 py-2.5 rounded-[20px] border border-card-border bg-card-bg shadow-sm flex flex-row items-center justify-between gap-3 transition-colors hover:border-tertiary/20">
         <div className="flex items-center gap-3 overflow-hidden">

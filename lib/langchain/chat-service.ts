@@ -7,7 +7,7 @@ import {
 } from "@langchain/core/messages";
 import { StructuredTool } from "langchain";
 import { Message } from "../types";
-import defaultToolsMap, { defaultTools, createGenerateCanvasTool } from "../tool/default-tools";
+import defaultToolsMap, { defaultTools } from "../tool/default-tools";
 import { getModel } from "./model-factory";
 import {
   generateResponse,
@@ -95,10 +95,7 @@ export class ChatService {
     }
 
     const agentOnlyTools = new Set(["knowledge_base_search"]);
-    const contextCanvasTool = createGenerateCanvasTool(validMessages);
-    const chatTools = defaultTools
-      .filter((t) => !agentOnlyTools.has(t.name))
-      .map((t) => (t.name === "generate_canvas" ? contextCanvasTool : t));
+    const chatTools = defaultTools.filter((t) => !agentOnlyTools.has(t.name));
     const chatCustomTools = customToolsFiltered.filter((t) => !agentOnlyTools.has(t.name));
     const allTools = [...chatTools, ...chatCustomTools];
 

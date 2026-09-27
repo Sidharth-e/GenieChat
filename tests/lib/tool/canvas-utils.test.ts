@@ -109,4 +109,22 @@ describe("extractLatestCanvasCode", () => {
     ];
     expect(extractLatestCanvasCode(messages)).toBeNull();
   });
+
+  it("extracts code from a streamed react-canvas code fence in message content", () => {
+    const code = "export default function App() { return <div>Streamed</div>; }";
+    const messages = [
+      makeMsg("user", "build a widget"),
+      makeMsg("assistant", `Here is your component:\n\`\`\`react-canvas\n${code}\n\`\`\``),
+    ];
+    expect(extractLatestCanvasCode(messages)).toBe(code);
+  });
+
+  it("extracts code from a streamed canvas code fence in message content", () => {
+    const code = "export default function App() { return <div>Canvas Tag</div>; }";
+    const messages = [
+      makeMsg("user", "build a widget"),
+      makeMsg("assistant", `Here is your component:\n\`\`\`canvas\n${code}\n\`\`\``),
+    ];
+    expect(extractLatestCanvasCode(messages)).toBe(code);
+  });
 });

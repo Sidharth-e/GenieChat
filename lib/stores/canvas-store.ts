@@ -80,7 +80,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         extractedVersions.push({ id: versionId, code: codeContent, language: "react-canvas" });
       };
 
-      const codeBlockRegex = /```(react-canvas)\n([\s\S]*?)```/g;
+      const codeBlockRegex = /```(?:react-canvas|canvas)\n([\s\S]*?)```/g;
 
       messages.forEach((msg: Message) => {
         if (msg.role !== "assistant") return;
@@ -101,7 +101,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         if (msg.content) {
           let match;
           while ((match = codeBlockRegex.exec(msg.content)) !== null) {
-            addVersion(match[2].trim().replace(/\n$/, ""));
+            addVersion(match[1].trim().replace(/\n$/, ""));
           }
         }
       });

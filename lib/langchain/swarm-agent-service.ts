@@ -16,7 +16,7 @@ import { Message, MCPServerConfig } from "../types";
 import { createMCPClient } from "./langchain-mcp";
 import { getModel } from "./model-factory";
 import { ModelOptions } from "./model-config";
-import defaultToolsMap, { createGenerateCanvasTool } from "../tool/default-tools";
+import defaultToolsMap from "../tool/default-tools";
 import { replacePromptVariables, UserContext } from "./langchain-utility";
 import {
     convertToLangChainMessages,
@@ -252,15 +252,10 @@ export class SwarmAgentService {
             );
             resolved = [...resolved, ...mcpFiltered];
 
-            const contextCanvasTool = messages ? createGenerateCanvasTool(messages) : null;
             const defaults = allowed
                 .filter(t => t.startsWith("default:"))
                 .map(t => t.split(":")[1])
-                .map(name =>
-                    name === "generate_canvas" && contextCanvasTool
-                        ? contextCanvasTool
-                        : defaultToolsMap[name],
-                )
+                .map(name => defaultToolsMap[name])
                 .filter(
                     (t): t is NonNullable<typeof t> => t !== undefined,
                 );
@@ -282,13 +277,8 @@ export class SwarmAgentService {
             .filter(t => t.alwaysEnabled)
             .map(t => t.name);
 
-        const contextCanvasToolFallback = messages ? createGenerateCanvasTool(messages) : null;
         for (const toolName of alwaysEnabledToolNames) {
             if (resolved.some(t => t.name === toolName)) continue;
-            if (toolName === "generate_canvas" && contextCanvasToolFallback) {
-                resolved.push(contextCanvasToolFallback);
-                continue;
-            }
             const staticTool = defaultToolsMap[toolName];
             if (staticTool) {
                 resolved.push(staticTool);

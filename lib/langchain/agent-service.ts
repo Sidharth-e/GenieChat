@@ -9,7 +9,7 @@ import { createMCPClient } from "./langchain-mcp";
 import { StructuredToolInterface } from "@langchain/core/tools";
 import { getModel } from "./model-factory";
 import { ModelOptions } from "./model-config";
-import defaultToolsMap, { createGenerateCanvasTool } from "../tool/default-tools";
+import defaultToolsMap from "../tool/default-tools";
 import { replacePromptVariables, UserContext } from "./langchain-utility";
 import {
   convertToLangChainMessages,
@@ -98,14 +98,11 @@ export class AgentService {
       }
 
       // Also load default tools if allowed
-      const contextCanvasTool = createGenerateCanvasTool(validMessages);
       if (params.allowedTools && params.allowedTools.length > 0) {
         const defaultToolsToLoad = params.allowedTools
           .filter((t) => t.startsWith("default:"))
           .map((t) => t.split(":")[1])
-          .map((name) =>
-            name === "generate_canvas" ? contextCanvasTool : defaultToolsMap[name],
-          )
+          .map((name) => defaultToolsMap[name])
           .filter((t): t is NonNullable<typeof t> => t !== undefined);
 
         if (defaultToolsToLoad.length > 0) {
@@ -138,10 +135,7 @@ export class AgentService {
 
       for (const toolName of alwaysEnabledToolNames) {
         if (tools.some((t) => t.name === toolName)) continue;
-        const resolved =
-          toolName === "generate_canvas"
-            ? contextCanvasTool
-            : defaultToolsMap[toolName];
+        const resolved = defaultToolsMap[toolName];
         if (resolved) {
           logger.info(`Auto-loading always-enabled tool: ${toolName}`);
           tools.push(resolved);

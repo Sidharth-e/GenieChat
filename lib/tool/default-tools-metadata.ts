@@ -18,18 +18,7 @@ export const DEFAULT_TOOLS_METADATA: ToolMetadata[] = [
         description: "Search the agent's knowledge base for stored documents.",
         alwaysEnabled: true,
     },
-    {
-        name: "generate_mermaid",
-        description: "Generate a mermaid diagram based on a description.",
-    },
-    {
-        name: "generate_chart",
-        description: "Generate a complex chart based on a description.",
-    },
-    {
-        name: "generate_canvas",
-        description: "Generate a React canvas component and render it in canvas preview.",
-    },
+
     {
         name: "encode_base64",
         description: "Encode text to Base64 or decode Base64 to text.",
