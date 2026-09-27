@@ -148,26 +148,28 @@ export function HomeChatInterface() {
   if (!isReady) {
     return (
       <div className="relative flex flex-1 h-full min-h-0 flex-col overflow-hidden font-sans animate-pulse">
-        <section className="flex-1 overflow-y-auto px-6 py-12 md:px-16 lg:px-24 pb-48">
-          <header className="mb-14">
-            <div className="h-3 w-28 bg-card-border rounded-xs mb-4" />
-            <div className="h-12 w-96 bg-card-border rounded-xs" />
-          </header>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-14 max-w-4xl">
-            <div className="h-28 border border-card-border bg-card-bg rounded-sm" />
-            <div className="h-28 border border-card-border bg-card-bg rounded-sm" />
-            <div className="h-28 border border-dashed border-card-border rounded-sm" />
-          </div>
-          <div className="w-full max-w-4xl">
-            <div className="h-4 w-36 bg-card-border rounded-xs mb-4" />
-            <div className="space-y-2">
-              <div className="h-10 border border-card-border bg-card-bg rounded-sm" />
-              <div className="h-10 border border-card-border bg-card-bg rounded-sm" />
+        <section className="flex-1 overflow-y-auto px-6 py-10 md:px-10 lg:px-12 pb-48">
+          <div className="mx-auto w-full max-w-7xl">
+            <header className="mb-14">
+              <div className="h-3 w-28 bg-card-border rounded-xs mb-4" />
+              <div className="h-12 w-96 bg-card-border rounded-xs" />
+            </header>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-14">
+              <div className="h-28 border border-card-border bg-card-bg rounded-sm" />
+              <div className="h-28 border border-card-border bg-card-bg rounded-sm" />
+              <div className="h-28 border border-dashed border-card-border rounded-sm" />
+            </div>
+            <div className="w-full">
+              <div className="h-4 w-36 bg-card-border rounded-xs mb-4" />
+              <div className="space-y-2">
+                <div className="h-10 border border-card-border bg-card-bg rounded-sm" />
+                <div className="h-10 border border-card-border bg-card-bg rounded-sm" />
+              </div>
             </div>
           </div>
         </section>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center justify-end px-6 pb-6 pt-12 bg-gradient-to-t from-background via-background/80 to-transparent">
-          <div className="w-full max-w-2xl h-24 border border-card-border bg-card-bg rounded-sm" />
+          <div className="w-full max-w-3xl lg:max-w-4xl h-24 border border-card-border bg-card-bg rounded-sm" />
         </div>
       </div>
     );
@@ -175,99 +177,101 @@ export function HomeChatInterface() {
 
   return (
     <div className="relative flex flex-1 h-full min-h-0 flex-col overflow-hidden">
-      <section className="flex-1 overflow-y-auto px-6 py-12 md:px-16 lg:px-24 pb-48">
-        <header className="mb-14">
-          <h1 className="font-serif text-4xl md:text-5xl tracking-tight leading-tight text-foreground">
-            {userName ? (
-              <>
-                {greeting},
-                <span className="block text-5xl md:text-6xl lg:text-7xl italic gradient-text mt-1">
-                  {userName}.
+      <section className="flex-1 overflow-y-auto px-6 py-10 md:px-10 lg:px-12 pb-48">
+        <div className="mx-auto w-full max-w-7xl">
+          <header className="mb-14">
+            <h1 className="font-serif text-4xl md:text-5xl tracking-tight leading-tight text-foreground">
+              {userName ? (
+                <>
+                  {greeting},
+                  <span className="block text-5xl md:text-6xl lg:text-7xl italic gradient-text mt-1">
+                    {userName}.
+                  </span>
+                </>
+              ) : (
+                <>{greeting}.</>
+              )}
+            </h1>
+          </header>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-14">
+            <div className="border border-card-border p-6 bg-card-bg flex flex-col group hover:border-tertiary/40 transition-colors rounded-sm">
+              <span className="font-mono text-[10px] text-tertiary/40 uppercase tracking-wider mb-2">
+                Agent Fleet
+              </span>
+              <span className="font-serif text-3xl text-foreground">
+                {agents.filter((a) => a.active).length}{" "}
+                <span className="font-sans text-sm text-[var(--green)] inline-flex items-center gap-1.5 ml-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse" />{" "}
+                  Online
                 </span>
-              </>
-            ) : (
-              <>{greeting}.</>
-            )}
-          </h1>
-        </header>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-14 max-w-4xl">
-          <div className="border border-card-border p-6 bg-card-bg flex flex-col group hover:border-tertiary/40 transition-colors rounded-sm">
-            <span className="font-mono text-[10px] text-tertiary/40 uppercase tracking-wider mb-2">
-              Agent Fleet
-            </span>
-            <span className="font-serif text-3xl text-foreground">
-              {agents.filter((a) => a.active).length}{" "}
-              <span className="font-sans text-sm text-[var(--green)] inline-flex items-center gap-1.5 ml-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse" />{" "}
-                Online
               </span>
-            </span>
+            </div>
+
+            <div className="border border-card-border p-6 bg-card-bg flex flex-col group hover:border-tertiary/40 transition-colors rounded-sm">
+              <span className="font-mono text-[10px] text-tertiary/40 uppercase tracking-wider mb-2">
+                Workspaces
+              </span>
+              <span className="font-serif text-3xl text-foreground">
+                {threads?.length ?? "—"}{" "}
+                <span className="font-sans text-sm text-tertiary/40 ml-1">
+                  conversations
+                </span>
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const textarea =
+                  document.querySelector<HTMLTextAreaElement>(".composer textarea") ||
+                  document.querySelector<HTMLTextAreaElement>("textarea");
+                textarea?.focus();
+              }}
+              className="border border-dashed border-card-border p-6 flex flex-col items-center justify-center hover:border-tertiary/60 transition-colors group cursor-pointer text-tertiary/50 hover:text-foreground rounded-sm"
+            >
+              <Plus className="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
+              <span className="font-sans text-sm font-medium">
+                Initialize New Canvas
+              </span>
+            </button>
           </div>
 
-          <div className="border border-card-border p-6 bg-card-bg flex flex-col group hover:border-tertiary/40 transition-colors rounded-sm">
-            <span className="font-mono text-[10px] text-tertiary/40 uppercase tracking-wider mb-2">
-              Workspaces
-            </span>
-            <span className="font-serif text-3xl text-foreground">
-              {threads?.length ?? "—"}{" "}
-              <span className="font-sans text-sm text-tertiary/40 ml-1">
-                conversations
-              </span>
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              const textarea =
-                document.querySelector<HTMLTextAreaElement>(".composer textarea") ||
-                document.querySelector<HTMLTextAreaElement>("textarea");
-              textarea?.focus();
-            }}
-            className="border border-dashed border-card-border p-6 flex flex-col items-center justify-center hover:border-tertiary/60 transition-colors group cursor-pointer text-tertiary/50 hover:text-foreground rounded-sm"
-          >
-            <Plus className="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
-            <span className="font-sans text-sm font-medium">
-              Initialize New Canvas
-            </span>
-          </button>
-        </div>
-
-        <div className="w-full max-w-4xl">
-          <h3 className="font-sans text-sm font-medium border-b border-card-border pb-3 mb-4 text-foreground">
-            Recent Workspaces
-          </h3>
-          <div className="flex flex-col gap-2">
-            {recentThreads && recentThreads.length > 0 ? (
-              recentThreads.slice(0, 5).map((thread) => (
-                <div
-                  key={thread.id}
-                  onClick={() => router.push(getThreadRoute(thread))}
-                  className="group flex items-center justify-between p-3 hover:bg-tertiary/5 cursor-pointer rounded-sm transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <FileText className="w-4 h-4 text-tertiary/40" />
-                    <span className="font-sans text-sm text-foreground">
-                      {thread.title || "New Chat"}
+          <div className="w-full">
+            <h3 className="font-sans text-sm font-medium border-b border-card-border pb-3 mb-4 text-foreground">
+              Recent Workspaces
+            </h3>
+            <div className="flex flex-col gap-2">
+              {recentThreads && recentThreads.length > 0 ? (
+                recentThreads.slice(0, 5).map((thread) => (
+                  <div
+                    key={thread.id}
+                    onClick={() => router.push(getThreadRoute(thread))}
+                    className="group flex items-center justify-between p-3 hover:bg-tertiary/5 cursor-pointer rounded-sm transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <FileText className="w-4 h-4 text-tertiary/40" />
+                      <span className="font-sans text-sm text-foreground">
+                        {thread.title || "New Chat"}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[10px] text-tertiary/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {formatRelativeTime(thread.lastMessageAt)}
                     </span>
                   </div>
-                  <span className="font-mono text-[10px] text-tertiary/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {formatRelativeTime(thread.lastMessageAt)}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <p className="font-mono text-xs text-tertiary/40 py-2">
-                No recent workspaces.
-              </p>
-            )}
+                ))
+              ) : (
+                <p className="font-mono text-xs text-tertiary/40 py-2">
+                  No recent workspaces.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </section>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center justify-end px-6 pb-6 pt-12 bg-gradient-to-t from-background via-background/80 to-transparent">
-        <div className="pointer-events-auto w-full max-w-2xl">
+        <div className="pointer-events-auto w-full max-w-3xl lg:max-w-4xl">
           <ChatInput
             value={input}
             onChange={setInput}
