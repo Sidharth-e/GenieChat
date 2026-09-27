@@ -1,5 +1,15 @@
 /** @type {import('next').NextConfig} */
 
+const s3Endpoint = process.env.S3_PUBLIC_ENDPOINT || process.env.S3_ENDPOINT;
+let s3Origin = "";
+if (s3Endpoint) {
+  try {
+    s3Origin = new URL(s3Endpoint).origin;
+  } catch {}
+}
+
+const isProduction = process.env.NODE_ENV === "production";
+
 const securityHeaders = [
   {
     key: "X-Content-Type-Options",
@@ -32,8 +42,8 @@ const securityHeaders = [
       default-src 'self';
       script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://cdn.tailwindcss.com https://esm.sh https://unpkg.com;
       style-src 'self' 'unsafe-inline' https:;
-      connect-src 'self' https://cdn.tailwindcss.com https://esm.sh https://unpkg.com;
-      img-src 'self' blob: data: https:;
+      connect-src 'self' https://cdn.tailwindcss.com https://esm.sh https://unpkg.com ${s3Origin} ${!isProduction ? "http://localhost:* http://127.0.0.1:*" : ""};
+      img-src 'self' blob: data: https: ${s3Origin} ${!isProduction ? "http://localhost:* http://127.0.0.1:*" : ""};
       font-src 'self' data: https:;
       object-src 'none';
       base-uri 'self';
@@ -41,7 +51,7 @@ const securityHeaders = [
       frame-ancestors 'none';
       frame-src 'self' blob:;
       worker-src 'self' blob:;
-      upgrade-insecure-requests;
+      ${isProduction ? "upgrade-insecure-requests;" : ""}
     `
       .replace(/\s{2,}/g, " ")
       .trim(),
