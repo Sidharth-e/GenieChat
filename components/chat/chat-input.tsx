@@ -940,8 +940,9 @@ export function ChatInput({
           "shadow-[0_2px_20px_-4px_rgba(0,0,0,0.06),0_1px_4px_-1px_rgba(0,0,0,0.04)]",
           "dark:shadow-[0_2px_20px_-4px_rgba(0,0,0,0.15),0_1px_4px_-1px_rgba(0,0,0,0.1)]",
           "border border-tertiary/[0.08] dark:border-white/6",
-          "transition-shadow duration-200 focus-within:shadow-[0_4px_28px_-4px_rgba(0,0,0,0.08),0_1px_4px_-1px_rgba(0,0,0,0.04)] focus-within:border-primary/15",
-          "dark:focus-within:shadow-[0_4px_28px_-4px_rgba(0,0,0,0.2)] dark:focus-within:border-primary/20",
+          "transition-shadow duration-200 focus-within:shadow-[0_4px_28px_-4px_rgba(0,0,0,0.08),0_1px_4px_-1px_rgba(0,0,0,0.04)]",
+          "dark:focus-within:shadow-[0_4px_28px_-4px_rgba(0,0,0,0.2)]",
+          "focus-within:outline-none focus-within:ring-0",
         )}
       >
         {/* Error Message */}
