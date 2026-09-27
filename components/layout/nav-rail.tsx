@@ -73,7 +73,7 @@ export function NavRail() {
   const getRailItemState = (label: string) => {
     if (label === "Home") return { href: "/chat/new", active: isHomeActive };
     if (label === "Agents") return { href: "/agents", active: isAgentsActive };
-    if (label === "MCP") return { href: "/mcp", active: isMcpActive };
+    if (label === "Connectors" || label === "MCP") return { href: "/mcp", active: isMcpActive };
     if (label === "Workflows") return { href: "/workflow", active: isWorkflowActive };
     if (label === "History") return { href: "/chat/history", active: isHistoryActive };
     return { href: "/chat/new", active: false };

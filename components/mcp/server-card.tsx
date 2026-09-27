@@ -101,7 +101,7 @@ export function ServerCard({
               type="button"
               className="p-1 rounded-sm text-tertiary/40 hover:text-foreground transition-colors cursor-pointer"
               onClick={(e) => e.stopPropagation()}
-              aria-label="Server options"
+              aria-label="Connector options"
             >
               <EllipsisVertical className="w-4 h-4 ml-auto" />
             </button>
@@ -116,7 +116,7 @@ export function ServerCard({
               onClick={(e) => onEdit(e)}
             >
               <Pen className="h-3.5 w-3.5 text-tertiary/60" />
-              Edit server
+              Edit connector
             </DropdownMenuItem>
             <DropdownMenuItem
               className={cn(
@@ -134,7 +134,7 @@ export function ServerCard({
                 <Power className="h-3.5 w-3.5 text-tertiary/60" />
               )}
               <div>
-                <div>{server.enabled ? "Disable server" : "Enable server"}</div>
+                <div>{server.enabled ? "Disable connector" : "Enable connector"}</div>
                 {cannotDisable && (
                   <div className="text-[10px] text-tertiary/40">
                     Used in an agent
@@ -155,7 +155,7 @@ export function ServerCard({
             >
               <Trash2 className="h-3.5 w-3.5" />
               <div>
-                <div>Delete server</div>
+                <div>Delete connector</div>
                 {cannotDelete && (
                   <div className="text-[10px] text-tertiary/40">
                     Used in an agent

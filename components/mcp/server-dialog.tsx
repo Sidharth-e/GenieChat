@@ -90,7 +90,7 @@ function ServerDialogBody({
         <DialogHeader className="px-6 py-4 border-b border-tertiary/10 shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-semibold text-tertiary">
-              {isEditing ? "Edit Server" : "Add MCP Server"}
+              {isEditing ? "Edit Connector" : "Add Connector"}
             </DialogTitle>
             <button
               onClick={onClose}
@@ -105,10 +105,10 @@ function ServerDialogBody({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-tertiary">
-                Server Name
+                Connector Name
               </label>
               <Input
-                placeholder="e.g., File System MCP"
+                placeholder="e.g., File System Connector"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="bg-input-bg border-input-border text-tertiary placeholder:text-tertiary/40 focus-visible:ring-primary focus-visible:ring-1 focus-visible:border-primary h-10 rounded-lg"
@@ -121,7 +121,7 @@ function ServerDialogBody({
                 <span className="text-tertiary/40 font-normal">(optional)</span>
               </label>
               <Input
-                placeholder="What does this server do?"
+                placeholder="What does this connector do?"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="bg-input-bg border-input-border text-tertiary placeholder:text-tertiary/40 focus-visible:ring-primary focus-visible:ring-1 focus-visible:border-primary h-10 rounded-lg"
@@ -142,7 +142,7 @@ function ServerDialogBody({
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-tertiary">
-              Server URL
+              Connector URL
             </label>
             <Input
               placeholder="https://example.com/mcp"

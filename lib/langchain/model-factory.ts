@@ -36,7 +36,9 @@ export function getModel(
   options: ModelOptions = {},
 ): BaseChatModel {
   const resolvedModelId = resolveModelId(modelId);
-  const modelConfig = AVAILABLE_MODELS.find((m) => m.id === resolvedModelId);
+  const modelConfig = AVAILABLE_MODELS.find(
+    (m) => m.id === resolvedModelId || m.model === resolvedModelId,
+  );
   if (!modelConfig) {
     throw new Error(`Unknown model: ${resolvedModelId}`);
   }
@@ -143,13 +145,15 @@ export function getConfiguredModels(): ModelConfig[] {
 }
 
 export function resolveModelId(modelId: string): string {
-  const requestedModel = AVAILABLE_MODELS.find((model) => model.id === modelId);
+  const requestedModel = AVAILABLE_MODELS.find(
+    (model) => model.id === modelId || model.model === modelId,
+  );
   if (!requestedModel) {
     return modelId;
   }
 
   if (isProviderConfigured(requestedModel.provider)) {
-    return modelId;
+    return requestedModel.id;
   }
 
   const fallbackModel = getConfiguredModels()[0];

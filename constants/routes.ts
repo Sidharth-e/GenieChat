@@ -25,7 +25,7 @@ export interface NavItem {
 export const RAIL_ITEMS: NavItem[] = [
   { href: "/chat/new", icon: LayoutGrid, label: "Home" },
   { href: "/agents", icon: Cpu, label: "Agents" },
-  { href: "/mcp", icon: Plug, label: "MCP" },
+  { href: "/mcp", icon: Plug, label: "Connectors" },
   { href: "/workflow", icon: GitMerge, label: "Workflows" },
   { href: "/chat/history", icon: History, label: "History" },
 ];

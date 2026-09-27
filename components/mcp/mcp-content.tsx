@@ -101,9 +101,9 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
 
   return (
     <ContentLayout
-      title="Model Context Protocol"
-      description="Manage servers providing external context and tools to your agents."
-      searchPlaceholder="Search servers..."
+      title="Connectors"
+      description="Manage external connectors and tools for your agents."
+      searchPlaceholder="Search connectors..."
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       actionButton={
@@ -111,7 +111,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
           onClick={handleCreateNew}
           className="bg-primary text-background px-4 py-2 text-sm font-medium rounded-sm hover:opacity-80 transition-opacity flex items-center gap-2 cursor-pointer h-10"
         >
-          <Plus className="w-4 h-4" /> Add MCP Server
+          <Plus className="w-4 h-4" /> Add Connector
         </button>
       }
     >
@@ -129,12 +129,12 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
       ) : filteredServers.length === 0 ? (
         <div className="rounded-sm border border-dashed border-card-border bg-card-bg p-10 text-center">
           <h3 className="text-base font-semibold text-foreground">
-            No servers found
+            No connectors found
           </h3>
           <p className="mt-1 text-sm text-text-secondary">
             {searchQuery
               ? "Try a different search keyword."
-              : "Create an MCP server to connect external tools."}
+              : "Create a connector to connect external tools."}
           </p>
           {!searchQuery && (
             <button
@@ -142,7 +142,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
               className="mt-4 bg-primary text-background px-4 py-2 text-sm font-medium rounded-sm hover:opacity-80 transition-opacity inline-flex items-center gap-2 cursor-pointer"
             >
               <Plus className="h-4 w-4" />
-              Add MCP Server
+              Add Connector
             </button>
           )}
         </div>
@@ -150,7 +150,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
         <>
           <div className="bg-card-bg border border-card-border rounded-sm overflow-hidden">
             <div className="grid grid-cols-12 gap-4 p-4 border-b border-card-border bg-tertiary/5 font-mono text-[10px] uppercase tracking-widest text-tertiary/40">
-              <div className="col-span-12 md:col-span-5">Server Integration</div>
+              <div className="col-span-12 md:col-span-5">Connector Integration</div>
               <div className="hidden md:block col-span-3">Status</div>
               <div className="hidden md:block col-span-3">Resources</div>
               <div className="hidden md:block col-span-1 text-right">Action</div>
@@ -181,7 +181,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
             onClick={handleCreateNew}
             className="mt-6 border border-dashed border-card-border w-full p-4 flex justify-center items-center gap-2 text-sm text-tertiary/40 hover:text-foreground hover:border-tertiary/60 rounded-sm cursor-pointer transition-colors"
           >
-            <Plus className="w-4 h-4" /> Add MCP Server
+            <Plus className="w-4 h-4" /> Add Connector
           </button>
         </>
       )}
@@ -204,8 +204,8 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
         onClose={() => setShowDeleteConfirm(null)}
         onConfirm={() => showDeleteConfirm && handleDelete(showDeleteConfirm)}
         isDeleting={isDeleting !== null}
-        title="Delete Server"
-        description="Are you sure you want to delete this MCP server? This action cannot be undone."
+        title="Delete Connector"
+        description="Are you sure you want to delete this connector? This action cannot be undone."
         dialogClassName="border border-card-border"
       />
     </ContentLayout>

@@ -25,7 +25,7 @@ describe("getCanvasRoute", () => {
 
 describe("rail config", () => {
   it("has the five core destinations", () => {
-    expect(RAIL_ITEMS.map((i) => i.label)).toEqual(["Home", "Agents", "MCP", "Workflows", "History"]);
+    expect(RAIL_ITEMS.map((i) => i.label)).toEqual(["Home", "Agents", "Connectors", "Workflows", "History"]);
   });
   it("flyout groups hold the secondary routes", () => {
     expect(BUILD_ITEMS.map((i) => i.href)).toEqual(["/auto", "/prompts", "/tools", "/webhooks"]);

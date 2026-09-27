@@ -196,7 +196,7 @@ export function MCPForm({
 
   const validateServerName = (serverName: string): string | null => {
     const normalizedName = serverName.trim();
-    if (!normalizedName) return "Server name is required";
+    if (!normalizedName) return "Connector name is required";
 
     // Check against Installed Servers
     const isInstalled = installedServers.some(
@@ -204,7 +204,7 @@ export function MCPForm({
         s.name.toLowerCase() === normalizedName.toLowerCase() &&
         s.id !== initialData?.id,
     );
-    if (isInstalled) return "A server with this name already exists.";
+    if (isInstalled) return "A connector with this name already exists.";
 
     // Check against Custom Tools
     if (customTools) {
@@ -343,8 +343,8 @@ export function MCPForm({
             {isSaving
               ? "Saving..."
               : initialData?.id
-                ? "Update Server"
-                : "Add Server"}
+                ? "Update Connector"
+                : "Add Connector"}
           </Button>
         </div>
       </header>
@@ -419,7 +419,7 @@ export function MCPForm({
               </span>
             </div>
             <p className="text-[11px] leading-relaxed text-foreground/50">
-              Extend AI capabilities with Model Context Protocol servers.
+              Extend AI capabilities with external connectors and tools.
             </p>
           </div>
         </aside>
@@ -473,16 +473,16 @@ export function MCPForm({
             <section id="basic-info" className="space-y-6 scroll-mt-6">
               <div className="space-y-2">
                 <h2 className="text-2xl font-black text-foreground tracking-tight">
-                  Identify Server
+                  Identify Connector
                 </h2>
                 <p className="text-sm font-medium text-foreground/50 leading-relaxed">
-                  Give your server a name and description.
+                  Give your connector a name and description.
                 </p>
               </div>
               <div className="grid gap-8 sm:grid-cols-2">
                 <div className="space-y-3">
                   <label className="text-[11px] font-black uppercase tracking-widest text-foreground/40 ml-1">
-                    Server Name
+                    Connector Name
                   </label>
                   <input
                     type="text"
@@ -514,7 +514,7 @@ export function MCPForm({
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="w-full rounded-2xl border border-input-border bg-input-bg px-5 py-4 text-sm font-medium focus:border-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all text-foreground"
-                    placeholder="What this server provides"
+                    placeholder="What this connector provides"
                   />
                 </div>
               </div>
@@ -527,7 +527,7 @@ export function MCPForm({
                   Transport Layer
                 </h2>
                 <p className="text-sm font-medium text-foreground/50 leading-relaxed">
-                  Configure how the interface communicates with the MCP server.
+                  Configure how the interface communicates with the connector.
                 </p>
               </div>
               <div className="space-y-6">
@@ -561,7 +561,7 @@ export function MCPForm({
 
                 <div className="space-y-3">
                   <label className="text-[11px] font-black uppercase tracking-widest text-foreground/40 ml-1">
-                    Server URL
+                    Connector URL
                   </label>
                   <input
                     type="text"

@@ -25,7 +25,7 @@ export default function NewMCPPage() {
 
     return (
         <MCPForm
-            title="Add New MCP Server"
+            title="Add New Connector"
             onSave={handleSave}
             isSaving={isSaving}
         />

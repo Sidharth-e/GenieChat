@@ -15,7 +15,7 @@ const NODE_DESCRIPTIONS: Record<NodeKind, string> = {
   [NodeKind.LLM]: "Call an LLM with custom messages and model",
   [NodeKind.Condition]: "Branch based on conditions (IF/ELSE)",
   [NodeKind.Note]: "Add notes visible only in the editor",
-  [NodeKind.Tool]: "Execute an MCP or app tool",
+  [NodeKind.Tool]: "Execute a connector or app tool",
   [NodeKind.Http]: "Make HTTP requests to external APIs",
   [NodeKind.Template]: "Compose text with variable references",
   [NodeKind.Code]: "Run custom code (coming soon)",

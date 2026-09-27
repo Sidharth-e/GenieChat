@@ -137,7 +137,7 @@ export function UserMenu({ variant = "pill" }: UserMenuProps) {
               onClick={() => setIsProfileOpen(false)}
             >
               <MCPIcon className="h-4 w-4 text-tertiary/60" />
-              MCP
+              Connectors
             </Link>
             <button
               onClick={() => {

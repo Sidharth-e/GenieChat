@@ -104,7 +104,7 @@ export function ToolForm({
       (s) => s.name.toLowerCase() === normalizedName.toLowerCase(),
     );
     if (isInstalledMcpTool)
-      return "This name is reserved by an installed MCP server.";
+      return "This name is reserved by an installed connector.";
 
     // Check against User Tools (exclude current tool if editing)
     if (existingTools) {

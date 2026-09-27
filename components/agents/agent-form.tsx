@@ -60,7 +60,7 @@ const SECTIONS = [
   { id: "agent-behavior", label: "Behavior", icon: Settings },
   { id: "agent-system-tools", label: "System Tools", icon: Zap },
   { id: "agent-custom-tools", label: "Custom Tools", icon: Wrench },
-  { id: "agent-mcp-tools", label: "MCP Tools", icon: Layout },
+  { id: "agent-mcp-tools", label: "Connectors", icon: Layout },
   { id: "agent-sub-agents", label: "Sub Agents", icon: Users },
   { id: "agent-skills", label: "Skills", icon: Sparkles },
   { id: "agent-knowledge", label: "Knowledge", icon: BookOpen },
@@ -144,7 +144,7 @@ export function AgentForm({
       (mcpTools[server.id] || []).map((tool) => ({
         id: `${server.name}:${tool.name}`,
         name: tool.name,
-        description: tool.description || "MCP tool",
+        description: tool.description || "Connector tool",
         source: "mcp" as const,
       })),
     );

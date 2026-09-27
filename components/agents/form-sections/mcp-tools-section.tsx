@@ -50,7 +50,7 @@ export function McpToolsSection({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground tracking-tight">
-              MCP Tools
+              Connectors
             </h2>
             {selectedMcpCount > 0 && (
               <span className="px-2.5 py-1 rounded-md bg-primary/8 text-primary text-[11px] font-semibold tabular-nums">
@@ -59,8 +59,7 @@ export function McpToolsSection({
             )}
           </div>
           <p className="text-[13px] text-foreground/50 leading-relaxed mt-1">
-            Connect to external Model Context Protocol servers for specialized
-            capabilities.
+            Connect to external tools and services via connectors for specialized capabilities.
           </p>
         </div>
       </div>
@@ -70,7 +69,7 @@ export function McpToolsSection({
           <div className="flex flex-col items-center py-10 gap-3">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
             <p className="text-xs text-foreground/35 font-medium uppercase tracking-wider">
-              Initializing MCP
+              Initializing Connectors
             </p>
           </div>
         ) : servers.length === 0 ? (
@@ -79,7 +78,7 @@ export function McpToolsSection({
               <Layout className="h-5 w-5 text-foreground/30" />
             </div>
             <p className="text-sm text-foreground/45 font-medium">
-              No active MCP servers found.
+              No active connectors found.
             </p>
           </div>
         ) : (
@@ -91,7 +90,7 @@ export function McpToolsSection({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search MCP tools..."
+                placeholder="Search connector tools..."
                 className="w-full pl-9 pr-9 py-2 rounded-lg border border-input-border bg-input-bg text-sm font-medium focus:border-primary focus:ring-2 focus:ring-primary/10 outline-none transition-all text-foreground placeholder:text-foreground/25"
               />
               {search && (
@@ -224,7 +223,7 @@ export function McpToolsSection({
                 search && (
                   <div className="text-center py-8">
                     <p className="text-sm text-foreground/35 font-medium">
-                      No MCP tools match &quot;{search}&quot;
+                      No connector tools match &quot;{search}&quot;
                     </p>
                   </div>
                 )}

@@ -151,7 +151,7 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     id: "qwen3.8-flash-next",
     name: "Qwen 3.8 Flash Next",
     provider: "ollama",
-    model: "qwen3.8-flash-next",
+    model: "qwen3.8-flash-next:125b-mlx",
     description: "Experimental preview of the architecture that will underpin Qwen4",
     maxInputChars: INPUT_LIMITS.large,
     maxOutput: 16384,
@@ -277,7 +277,7 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     id: "ornith-1.5",
     name: "Ornith 1.5",
     provider: "ollama",
-    model: "ornith-1.5",
+    model: "ornith-1.5:9b",
     description: "Foundation model built through end-to-end self-improvement",
     maxInputChars: INPUT_LIMITS.large,
     maxOutput: 8192,
@@ -591,7 +591,7 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     supportsTopP: true,
   },
   {
-    id: "openrouter/qwen-3.8-max",
+    id: "openrouter/qwen-3.8-max-prime",
     name: "Qwen 3.8 Max Prime",
     provider: "openrouter",
     model: "qwen/qwen3.8-max-prime",
@@ -651,7 +651,8 @@ export const DEFAULT_OPTIONS: ModelOptions = {
 
 export function getModelMaxInputChars(modelId: string): number {
   return (
-    AVAILABLE_MODELS.find((model) => model.id === modelId)?.maxInputChars ??
-    DEFAULT_MAX_INPUT_CHARS
+    AVAILABLE_MODELS.find(
+      (model) => model.id === modelId || model.model === modelId,
+    )?.maxInputChars ?? DEFAULT_MAX_INPUT_CHARS
   );
 }

@@ -76,7 +76,7 @@ export function AgentGeneratorDialog({
                         <span className="text-sm text-foreground/80 leading-snug">
                             Let AI choose tools too
                             <span className="block text-xs text-foreground/45 mt-0.5">
-                                Uses system + MCP tools from your current workspace ({availableToolCount} available).
+                                Uses system + connector tools from your current workspace ({availableToolCount} available).
                             </span>
                         </span>
                     </label>

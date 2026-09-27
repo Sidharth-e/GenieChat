@@ -48,16 +48,16 @@ export default function EditMCPPage() {
             <div className="flex h-screen flex-col items-center justify-center p-6 text-center">
                 <Server className="mb-4 h-12 w-12 text-muted-foreground" />
                 <h3 className="mb-2 text-lg font-medium text-foreground">
-                    Server Not Found
+                    Connector Not Found
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                    The MCP server you are trying to edit does not exist.
+                    The connector you are trying to edit does not exist.
                 </p>
                 <button
                     onClick={() => router.push("/mcp")}
                     className="mt-4 text-sm font-medium text-primary hover:underline"
                 >
-                    Back to MCP
+                    Back to Connectors
                 </button>
             </div>
         );
