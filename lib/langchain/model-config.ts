@@ -290,7 +290,7 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     id: "deepseek-r1",
     name: "DeepSeek R1",
     provider: "ollama",
-    model: "deepseek-r1",
+    model: "deepseek-r1:latest",
     description: "DeepSeek's frontier reasoning model with chain-of-thought",
     maxInputChars: INPUT_LIMITS.standard,
     maxOutput: 16384,
