@@ -17,7 +17,7 @@ import { generateId } from "@/lib/utils";
 import { ArenaModelSelector } from "./arena-model-selector";
 import { useAgents } from "@/hooks/use-agents-queries";
 import { useThreads, useRecentThreads } from "@/hooks/use-threads-queries";
-import { getThreadRoute } from "@/constants/routes";
+import { getThreadRoute } from "@/constants/nav-routes";
 import { formatRelativeTime } from "@/lib/relative-time";
 
 function getGreeting() {

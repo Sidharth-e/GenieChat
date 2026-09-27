@@ -14,7 +14,7 @@ import { Avatar } from "@/components/common/avatar";
 import { useAuthStore } from "@/lib/auth";
 import Link from "next/link";
 import { MCPIcon } from "@/components/common/custom-icons";
-import { ADMIN_NAV_ITEM } from "@/constants/routes";
+import { ADMIN_NAV_ITEM } from "@/constants/nav-routes";
 import { SecretListDialog } from "@/components/tools/secret-list-dialog";
 
 interface UserMenuProps {

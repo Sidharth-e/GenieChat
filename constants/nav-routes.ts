@@ -10,7 +10,6 @@ import {
   Webhook,
   FileBox,
   Brain,
-  FileText,
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
@@ -22,13 +21,27 @@ export interface NavItem {
   label: string;
 }
 
+/** The canvas a fresh conversation starts on — the rail logo and the empty-canvas fallback both point here. */
+export const HOME_ROUTE = "/chat/new";
+
+/** Whether a rail or flyout entry owns the current path, matching nested routes but not sibling prefixes. */
+export function isNavItemActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export const RAIL_ITEMS: NavItem[] = [
-  { href: "/chat/new", icon: LayoutGrid, label: "Home" },
+  { href: HOME_ROUTE, icon: LayoutGrid, label: "Home" },
   { href: "/agents", icon: Cpu, label: "Agents" },
   { href: "/connectors", icon: Plug, label: "Connectors" },
   { href: "/workflow", icon: GitMerge, label: "Workflows" },
-  { href: "/chat/history", icon: History, label: "History" },
 ];
+
+/** Rendered last on the rail, below the flyout groups. */
+export const RAIL_HISTORY_ITEM: NavItem = {
+  href: "/chat/history",
+  icon: History,
+  label: "History",
+};
 
 export const BUILD_ITEMS: NavItem[] = [
   { href: "/auto", icon: Zap, label: "Auto" },
@@ -61,5 +74,5 @@ export function getThreadRoute(thread: ThreadRouteInput): string {
 
 export function getCanvasRoute(threads?: ThreadRouteInput[]): string {
   const latest = threads?.[0];
-  return latest ? getThreadRoute(latest) : "/chat/new";
+  return latest ? getThreadRoute(latest) : HOME_ROUTE;
 }

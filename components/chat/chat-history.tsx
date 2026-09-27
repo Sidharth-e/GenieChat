@@ -27,6 +27,7 @@ import { useRouter } from "next/navigation";
 import { isToday, isYesterday, format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Message, Thread } from "@/lib/types";
+import { getThreadRoute } from "@/constants/nav-routes";
 import { ShareModal } from "@/components/share/share-modal";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 import { formatRelativeTime } from "@/lib/relative-time";
@@ -243,19 +244,6 @@ export function ChatHistory() {
 
   const handleNewChat = () => {
     router.push("/chat/new");
-  };
-
-  const getThreadRoute = (thread: Thread) => {
-    if (thread.isSwarm) {
-      return `/swarm-chat/${thread.id}`;
-    }
-    if (thread.agentId) {
-      if (thread.isMultiAgent) {
-        return `/multi-agent-chat/${thread.agentId}/${thread.id}`;
-      }
-      return `/agent-chat/${thread.agentId}/${thread.id}`;
-    }
-    return `/chat/${thread.id}`;
   };
 
   const handleThreadClick = (thread: Thread) => {
