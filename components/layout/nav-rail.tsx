@@ -45,7 +45,7 @@ export function NavRail() {
       new Set([
         "/chat/new",
         "/agents",
-        "/mcp",
+        "/connectors",
         "/workflow",
         "/chat/history",
         ...BUILD_ITEMS.map((item) => item.href),
