@@ -15,11 +15,14 @@ import {
   Globe,
   Image as ImageIcon,
   Bot,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { PromptLibraryModal } from "./prompt-library-modal";
-import { ModelSelector } from "./model-selector";
+import { ModelModal } from "./model-modal";
+import { GoogleIcon, OllamaIcon } from "@/components/common/custom-icons";
+import { useModels } from "@/hooks/use-models-queries";
 import { AI_NAME } from "@/constants/main";
 import { ChatAttachment } from "@/lib/types";
 import { useDraftStore } from "@/lib/stores";
@@ -136,8 +139,6 @@ export function ChatInput({
   onDeepResearchDepthChange,
   isWebSearchEnabled,
   onWebSearchChange,
-  modelMenuAlignOffset = 0,
-  shiftSubmenuLeftOnHome = false,
   reasoningEffort = "off",
   onReasoningEffortChange,
   arenaSelector,
@@ -835,6 +836,30 @@ export function ChatInput({
     setIsPromptLibraryOpen(true);
   }, []);
 
+  const { data: availableModels = [] } = useModels();
+  const [isModelModalOpen, setIsModelModalOpen] = React.useState(false);
+  const modelModalBtnRef = React.useRef<HTMLButtonElement>(null);
+  const [modelModalOrigin, setModelModalOrigin] = React.useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const openModelModal = React.useCallback(() => {
+    if (modelModalBtnRef.current) {
+      const rect = modelModalBtnRef.current.getBoundingClientRect();
+      setModelModalOrigin({
+        x: rect.left + rect.width / 2 - window.innerWidth / 2,
+        y: rect.top + rect.height / 2 - window.innerHeight / 2,
+      });
+    }
+    setIsModelModalOpen(true);
+  }, []);
+
+  const currentModelConfig = React.useMemo(
+    () => availableModels.find((m) => m.id === selectedModel),
+    [availableModels, selectedModel],
+  );
+
   const handlePromptSelect = (content: string) => {
     const editor = editorRef.current;
     if (editor) {
@@ -1334,13 +1359,43 @@ export function ChatInput({
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {arenaSelector}
             {showModelSelector && selectedModel && onModelChange && !selectedAgent && !selectedAgents?.length && (
-              <ModelSelector
-                value={selectedModel}
-                onChange={onModelChange}
-                className="mr-1"
-                menuAlignOffset={modelMenuAlignOffset}
-                shiftSubmenuLeftOnHome={shiftSubmenuLeftOnHome}
-              />
+              <>
+                <ModelModal
+                  open={isModelModalOpen}
+                  onOpenChange={setIsModelModalOpen}
+                  selectedModelId={selectedModel}
+                  onSelectModel={onModelChange}
+                  animationOrigin={modelModalOrigin}
+                />
+                <button
+                  ref={modelModalBtnRef}
+                  type="button"
+                  onClick={openModelModal}
+                  disabled={disabled || isLoading}
+                  className={cn(
+                    "h-7 flex items-center gap-1.5 rounded-full px-2.5 py-1 cursor-pointer",
+                    "text-[11px] font-medium text-tertiary",
+                    "border border-tertiary/10 bg-tertiary/5",
+                    "hover:bg-tertiary/10 hover:text-foreground",
+                    "transition-all duration-200 mr-1",
+                    "focus:outline-none focus:ring-2 focus:ring-primary/10",
+                    (disabled || isLoading) && "opacity-50 cursor-not-allowed",
+                  )}
+                  title="Select AI Model"
+                >
+                  <div className="flex items-center justify-center">
+                    {currentModelConfig?.provider === "ollama" ? (
+                      <OllamaIcon className="h-3 w-3" />
+                    ) : (
+                      <GoogleIcon className="h-3 w-3" />
+                    )}
+                  </div>
+                  <span className="truncate max-w-[120px] hidden sm:inline">
+                    {currentModelConfig?.name || selectedModel || AI_NAME}
+                  </span>
+                  <ChevronDown className="h-3 w-3 text-tertiary/50" />
+                </button>
+              </>
             )}
             {onReasoningEffortChange && !selectedAgent && !selectedAgents?.length && (
               <ReasoningMenu
