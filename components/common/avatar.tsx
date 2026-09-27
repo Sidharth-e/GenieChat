@@ -5,9 +5,10 @@ import { cn } from "@/lib/utils";
 
 interface AvatarProps {
   className?: string;
+  sizes?: string;
 }
 
-export const Avatar = ({ className }: AvatarProps) => {
+export const Avatar = ({ className, sizes = "36px" }: AvatarProps) => {
   const user = useAuthStore((state) => state.user);
   return (
     <div
@@ -17,7 +18,13 @@ export const Avatar = ({ className }: AvatarProps) => {
       )}
     >
       {user?.image ? (
-        <Image src={user.image} alt={user.name} fill className="object-cover" />
+        <Image
+          src={user.image}
+          alt={user.name || "User avatar"}
+          fill
+          sizes={sizes}
+          className="object-cover"
+        />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-tertiary/5">
           <User className="h-4 w-4 text-tertiary/50" />
