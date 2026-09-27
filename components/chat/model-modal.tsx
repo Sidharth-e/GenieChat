@@ -20,7 +20,7 @@ import {
   Sparkles,
   SlidersHorizontal,
 } from "lucide-react";
-import { GoogleIcon, OllamaIcon } from "@/components/common/custom-icons";
+import { GoogleIcon, OllamaIcon, OpenRouterIcon } from "@/components/common/custom-icons";
 import { useModels } from "@/hooks/use-models-queries";
 import { cn } from "@/lib/utils";
 import { ProviderKey } from "@/lib/types";
@@ -39,6 +39,7 @@ type CapabilityFilter = "all" | "reasoning" | "tools";
 const providerIcons: Record<string, React.ReactNode> = {
   google: <GoogleIcon className="h-3.5 w-3.5" />,
   ollama: <OllamaIcon className="h-3.5 w-3.5" />,
+  openrouter: <OpenRouterIcon className="h-3.5 w-3.5" />,
 };
 
 function formatTokens(num: number): string {
@@ -129,6 +130,10 @@ export function ModelModal({
   );
   const ollamaCount = React.useMemo(
     () => models.filter((m) => m.provider === "ollama").length,
+    [models],
+  );
+  const openrouterCount = React.useMemo(
+    () => models.filter((m) => m.provider === "openrouter").length,
     [models],
   );
 
@@ -261,6 +266,21 @@ export function ModelModal({
                         <OllamaIcon className="h-3.5 w-3.5" />
                         Ollama ({ollamaCount})
                       </button>
+                      {openrouterCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setProviderFilter("openrouter")}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer border",
+                            providerFilter === "openrouter"
+                              ? "bg-primary text-background border-primary"
+                              : "bg-tertiary/5 text-tertiary/70 border-tertiary/10 hover:bg-tertiary/10 hover:text-foreground",
+                          )}
+                        >
+                          <OpenRouterIcon className="h-3.5 w-3.5" />
+                          OpenRouter ({openrouterCount})
+                        </button>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1">

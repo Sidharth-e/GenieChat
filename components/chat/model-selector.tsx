@@ -4,7 +4,7 @@ import * as React from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AI_NAME } from "@/constants/main";
-import { GoogleIcon, OllamaIcon } from "../common/custom-icons";
+import { GoogleIcon, OllamaIcon, OpenRouterIcon } from "../common/custom-icons";
 import { ModelModal } from "./model-modal";
 import { useModels } from "@/hooks/use-models-queries";
 
@@ -22,6 +22,7 @@ export interface ModelSelectorProps {
 const providerIcons: Record<string, React.ReactNode> = {
   google: <GoogleIcon className="h-3.5 w-3.5" />,
   ollama: <OllamaIcon className="h-3.5 w-3.5" />,
+  openrouter: <OpenRouterIcon className="h-3.5 w-3.5" />,
 };
 
 export function ModelSelector({

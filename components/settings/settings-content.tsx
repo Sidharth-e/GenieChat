@@ -24,11 +24,13 @@ import { ProviderKey } from "@/lib/types";
 const PROVIDER_LABELS: Record<ProviderKey, string> = {
   google: "Google",
   ollama: "Ollama",
+  openrouter: "OpenRouter",
 };
 
 const PROVIDER_BADGE_CLASSES: Record<ProviderKey, string> = {
   google: "bg-[var(--blue-bg)] text-[var(--blue)]",
   ollama: "bg-[var(--bg-subtle)] text-[var(--text-muted)]",
+  openrouter: "bg-[var(--purple-bg)] text-[var(--purple)]",
 };
 
 export function SettingsContent() {

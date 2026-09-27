@@ -42,7 +42,7 @@ describe("AVAILABLE_MODELS", () => {
   it("only references providers that still exist", () => {
     for (const model of AVAILABLE_MODELS) {
       expect(model.provider, `unexpected provider for ${model.id}`).toMatch(
-        /^(google|ollama)$/,
+        /^(google|ollama|openrouter)$/,
       );
     }
   });
@@ -80,5 +80,11 @@ describe("AVAILABLE_MODELS", () => {
   it("has no duplicate model IDs", () => {
     const ids = AVAILABLE_MODELS.map((m) => m.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("includes openrouter models", () => {
+    const openrouterModels = AVAILABLE_MODELS.filter((m) => m.provider === "openrouter");
+    expect(openrouterModels.length).toBeGreaterThan(0);
+    expect(openrouterModels.some((m) => m.id === "openrouter/claude-3.5-sonnet")).toBe(true);
   });
 });

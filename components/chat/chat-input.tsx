@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { PromptLibraryModal } from "./prompt-library-modal";
 import { ModelModal } from "./model-modal";
-import { GoogleIcon, OllamaIcon } from "@/components/common/custom-icons";
+import { GoogleIcon, OllamaIcon, OpenRouterIcon } from "@/components/common/custom-icons";
 import { useModels } from "@/hooks/use-models-queries";
 import { AI_NAME } from "@/constants/main";
 import { ChatAttachment } from "@/lib/types";
@@ -1386,6 +1386,8 @@ export function ChatInput({
                   <div className="flex items-center justify-center">
                     {currentModelConfig?.provider === "ollama" ? (
                       <OllamaIcon className="h-3 w-3" />
+                    ) : currentModelConfig?.provider === "openrouter" ? (
+                      <OpenRouterIcon className="h-3 w-3" />
                     ) : (
                       <GoogleIcon className="h-3 w-3" />
                     )}

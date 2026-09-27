@@ -74,6 +74,10 @@ export const config = {
     apiKey: env.GOOGLE_API_KEY,
   },
 
+  openrouter: {
+    apiKey: env.OPENROUTER_API_KEY,
+  },
+
   ollama: {
     baseUrl: env.OLLAMA_BASE_URL,
     apiKey: env.OLLAMA_API_KEY,

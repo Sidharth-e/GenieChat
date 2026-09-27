@@ -266,7 +266,7 @@ export interface Document {
   createdAt: string;
 }
 
-export type ProviderKey = "google" | "ollama";
+export type ProviderKey = "google" | "ollama" | "openrouter";
 // Model configuration
 export interface ModelConfig {
   id: string;

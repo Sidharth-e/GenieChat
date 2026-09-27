@@ -9,6 +9,7 @@
 import "server-only";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOllama } from "@langchain/ollama";
+import { ChatOpenRouter } from "@langchain/openrouter";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
   AVAILABLE_MODELS,
@@ -72,6 +73,14 @@ export function getModel(
         ...topPOption,
         numPredict: modelConfig.maxOutput,
       }) as BaseChatModel;
+    case "openrouter":
+      return new ChatOpenRouter({
+        model: modelConfig.model,
+        apiKey: appConfig.openrouter.apiKey,
+        ...temperatureOption,
+        ...topPOption,
+        maxTokens: modelConfig.maxOutput,
+      }) as BaseChatModel;
     default:
       throw new Error(`Unsupported provider: ${modelConfig.provider}`);
   }
@@ -120,6 +129,8 @@ export function isProviderConfigured(provider: ProviderKey): boolean {
           (appConfig.ollama.apiKey ||
             isLocalOllamaUrl(appConfig.ollama.baseUrl)),
       );
+    case "openrouter":
+      return Boolean(appConfig.openrouter.apiKey);
     default:
       return false;
   }

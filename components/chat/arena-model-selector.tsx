@@ -5,7 +5,7 @@ import { ModelConfig } from "@/lib/types";
 import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
 import { X, Trophy, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GoogleIcon, OllamaIcon } from "../common/custom-icons";
+import { GoogleIcon, OllamaIcon, OpenRouterIcon } from "../common/custom-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ import { ArenaLeaderboard } from "./arena-leaderboard";
 const providerIcons: Record<string, React.ReactNode> = {
   google: <GoogleIcon className="h-3 w-3" />,
   ollama: <OllamaIcon className="h-3 w-3" />,
+  openrouter: <OpenRouterIcon className="h-3 w-3" />,
 };
 
 interface ArenaModelSelectorProps {

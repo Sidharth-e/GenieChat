@@ -15,11 +15,12 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
 import type { ArenaLeaderboardEntry } from "@/lib/types";
-import { GoogleIcon, OllamaIcon } from "../common/custom-icons";
+import { GoogleIcon, OllamaIcon, OpenRouterIcon } from "../common/custom-icons";
 
 const providerIcons: Record<string, React.ReactNode> = {
   google: <GoogleIcon className="h-4 w-4" />,
   ollama: <OllamaIcon className="h-4 w-4" />,
+  openrouter: <OpenRouterIcon className="h-4 w-4" />,
 };
 
 interface ArenaLeaderboardProps {

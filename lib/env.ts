@@ -135,6 +135,7 @@ const envSchema = z
     // External APIs
     GOOGLE_API_KEY: z.string().optional(),
     EXA_API_KEY: z.string().optional(),
+    OPENROUTER_API_KEY: z.string().optional(),
 
     // Auth
     GITHUB_CLIENT_ID: z.string().trim().optional(),
