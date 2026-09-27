@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Layers,
   Hammer,
   FolderOpen,
   Zap,
@@ -28,6 +28,7 @@ import {
   BUILD_ITEMS,
   LIBRARY_ITEMS,
 } from "@/constants/routes";
+import { AI_NAME } from "@/constants/main";
 import { useQuickActionsStore } from "@/lib/stores";
 import { NotesModal } from "@/components/chat/notes-modal";
 import { ThemeToggleButton } from "@/components/common/theme-toggle-button";
@@ -84,16 +85,23 @@ export function NavRail() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <aside className="w-16 shrink-0 border-r border-card-border bg-card-bg flex flex-col items-center py-5 z-40 relative h-screen">
+      <aside className="w-16 shrink-0 border-r border-card-border bg-card-bg flex flex-col items-center py-4 z-40 relative h-screen">
         <Link
           href="/chat/new"
-          className="mb-8 text-foreground p-2 rounded-sm hover:opacity-80 transition-opacity"
-          aria-label="Workspace Alpha"
+          className="mb-2 text-foreground p-1 rounded-sm hover:opacity-80 transition-opacity flex items-center justify-center"
+          aria-label={AI_NAME}
         >
-          <Layers className="w-6 h-6" />
+          <Image
+            src="/genie.png"
+            alt={AI_NAME}
+            width={36}
+            height={36}
+            className="w-9 h-9 object-contain"
+            priority
+          />
         </Link>
 
-        <nav className="flex flex-col gap-4 w-full items-center">
+        <nav className="flex flex-col gap-2 w-full items-center">
           {mainRailItems.map((item) => {
             const { href, active } = getRailItemState(item.label);
             const Icon = item.icon;
