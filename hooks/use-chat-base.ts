@@ -9,6 +9,7 @@ import {
   usePendingMessageStore,
   useThreadsStore,
   useChatSettings,
+  useMachineStateStore,
 } from "@/lib/stores";
 import { threadKeys } from "./use-threads-queries";
 import { generateId } from "@/lib/utils";
@@ -82,6 +83,28 @@ export function useChatBase(options: UseChatOptions = {}): UseChatBaseReturn {
   const getPendingMessage = usePendingMessageStore(
     (state) => state.getPendingMessage,
   );
+
+  useEffect(() => {
+    useMachineStateStore.getState().setActiveMessages(messages);
+  }, [messages]);
+
+  useEffect(() => {
+    useMachineStateStore.getState().setActiveThreadId(threadId ?? null);
+  }, [threadId]);
+
+  useEffect(() => {
+    useMachineStateStore
+      .getState()
+      .setMachineStatus(isLoading ? "streaming" : "idle");
+  }, [isLoading]);
+
+  useEffect(() => {
+    return () => {
+      useMachineStateStore.getState().setActiveMessages([]);
+      useMachineStateStore.getState().setActiveThreadId(null);
+      useMachineStateStore.getState().setMachineStatus("idle");
+    };
+  }, []);
 
   // Ensure selected model is one of the server-configured models.
   useEffect(() => {

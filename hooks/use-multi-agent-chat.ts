@@ -11,6 +11,7 @@ import {
     createAssistantMessage
 } from "./use-chat-base";
 import { parseSseChunk } from "@/lib/utils/sse";
+import { useMachineStateStore } from "@/lib/stores";
 
 function upsertToolCall(toolCalls: ToolCall[] | undefined, nextToolCall: ToolCall) {
     const existingToolCalls = toolCalls || [];
@@ -238,6 +239,13 @@ export function useMultiAgentChat(options: UseChatOptions ) {
         }
         setIsLoading(true);
         setError(null);
+        useMachineStateStore.getState().setMachineStatus("streaming");
+        useMachineStateStore.getState().setLiveTokens(null);
+        useMachineStateStore.getState().addAuditLog({
+            action: "Multi-agent prompt submitted",
+            detail: messageContent.slice(0, 80),
+            type: "user",
+        });
 
         abortControllerRef.current = new AbortController();
 
@@ -270,6 +278,7 @@ export function useMultiAgentChat(options: UseChatOptions ) {
                 }
 
                 nextMessages[targetIdx] = updater(nextMessages[targetIdx]);  
+                useMachineStateStore.getState().setActiveMessages(nextMessages);
                 return nextMessages;
             });
         };
@@ -424,6 +433,12 @@ export function useMultiAgentChat(options: UseChatOptions ) {
                                 break;
 
                             case "tool_start":
+                                useMachineStateStore.getState().setMachineStatus("executing_tool", data.toolCall?.name);
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: `Tool call: ${data.toolCall?.name || "tool"}`,
+                                    detail: typeof data.toolCall?.arguments === "object" ? JSON.stringify(data.toolCall.arguments).slice(0, 100) : "",
+                                    type: "tool",
+                                });
                                 if (data.parentToolCallId) {
                                     updateSubAgentToolCall(
                                         data.parentToolCallId,
@@ -463,6 +478,12 @@ export function useMultiAgentChat(options: UseChatOptions ) {
                                 break;
 
                             case "tool_result":
+                                useMachineStateStore.getState().setMachineStatus("streaming");
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: `Tool finished: ${data.toolCallId || "tool"}`,
+                                    detail: typeof data.result === "string" ? data.result.slice(0, 80) : "Result received",
+                                    type: "tool",
+                                });
                                 if (data.parentToolCallId) {
                                     updateSubAgentToolCall(
                                         data.parentToolCallId,
@@ -496,6 +517,26 @@ export function useMultiAgentChat(options: UseChatOptions ) {
                                 );
                                 break;
 
+                            case "token_usage":
+                                useMachineStateStore.getState().setLiveTokens({
+                                    prompt: data.promptTokens,
+                                    completion: data.completionTokens,
+                                    total: data.totalTokens,
+                                });
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: "Tokens recorded",
+                                    detail: `${data.totalTokens} tokens (${data.promptTokens} in / ${data.completionTokens} out)`,
+                                    type: "model",
+                                });
+                                updateAssistantMessage((message) => ({
+                                    ...message,
+                                    tokens: {
+                                        prompt: data.promptTokens,
+                                        completion: data.completionTokens,
+                                    },
+                                }));
+                                break;
+
                             case "citations":
                                 updateAssistantMessage((message) => ({
                                     ...message,
@@ -514,6 +555,12 @@ export function useMultiAgentChat(options: UseChatOptions ) {
                                 break;
 
                             case "error":
+                                useMachineStateStore.getState().setMachineStatus("error");
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: "Stream error",
+                                    detail: String(data.error),
+                                    type: "system",
+                                });
                                 setError(data.error);
                                 break;
 
@@ -560,6 +607,7 @@ export function useMultiAgentChat(options: UseChatOptions ) {
             setIsLoading(false);
             setStreamingMessageId(null);
             abortControllerRef.current = null;
+            useMachineStateStore.getState().setMachineStatus("idle");
         }
     }, [input, isLoading, threadId, selectedModel, agentId, systemPrompt, temperature, topP, fetchThreads, invalidateThreads, options.selectedModel, setMessages, setInput, setIsLoading, setError, abortControllerRef, setThreadId, setThreadTitle, updateThreadTitle, loadMessages]); 
 

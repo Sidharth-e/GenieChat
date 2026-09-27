@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Thread } from "@/lib/types";
+import { Thread, Message } from "@/lib/types";
 
 interface SharedUser {
     id: string;
@@ -21,6 +21,7 @@ export const threadKeys = {
     lists: () => [...threadKeys.all, "list"] as const,
     details: () => [...threadKeys.all, "detail"] as const,
     detail: (id: string) => [...threadKeys.details(), id] as const,
+    messages: (id: string) => [...threadKeys.detail(id), "messages"] as const,
 };
 
 /**
@@ -54,6 +55,24 @@ export function useRecentThreads(limit: number, enabled: boolean = true) {
         },
         enabled,
         staleTime: 1000 * 60 * 5,
+    });
+}
+
+export function useThreadMessages(threadId: string | undefined) {
+    return useQuery<Message[]>({
+        queryKey: threadKeys.messages(threadId ?? ""),
+        queryFn: async () => {
+            if (!threadId) return [];
+            const response = await fetch(
+                `/api/chat/threads/${encodeURIComponent(threadId)}`,
+            );
+            if (!response.ok) {
+                throw new Error("Failed to fetch thread messages");
+            }
+            return response.json();
+        },
+        enabled: Boolean(threadId && threadId !== "new" && threadId !== "pending-new-chat"),
+        staleTime: 1000 * 30,
     });
 }
 

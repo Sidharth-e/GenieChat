@@ -311,6 +311,12 @@ export async function POST(req: NextRequest) {
               flushTokenBuffer();
             }
 
+            const writeEvent = (data: unknown) => {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+              );
+            };
+
             switch (event.type) {
               case "agent_turn_start":
                 if (event.agentId) {
@@ -422,6 +428,21 @@ export async function POST(req: NextRequest) {
                 );
                 break;
               }
+
+              case "token_usage":
+                if (
+                  event.promptTokens !== undefined &&
+                  event.completionTokens !== undefined &&
+                  event.totalTokens !== undefined
+                ) {
+                  writeEvent({
+                    type: "token_usage",
+                    promptTokens: event.promptTokens,
+                    completionTokens: event.completionTokens,
+                    totalTokens: event.totalTokens,
+                  });
+                }
+                break;
 
               case "agent_turn_end": {
                 const agentId = event.agentId!;

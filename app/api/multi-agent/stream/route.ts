@@ -374,7 +374,14 @@ export async function POST(req: NextRequest) {
             }
           };
 
-          // Run the supervisor-driven multi-agent workflow
+          const writeEvent = (data: unknown) => {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+            );
+          };
+
+          const tokenUsage = { prompt: 0, completion: 0, total: 0 };
+
           for await (const event of multiAgentService.streamAgent({
             messages,
             modelId: model,
@@ -572,6 +579,24 @@ export async function POST(req: NextRequest) {
                 break;
               }
 
+              case "token_usage":
+                if (
+                  event.promptTokens !== undefined &&
+                  event.completionTokens !== undefined &&
+                  event.totalTokens !== undefined
+                ) {
+                  tokenUsage.prompt += event.promptTokens;
+                  tokenUsage.completion += event.completionTokens;
+                  tokenUsage.total += event.totalTokens;
+                  writeEvent({
+                    type: "token_usage",
+                    promptTokens: event.promptTokens,
+                    completionTokens: event.completionTokens,
+                    totalTokens: event.totalTokens,
+                  });
+                }
+                break;
+
               case "error":
                 controller.enqueue(
                   encoder.encode(
@@ -590,6 +615,13 @@ export async function POST(req: NextRequest) {
             toolCalls:
               supervisorState.toolCalls.length > 0
                 ? supervisorState.toolCalls
+                : undefined,
+            tokens:
+              tokenUsage.total > 0
+                ? {
+                    prompt: tokenUsage.prompt,
+                    completion: tokenUsage.completion,
+                  }
                 : undefined,
             citations:
               supervisorState.citations.length > 0

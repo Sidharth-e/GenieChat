@@ -11,6 +11,7 @@ import {
     createAssistantMessage,
 } from "./use-chat-base";
 import { parseSseChunk } from "@/lib/utils/sse";
+import { useMachineStateStore } from "@/lib/stores";
 
 function upsertToolCall(toolCalls: ToolCall[] | undefined, nextToolCall: ToolCall) {
     const existingToolCalls = toolCalls || [];
@@ -80,6 +81,13 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
         setError(null);
         setCurrentRound(0);
         setRoutingReason(null);
+        useMachineStateStore.getState().setMachineStatus("streaming");
+        useMachineStateStore.getState().setLiveTokens(null);
+        useMachineStateStore.getState().addAuditLog({
+            action: "Swarm prompt submitted",
+            detail: messageContent.slice(0, 80),
+            type: "user",
+        });
 
         abortControllerRef.current = new AbortController();
 
@@ -205,6 +213,12 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
                             }
 
                             case "tool_start": {
+                                useMachineStateStore.getState().setMachineStatus("executing_tool", data.toolCall?.name);
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: `Tool call: ${data.toolCall?.name || "tool"}`,
+                                    detail: typeof data.toolCall?.arguments === "object" ? JSON.stringify(data.toolCall.arguments).slice(0, 100) : "",
+                                    type: "tool",
+                                });
                                 const targetId = (data.agentId && agentMessageMapRef.current.get(data.agentId))
                                     || streamingMessageIdRef.current;
                                 if (!targetId) break;
@@ -217,12 +231,19 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
                                             toolCalls: upsertToolCall(next[idx].toolCalls, data.toolCall),
                                         };
                                     }
+                                    useMachineStateStore.getState().setActiveMessages(next);
                                     return next;
                                 });
                                 break;
                             }
 
                             case "tool_result": {
+                                useMachineStateStore.getState().setMachineStatus("streaming");
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: `Tool finished: ${data.toolCallId || "tool"}`,
+                                    detail: typeof data.result === "string" ? data.result.slice(0, 80) : "Result received",
+                                    type: "tool",
+                                });
                                 const targetId = (data.agentId && agentMessageMapRef.current.get(data.agentId))
                                     || streamingMessageIdRef.current;
                                 if (!targetId) break;
@@ -239,8 +260,42 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
                                             ),
                                         };
                                     }
+                                    useMachineStateStore.getState().setActiveMessages(next);
                                     return next;
                                 });
+                                break;
+                            }
+
+                            case "token_usage": {
+                                useMachineStateStore.getState().setLiveTokens({
+                                    prompt: data.promptTokens,
+                                    completion: data.completionTokens,
+                                    total: data.totalTokens,
+                                });
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: "Tokens recorded",
+                                    detail: `${data.totalTokens} tokens (${data.promptTokens} in / ${data.completionTokens} out)`,
+                                    type: "model",
+                                });
+                                const targetId = (data.agentId && agentMessageMapRef.current.get(data.agentId))
+                                    || streamingMessageIdRef.current;
+                                if (targetId) {
+                                    setMessages((prev) => {
+                                        const next = [...prev];
+                                        const idx = next.findIndex((m) => m.id === targetId);
+                                        if (idx >= 0) {
+                                            next[idx] = {
+                                                ...next[idx],
+                                                tokens: {
+                                                    prompt: data.promptTokens,
+                                                    completion: data.completionTokens,
+                                                },
+                                            };
+                                        }
+                                        useMachineStateStore.getState().setActiveMessages(next);
+                                        return next;
+                                    });
+                                }
                                 break;
                             }
 
@@ -277,6 +332,12 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
                                 break;
 
                             case "error":
+                                useMachineStateStore.getState().setMachineStatus("error");
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: "Stream error",
+                                    detail: String(data.error),
+                                    type: "system",
+                                });
                                 setError(data.error);
                                 break;
 
@@ -302,6 +363,7 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
             streamingMessageIdRef.current = null;
             agentMessageMapRef.current.clear();
             abortControllerRef.current = null;
+            useMachineStateStore.getState().setMachineStatus("idle");
         }
     }, [input, isLoading, threadId, selectedModel, swarmAgentIds, temperature, topP, fetchThreads, invalidateThreads, options.selectedModel, setMessages, setInput, setIsLoading, setError, abortControllerRef, setThreadId, setThreadTitle, updateThreadTitle]);
 

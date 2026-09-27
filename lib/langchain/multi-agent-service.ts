@@ -23,7 +23,7 @@ import {
 
 // --- Event Interface ---
 export interface AgentStreamEvent {
-    type: "token" | "tool_call_start" | "tool_call_end" | "tool_result" | "citations" | "error" | "done";
+    type: "token" | "token_usage" | "tool_call_start" | "tool_call_end" | "tool_result" | "citations" | "error" | "done";
     content?: string;
     toolName?: string;
     toolArgs?: Record<string, unknown>;
@@ -33,6 +33,9 @@ export interface AgentStreamEvent {
     agentName?: string;
     citations?: string[];
     error?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
 }
 
 export class MultiAgentService {
@@ -422,6 +425,38 @@ export class MultiAgentService {
                         agentId,
                         agentName,
                     };
+                } else if (event.event === "on_chat_model_end") {
+                    const output = event.data?.output;
+                    const usage =
+                        output?.usage_metadata ||
+                        output?.response_metadata?.tokenUsage ||
+                        output?.response_metadata?.usage;
+                    if (usage) {
+                        const promptTokens =
+                            usage.input_tokens ??
+                            usage.prompt_tokens ??
+                            usage.promptTokens ??
+                            0;
+                        const completionTokens =
+                            usage.output_tokens ??
+                            usage.completion_tokens ??
+                            usage.completionTokens ??
+                            0;
+                        const totalTokens =
+                            usage.total_tokens ??
+                            usage.totalTokens ??
+                            (promptTokens + completionTokens);
+                        if (totalTokens > 0) {
+                            yield {
+                                type: "token_usage",
+                                promptTokens,
+                                completionTokens,
+                                totalTokens,
+                                agentId,
+                                agentName,
+                            };
+                        }
+                    }
                 }
             }
 

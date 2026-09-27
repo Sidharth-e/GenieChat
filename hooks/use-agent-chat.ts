@@ -10,6 +10,7 @@ import {
 } from "./use-chat-base";
 import { Message } from "@/lib/types";
 import { parseSseChunk } from "@/lib/utils/sse";
+import { useMachineStateStore } from "@/lib/stores";
 
 /**
  * Hook for agent chat functionality.
@@ -228,6 +229,13 @@ export function useAgentChat(options: UseChatOptions = {}) {
         }
         setIsLoading(true);
         setError(null);
+        useMachineStateStore.getState().setMachineStatus("streaming");
+        useMachineStateStore.getState().setLiveTokens(null);
+        useMachineStateStore.getState().addAuditLog({
+            action: "Agent prompt submitted",
+            detail: messageContent.slice(0, 80),
+            type: "user",
+        });
 
         abortControllerRef.current = new AbortController();
 
@@ -257,6 +265,7 @@ export function useAgentChat(options: UseChatOptions = {}) {
 
                 if (targetIdx < 0 || newMessages[targetIdx].role !== "assistant") return prev;
                 newMessages[targetIdx] = updater(newMessages[targetIdx]);
+                useMachineStateStore.getState().setActiveMessages(newMessages);
                 return newMessages;
             });
         };
@@ -332,6 +341,7 @@ export function useAgentChat(options: UseChatOptions = {}) {
                             case "thread":
                                 newThreadId = data.threadId;
                                 setThreadId(data.threadId);
+                                useMachineStateStore.getState().setActiveThreadId(data.threadId);
                                 setMessages((prev) =>
                                     prev.map((msg) => ({
                                         ...msg,
@@ -344,8 +354,13 @@ export function useAgentChat(options: UseChatOptions = {}) {
 
                             case "token":
                                 assistantContent += data.content;
-                                // Throttle updates
                                 if (Date.now() - lastUpdateTime > 50) {
+                                    const estTokens = Math.ceil(assistantContent.length / 4);
+                                    useMachineStateStore.getState().setLiveTokens({
+                                        prompt: 0,
+                                        completion: estTokens,
+                                        total: estTokens,
+                                    });
                                     updateAssistantMessage((message) => ({
                                         ...message,
                                         content: assistantContent,
@@ -355,6 +370,12 @@ export function useAgentChat(options: UseChatOptions = {}) {
                                 break;
 
                             case "tool_start":
+                                useMachineStateStore.getState().setMachineStatus("executing_tool", data.toolCall.name);
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: `Tool call: ${data.toolCall.name}`,
+                                    detail: typeof data.toolCall.arguments === "object" ? JSON.stringify(data.toolCall.arguments).slice(0, 100) : "",
+                                    type: "tool",
+                                });
                                 updateAssistantMessage((message) => {
                                     const toolCalls = message.toolCalls || [];
                                     if (toolCalls.some((tc) => tc.id === data.toolCall.id)) {
@@ -368,6 +389,12 @@ export function useAgentChat(options: UseChatOptions = {}) {
                                 break;
 
                             case "tool_result":
+                                useMachineStateStore.getState().setMachineStatus("streaming");
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: `Tool finished: ${data.toolCallId || "tool"}`,
+                                    detail: typeof data.result === "string" ? data.result.slice(0, 80) : "Result received",
+                                    type: "tool",
+                                });
                                 updateAssistantMessage((message) => {
                                     if (!message.toolCalls) return message;
                                     return {
@@ -379,6 +406,26 @@ export function useAgentChat(options: UseChatOptions = {}) {
                                         ),
                                     };
                                 });
+                                break;
+
+                            case "token_usage":
+                                useMachineStateStore.getState().setLiveTokens({
+                                    prompt: data.promptTokens,
+                                    completion: data.completionTokens,
+                                    total: data.totalTokens,
+                                });
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: "Tokens recorded",
+                                    detail: `${data.totalTokens} tokens (${data.promptTokens} in / ${data.completionTokens} out)`,
+                                    type: "model",
+                                });
+                                updateAssistantMessage((message) => ({
+                                    ...message,
+                                    tokens: {
+                                        prompt: data.promptTokens,
+                                        completion: data.completionTokens,
+                                    },
+                                }));
                                 break;
 
                             case "citations":
@@ -399,6 +446,12 @@ export function useAgentChat(options: UseChatOptions = {}) {
                                 break;
 
                             case "error":
+                                useMachineStateStore.getState().setMachineStatus("error");
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: "Execution error",
+                                    detail: data.error,
+                                    type: "error",
+                                });
                                 setError(data.error);
                                 break;
 
@@ -414,7 +467,12 @@ export function useAgentChat(options: UseChatOptions = {}) {
                                 break;
 
                             case "done":
-                                // Final flush of content
+                                useMachineStateStore.getState().setMachineStatus("idle");
+                                useMachineStateStore.getState().addAuditLog({
+                                    action: "Response completed",
+                                    detail: "Stream completed successfully",
+                                    type: "system",
+                                });
                                 updateAssistantMessage((message) => ({
                                     ...message,
                                     content: assistantContent,
@@ -442,6 +500,7 @@ export function useAgentChat(options: UseChatOptions = {}) {
             setIsLoading(false);
             setStreamingMessageId(null);
             abortControllerRef.current = null;
+            useMachineStateStore.getState().setMachineStatus("idle");
         }
     }, [input, isLoading, threadId, selectedModel, agentId, systemPrompt, temperature, topP, fetchThreads, invalidateThreads, options.selectedModel, setMessages, setInput, setIsLoading, setError, abortControllerRef, setThreadId, setThreadTitle, updateThreadTitle, loadMessages]); 
 

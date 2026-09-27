@@ -266,6 +266,12 @@ export async function POST(req: NextRequest) {
                 tokenUsage.promptTokens += event.promptTokens;
                 tokenUsage.completionTokens += event.completionTokens;
                 tokenUsage.totalTokens += event.totalTokens;
+                writeEvent({
+                  type: "token_usage",
+                  promptTokens: event.promptTokens,
+                  completionTokens: event.completionTokens,
+                  totalTokens: event.totalTokens,
+                });
               } else if (event.type === "citations") {
                 citations = event.citations;
                 writeEvent({ type: "citations", citations: event.citations });

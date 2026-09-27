@@ -8,7 +8,7 @@ import {
   createUserMessage,
   createAssistantMessage,
 } from "./use-chat-base";
-import { useChatSettings } from "@/lib/stores";
+import { useChatSettings, useMachineStateStore } from "@/lib/stores";
 import { Message } from "@/lib/types";
 import { parseSseChunk } from "@/lib/utils/sse";
 
@@ -281,6 +281,13 @@ export function useChat(options: UseChatOptions = {}) {
       }
       setIsLoading(true);
       setError(null);
+      useMachineStateStore.getState().setMachineStatus("streaming");
+      useMachineStateStore.getState().setLiveTokens(null);
+      useMachineStateStore.getState().addAuditLog({
+        action: "User prompt submitted",
+        detail: messageContent.slice(0, 80),
+        type: "user",
+      });
 
       abortControllerRef.current = new AbortController();
 
@@ -323,6 +330,7 @@ export function useChat(options: UseChatOptions = {}) {
           }
 
           newMessages[targetIdx] = updater(newMessages[targetIdx]);
+          useMachineStateStore.getState().setActiveMessages(newMessages);
           return newMessages;
         });
       };
@@ -388,7 +396,11 @@ export function useChat(options: UseChatOptions = {}) {
             modelToUse,
           );
           setStreamingMessageId(assistantMessage.id);
-          setMessages((prev) => [...prev, assistantMessage]);
+          setMessages((prev) => {
+            const next = [...prev, assistantMessage];
+            useMachineStateStore.getState().setActiveMessages(next);
+            return next;
+          });
         }
 
         while (reader) {
@@ -407,7 +419,7 @@ export function useChat(options: UseChatOptions = {}) {
                 case "thread":
                   newThreadId = data.threadId;
                   setThreadId(data.threadId);
-                  // Update threadId on all messages so feedback buttons work
+                  useMachineStateStore.getState().setActiveThreadId(data.threadId);
                   setMessages((prev) =>
                     prev.map((msg) => ({
                       ...msg,
@@ -420,9 +432,13 @@ export function useChat(options: UseChatOptions = {}) {
 
                 case "token":
                   assistantContent += data.content;
-                  // Stream at a lower cadence so long threads do less React work while
-                  // still feeling responsive.
                   if (Date.now() - lastUpdateTime > STREAM_FLUSH_INTERVAL_MS) {
+                    const estTokens = Math.ceil(assistantContent.length / 4);
+                    useMachineStateStore.getState().setLiveTokens({
+                      prompt: 0,
+                      completion: estTokens,
+                      total: estTokens,
+                    });
                     updateAssistantMessage((message) => ({
                       ...message,
                       content: assistantContent,
@@ -432,6 +448,12 @@ export function useChat(options: UseChatOptions = {}) {
                   break;
 
                 case "tool_start":
+                  useMachineStateStore.getState().setMachineStatus("executing_tool", data.toolCall.name);
+                  useMachineStateStore.getState().addAuditLog({
+                    action: `Tool call: ${data.toolCall.name}`,
+                    detail: typeof data.toolCall.arguments === "object" ? JSON.stringify(data.toolCall.arguments).slice(0, 100) : "",
+                    type: "tool",
+                  });
                   updateAssistantMessage((message) => {
                     const toolCalls = message.toolCalls || [];
                     if (toolCalls.some((tc) => tc.id === data.toolCall.id)) {
@@ -445,6 +467,12 @@ export function useChat(options: UseChatOptions = {}) {
                   break;
 
                 case "tool_result":
+                  useMachineStateStore.getState().setMachineStatus("streaming");
+                  useMachineStateStore.getState().addAuditLog({
+                    action: `Tool finished: ${data.toolCallId || "tool"}`,
+                    detail: typeof data.result === "string" ? data.result.slice(0, 80) : "Result received",
+                    type: "tool",
+                  });
                   updateAssistantMessage((message) => {
                     if (!message.toolCalls) return message;
                     return {
@@ -456,6 +484,26 @@ export function useChat(options: UseChatOptions = {}) {
                       ),
                     };
                   });
+                  break;
+
+                case "token_usage":
+                  useMachineStateStore.getState().setLiveTokens({
+                    prompt: data.promptTokens,
+                    completion: data.completionTokens,
+                    total: data.totalTokens,
+                  });
+                  useMachineStateStore.getState().addAuditLog({
+                    action: "Tokens recorded",
+                    detail: `${data.totalTokens} tokens (${data.promptTokens} in / ${data.completionTokens} out)`,
+                    type: "model",
+                  });
+                  updateAssistantMessage((message) => ({
+                    ...message,
+                    tokens: {
+                      prompt: data.promptTokens,
+                      completion: data.completionTokens,
+                    },
+                  }));
                   break;
 
                 case "citations":
@@ -476,11 +524,16 @@ export function useChat(options: UseChatOptions = {}) {
                   break;
 
                 case "error":
+                  useMachineStateStore.getState().setMachineStatus("error");
+                  useMachineStateStore.getState().addAuditLog({
+                    action: "Execution error",
+                    detail: data.error,
+                    type: "error",
+                  });
                   setError(data.error);
                   break;
 
                 case "message_saved":
-                  // Update the assistant message with the saved ID for feedback
                   updateAssistantMessage((message) => ({
                     ...message,
                     id: data.messageId,
@@ -492,7 +545,12 @@ export function useChat(options: UseChatOptions = {}) {
                   break;
 
                 case "done":
-                  // Final flush of content to ensure everything is synced
+                  useMachineStateStore.getState().setMachineStatus("idle");
+                  useMachineStateStore.getState().addAuditLog({
+                    action: "Response completed",
+                    detail: "Stream completed successfully",
+                    type: "system",
+                  });
                   updateAssistantMessage((message) => ({
                     ...message,
                     content: assistantContent,
@@ -525,6 +583,7 @@ export function useChat(options: UseChatOptions = {}) {
         setIsLoading(false);
         setStreamingMessageId(null);
         abortControllerRef.current = null;
+        useMachineStateStore.getState().setMachineStatus("idle");
       }
     },
     [

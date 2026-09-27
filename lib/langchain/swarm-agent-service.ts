@@ -41,6 +41,7 @@ export interface SwarmStreamEvent {
         | "agent_turn_start"
         | "agent_turn_end"
         | "token"
+        | "token_usage"
         | "tool_call_start"
         | "tool_call_end"
         | "tool_result"
@@ -62,6 +63,9 @@ export interface SwarmStreamEvent {
     round?: number;
     routedAgents?: string[];
     routingReason?: "mention" | "llm_fallback";
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
 }
 
 type AgentRosterEntry = {
@@ -698,6 +702,17 @@ SELF-SELECTION: Before responding, evaluate whether this message is relevant to 
                                     };
                                 }
                             }
+                        }
+
+                        if (message.usage_metadata) {
+                            yield {
+                                type: "token_usage",
+                                promptTokens: message.usage_metadata.input_tokens ?? 0,
+                                completionTokens: message.usage_metadata.output_tokens ?? 0,
+                                totalTokens: message.usage_metadata.total_tokens ?? 0,
+                                agentId: agentEntry.id,
+                                agentName: agentEntry.name,
+                            };
                         }
                     } else if (message instanceof ToolMessage) {
                         if (skippedAgents.has(agentId)) continue;
