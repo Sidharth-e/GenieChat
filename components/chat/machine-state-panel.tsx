@@ -143,9 +143,31 @@ export function MachineStatePanel() {
 
   const tokenUsage = useMemo(() => {
     const cumulative = messages.reduce(
-      (acc, m) => {
-        const p = m.tokens?.prompt ?? 0;
-        const c = m.tokens?.completion ?? 0;
+      (acc, m, idx) => {
+        let p = m.tokens?.prompt ?? 0;
+        let c = m.tokens?.completion ?? 0;
+
+        if (m.toolCalls && m.toolCalls.length > 0) {
+          for (const tc of m.toolCalls) {
+            if (tc.tokens) {
+              p += tc.tokens.prompt ?? 0;
+              c += tc.tokens.completion ?? 0;
+            }
+          }
+        }
+
+        if (m.role === "assistant") {
+          if (c === 0 && m.content) {
+            c = Math.max(1, Math.ceil(m.content.length / 4));
+          }
+        } else if (m.role === "user") {
+          const nextMsg = messages[idx + 1];
+          const nextHasPromptTokens = (nextMsg?.tokens?.prompt ?? 0) > 0;
+          if (!nextHasPromptTokens && m.content) {
+            p = Math.max(1, Math.ceil(m.content.length / 4));
+          }
+        }
+
         return {
           prompt: acc.prompt + p,
           completion: acc.completion + c,

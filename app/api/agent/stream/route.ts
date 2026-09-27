@@ -231,6 +231,7 @@ export async function POST(req: NextRequest) {
             tokens?: { prompt: number; completion: number };
           }[] = [];
           let citations: string[] = [];
+          const tokenUsage = { prompt: 0, completion: 0, total: 0 };
 
           // Send thread ID first for new threads
           if (isNewThread) {
@@ -397,6 +398,22 @@ export async function POST(req: NextRequest) {
                 }
                 break;
 
+              case "token_usage":
+                tokenUsage.prompt += event.promptTokens ?? 0;
+                tokenUsage.completion += event.completionTokens ?? 0;
+                tokenUsage.total += event.totalTokens ?? 0;
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      type: "token_usage",
+                      promptTokens: event.promptTokens,
+                      completionTokens: event.completionTokens,
+                      totalTokens: event.totalTokens,
+                    })}\n\n`,
+                  ),
+                );
+                break;
+
               case "error":
                 controller.enqueue(
                   encoder.encode(
@@ -408,12 +425,43 @@ export async function POST(req: NextRequest) {
           }
           flushTokenBuffer();
 
+          const fallbackPrompt = Math.max(
+            1,
+            Math.ceil(((requestBody.message as string) || "").length / 4),
+          );
+          const fallbackCompletion = Math.max(
+            1,
+            Math.ceil(fullResponse.length / 4),
+          );
+          if (tokenUsage.total === 0) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "token_usage",
+                  promptTokens: fallbackPrompt,
+                  completionTokens: fallbackCompletion,
+                  totalTokens: fallbackPrompt + fallbackCompletion,
+                })}\n\n`,
+              ),
+            );
+          }
+
           // Save assistant message with tool calls
           const assistantPayload = {
             versionId: pairedAssistantVersionId,
             content: fullResponse,
             model,
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            tokens:
+              tokenUsage.total > 0
+                ? {
+                    prompt: tokenUsage.prompt,
+                    completion: tokenUsage.completion,
+                  }
+                : {
+                    prompt: fallbackPrompt,
+                    completion: fallbackCompletion,
+                  },
             citations: citations.length > 0 ? citations : undefined,
             pairedUserVersionId: pairedUserVersionId,
           };

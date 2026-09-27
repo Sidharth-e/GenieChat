@@ -277,8 +277,7 @@ export function useMultiAgentChat(options: UseChatOptions ) {
                     return prev;
                 }
 
-                nextMessages[targetIdx] = updater(nextMessages[targetIdx]);  
-                useMachineStateStore.getState().setActiveMessages(nextMessages);
+                nextMessages[targetIdx] = updater(nextMessages[targetIdx]);
                 return nextMessages;
             });
         };

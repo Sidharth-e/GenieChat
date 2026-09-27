@@ -271,6 +271,7 @@ export async function POST(req: NextRequest) {
             agentName?: string;
           }[]>();
           const activeToolCallsByEventId = new Map<string, string>();
+          const agentTokensMap = new Map<string, { prompt: number; completion: number }>();
 
           const flushTokenBuffer = () => {
             if (tokenBuffer && tokenBufferAgentId) {
@@ -435,6 +436,16 @@ export async function POST(req: NextRequest) {
                   event.completionTokens !== undefined &&
                   event.totalTokens !== undefined
                 ) {
+                  if (event.agentId) {
+                    const prev = agentTokensMap.get(event.agentId) || {
+                      prompt: 0,
+                      completion: 0,
+                    };
+                    agentTokensMap.set(event.agentId, {
+                      prompt: prev.prompt + event.promptTokens,
+                      completion: prev.completion + event.completionTokens,
+                    });
+                  }
                   writeEvent({
                     type: "token_usage",
                     promptTokens: event.promptTokens,
@@ -448,8 +459,19 @@ export async function POST(req: NextRequest) {
                 const agentId = event.agentId!;
                 const endContent = agentContentMap.get(agentId) || "";
                 const endToolCalls = agentToolCallsMap.get(agentId) || [];
+                const turnTokens = agentTokensMap.get(agentId);
                 agentContentMap.delete(agentId);
                 agentToolCallsMap.delete(agentId);
+                agentTokensMap.delete(agentId);
+
+                const promptTokens =
+                  turnTokens && turnTokens.prompt > 0
+                    ? turnTokens.prompt
+                    : Math.max(1, Math.ceil((body.message?.length || 0) / 4));
+                const completionTokens =
+                  turnTokens && turnTokens.completion > 0
+                    ? turnTokens.completion
+                    : Math.max(1, Math.ceil(endContent.length / 4));
 
                 const savedMsg = await store.addMessage(currentThreadId, {
                   threadId: currentThreadId,
@@ -465,6 +487,10 @@ export async function POST(req: NextRequest) {
                     endToolCalls.length > 0
                       ? endToolCalls.map((tc) => ({ ...tc }))
                       : undefined,
+                  tokens: {
+                    prompt: promptTokens,
+                    completion: completionTokens,
+                  },
                 });
 
                 controller.enqueue(

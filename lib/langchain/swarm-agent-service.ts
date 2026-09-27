@@ -704,12 +704,17 @@ SELF-SELECTION: Before responding, evaluate whether this message is relevant to 
                             }
                         }
 
-                        if (message.usage_metadata) {
+                        const msgMeta = (message as unknown as { response_metadata?: { tokenUsage?: Record<string, number | undefined>; usage?: Record<string, number | undefined>; prompt_eval_count?: number; eval_count?: number } }).response_metadata;
+                        const msgUsage = (message.usage_metadata || msgMeta?.tokenUsage || msgMeta?.usage) as Record<string, number | undefined> | undefined;
+                        const pTokens = msgUsage?.input_tokens ?? msgUsage?.prompt_tokens ?? msgUsage?.promptTokens ?? msgMeta?.prompt_eval_count ?? 0;
+                        const cTokens = msgUsage?.output_tokens ?? msgUsage?.completion_tokens ?? msgUsage?.completionTokens ?? msgMeta?.eval_count ?? 0;
+                        const tTokens = msgUsage?.total_tokens ?? msgUsage?.totalTokens ?? (pTokens + cTokens);
+                        if (tTokens > 0) {
                             yield {
                                 type: "token_usage",
-                                promptTokens: message.usage_metadata.input_tokens ?? 0,
-                                completionTokens: message.usage_metadata.output_tokens ?? 0,
-                                totalTokens: message.usage_metadata.total_tokens ?? 0,
+                                promptTokens: pTokens,
+                                completionTokens: cTokens,
+                                totalTokens: tTokens,
                                 agentId: agentEntry.id,
                                 agentName: agentEntry.name,
                             };

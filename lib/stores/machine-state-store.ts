@@ -56,7 +56,8 @@ export const useMachineStateStore = create<MachineStateState>((set) => ({
   setMachineStatus: (status, toolName = null) =>
     set({ machineStatus: status, liveToolName: toolName }),
   setLiveTokens: (tokens) => set({ liveTokens: tokens }),
-  setActiveMessages: (messages) => set({ activeMessages: messages }),
+  setActiveMessages: (messages) =>
+    set((s) => (s.activeMessages === messages ? s : { activeMessages: messages })),
   setActiveThreadId: (threadId) => set({ activeThreadId: threadId }),
   addAuditLog: (log) =>
     set((s) => ({

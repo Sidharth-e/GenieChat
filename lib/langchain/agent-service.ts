@@ -245,7 +245,28 @@ export class AgentService {
                   }
                 }
 
-                // Check for tool calls in the complete AI message
+                const msgObj = msg as {
+                  usage_metadata?: Record<string, number | undefined>;
+                  response_metadata?: {
+                    tokenUsage?: Record<string, number | undefined>;
+                    usage?: Record<string, number | undefined>;
+                    prompt_eval_count?: number;
+                    eval_count?: number;
+                  };
+                };
+                const msgUsage = msgObj.usage_metadata || msgObj.response_metadata?.tokenUsage || msgObj.response_metadata?.usage;
+                const pTokens = msgUsage?.input_tokens ?? msgUsage?.prompt_tokens ?? msgUsage?.promptTokens ?? msgObj.response_metadata?.prompt_eval_count ?? 0;
+                const cTokens = msgUsage?.output_tokens ?? msgUsage?.completion_tokens ?? msgUsage?.completionTokens ?? msgObj.response_metadata?.eval_count ?? 0;
+                const tTokens = msgUsage?.total_tokens ?? msgUsage?.totalTokens ?? (pTokens + cTokens);
+                if (tTokens > 0) {
+                  yield {
+                    type: "token_usage",
+                    promptTokens: pTokens,
+                    completionTokens: cTokens,
+                    totalTokens: tTokens,
+                  };
+                }
+
                 if (
                   "tool_calls" in msg &&
                   Array.isArray((msg as { tool_calls: unknown[] }).tool_calls)

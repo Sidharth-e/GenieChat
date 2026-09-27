@@ -608,6 +608,23 @@ export async function POST(req: NextRequest) {
           }
           flushTokenBuffer();
 
+          const fallbackPrompt = Math.max(
+            1,
+            Math.ceil(((requestBody.message as string) || "").length / 4),
+          );
+          const fallbackCompletion = Math.max(
+            1,
+            Math.ceil((supervisorState.content || "").length / 4),
+          );
+          if (tokenUsage.total === 0) {
+            writeEvent({
+              type: "token_usage",
+              promptTokens: fallbackPrompt,
+              completionTokens: fallbackCompletion,
+              totalTokens: fallbackPrompt + fallbackCompletion,
+            });
+          }
+
           const assistantPayload = {
             versionId: pairedAssistantVersionId,
             content: supervisorState.content,
@@ -622,7 +639,10 @@ export async function POST(req: NextRequest) {
                     prompt: tokenUsage.prompt,
                     completion: tokenUsage.completion,
                   }
-                : undefined,
+                : {
+                    prompt: fallbackPrompt,
+                    completion: fallbackCompletion,
+                  },
             citations:
               supervisorState.citations.length > 0
                 ? supervisorState.citations

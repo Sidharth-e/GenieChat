@@ -265,7 +265,6 @@ export function useAgentChat(options: UseChatOptions = {}) {
 
                 if (targetIdx < 0 || newMessages[targetIdx].role !== "assistant") return prev;
                 newMessages[targetIdx] = updater(newMessages[targetIdx]);
-                useMachineStateStore.getState().setActiveMessages(newMessages);
                 return newMessages;
             });
         };

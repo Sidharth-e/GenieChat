@@ -330,7 +330,6 @@ export function useChat(options: UseChatOptions = {}) {
           }
 
           newMessages[targetIdx] = updater(newMessages[targetIdx]);
-          useMachineStateStore.getState().setActiveMessages(newMessages);
           return newMessages;
         });
       };
@@ -396,11 +395,7 @@ export function useChat(options: UseChatOptions = {}) {
             modelToUse,
           );
           setStreamingMessageId(assistantMessage.id);
-          setMessages((prev) => {
-            const next = [...prev, assistantMessage];
-            useMachineStateStore.getState().setActiveMessages(next);
-            return next;
-          });
+          setMessages((prev) => [...prev, assistantMessage]);
         }
 
         while (reader) {

@@ -427,35 +427,36 @@ export class MultiAgentService {
                     };
                 } else if (event.event === "on_chat_model_end") {
                     const output = event.data?.output;
+                    const responseMeta = output?.response_metadata;
                     const usage =
                         output?.usage_metadata ||
-                        output?.response_metadata?.tokenUsage ||
-                        output?.response_metadata?.usage;
-                    if (usage) {
-                        const promptTokens =
-                            usage.input_tokens ??
-                            usage.prompt_tokens ??
-                            usage.promptTokens ??
-                            0;
-                        const completionTokens =
-                            usage.output_tokens ??
-                            usage.completion_tokens ??
-                            usage.completionTokens ??
-                            0;
-                        const totalTokens =
-                            usage.total_tokens ??
-                            usage.totalTokens ??
-                            (promptTokens + completionTokens);
-                        if (totalTokens > 0) {
-                            yield {
-                                type: "token_usage",
-                                promptTokens,
-                                completionTokens,
-                                totalTokens,
-                                agentId,
-                                agentName,
-                            };
-                        }
+                        responseMeta?.tokenUsage ||
+                        responseMeta?.usage;
+                    const promptTokens =
+                        usage?.input_tokens ??
+                        usage?.prompt_tokens ??
+                        usage?.promptTokens ??
+                        responseMeta?.prompt_eval_count ??
+                        0;
+                    const completionTokens =
+                        usage?.output_tokens ??
+                        usage?.completion_tokens ??
+                        usage?.completionTokens ??
+                        responseMeta?.eval_count ??
+                        0;
+                    const totalTokens =
+                        usage?.total_tokens ??
+                        usage?.totalTokens ??
+                        (promptTokens + completionTokens);
+                    if (totalTokens > 0) {
+                        yield {
+                            type: "token_usage",
+                            promptTokens,
+                            completionTokens,
+                            totalTokens,
+                            agentId,
+                            agentName,
+                        };
                     }
                 }
             }

@@ -231,7 +231,6 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
                                             toolCalls: upsertToolCall(next[idx].toolCalls, data.toolCall),
                                         };
                                     }
-                                    useMachineStateStore.getState().setActiveMessages(next);
                                     return next;
                                 });
                                 break;
@@ -260,7 +259,6 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
                                             ),
                                         };
                                     }
-                                    useMachineStateStore.getState().setActiveMessages(next);
                                     return next;
                                 });
                                 break;
@@ -292,7 +290,6 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
                                                 },
                                             };
                                         }
-                                        useMachineStateStore.getState().setActiveMessages(next);
                                         return next;
                                     });
                                 }
