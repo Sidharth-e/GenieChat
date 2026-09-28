@@ -64,6 +64,21 @@ export const config = {
     connectionTimeoutMillis: 5_000,
   },
 
+  neo4j: {
+    uri: env.NEO4J_URI,
+    user: env.NEO4J_USER ?? "neo4j",
+    password: env.NEO4J_PASSWORD,
+    // Bounded retry, so an unreachable server produces an error rather than a
+    // retry storm inside a chat turn.
+    maxTransactionRetryTime: 15_000,
+    connectionTimeoutMs: 5_000,
+  },
+
+  memory: {
+    // Mirrors deepResearch.model's precedent.
+    extractionModel: env.MEMORY_EXTRACTION_MODEL ? env.MEMORY_EXTRACTION_MODEL : "gemma4",
+  },
+
   docling: {
     baseUrl: env.DOCLING_SERVE_URL,
     apiKey: env.DOCLING_SERVE_API_KEY,

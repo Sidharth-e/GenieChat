@@ -1,6 +1,6 @@
 # Local development services: Redis, PostgreSQL + pgvector for knowledge RAG,
-# Garage for S3-compatible object storage, and docling-serve for document
-# parsing.
+# Neo4j for graph memory, Garage for S3-compatible object storage, and
+# docling-serve for document parsing.
 #
 #   docker compose up -d      # start
 #   docker compose ps         # health
@@ -8,7 +8,8 @@
 #   docker compose down -v    # stop and wipe cached state
 #
 # Point the app at them with REDIS_URL=redis://localhost:6379,
-# POSTGRES_URL=postgresql://geniechat:geniechat@localhost:5433/geniechat and
+# POSTGRES_URL=postgresql://geniechat:geniechat@localhost:5433/geniechat,
+# NEO4J_URI=bolt://localhost:7687 and
 # S3_ENDPOINT=http://localhost:3900. S3_REGION must stay `garage` to match
 # `s3_region` in garage.toml, or every signed request fails validation.
 #
@@ -74,6 +75,67 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+
+  neo4j:
+    # NOT the 5.26 LTS line: in-index vector filtering (the `SEARCH` clause's
+    # inner `WHERE`, which keeps a small tenant from being crowded out of its
+    # own results) needs 2026.02+, and the LTS line would force post-filtering
+    # and reintroduce that starvation. This is the one place in this file where
+    # a newer version is not optional.
+    image: neo4j:2026.08-community
+    container_name: geniechat-neo4j
+    # Loopback only, like redis and docling — the browser never talks to Neo4j.
+    # Bolt is the only port the app needs; the HTTP browser UI is for a
+    # developer on this machine.
+    #
+    # Use bolt:// for NEO4J_URI, not neo4j://: the latter enables cluster
+    # routing, which tries to discover members that a single instance does not
+    # have.
+    #
+    # The host-side ports are overridable, following the same pattern as
+    # POSTGRES_USER and DOCLING_OMP_NUM_THREADS below: a second Neo4j already on
+    # this host (another project's, bound to all interfaces in the case that
+    # prompted this) makes the defaults unbindable, and the fix is to move ours
+    # rather than stop theirs. Set NEO4J_BOLT_PORT and NEO4J_HTTP_PORT in .env
+    # and point NEO4J_URI at the remapped Bolt port. Only the host side moves —
+    # the container listens on the standard ports either way. Like the other
+    # interpolation variables these are read by compose, never by the app, so
+    # they are deliberately absent from lib/env.ts.
+    ports:
+      - "127.0.0.1:${NEO4J_HTTP_PORT:-7474}:7474"   # HTTP browser UI
+      - "127.0.0.1:${NEO4J_BOLT_PORT:-7687}:7687"   # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      # Do NOT also pass NEO4J_PASSWORD here. Neo4j maps every `NEO4J_`-prefixed
+      # variable onto a config setting — that is how the two below work — and
+      # strict validation is on by default, so `NEO4J_PASSWORD` is read as a
+      # setting named PASSWORD, which does not exist, and the server exits with
+      # "Failed to read config / Unrecognized setting" before it ever binds a
+      # port. The healthcheck below therefore derives the password from
+      # NEO4J_AUTH, which the image's entrypoint understands and which is
+      # already here.
+      #
+      # Sizing is the real scaling limit for graph memory: the graph must fit in
+      # page cache for traversal speed. Sized for a dev host; raise both
+      # together on a larger one, and re-probe rather than extrapolating.
+      NEO4J_server_memory_heap_max__size: 2G
+      NEO4J_server_memory_pagecache_size: 1G
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    healthcheck:
+      # `NEO4J_AUTH` is `neo4j/<password>`, so the shell strips the `neo4j/`
+      # prefix rather than the password being duplicated into the container env
+      # — which, per the note above, is not something this image tolerates.
+      # `$$` defers the expansion to the container's shell; a single `$` would
+      # be interpolated by compose on the host and bake the password into the
+      # rendered command.
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#neo4j/}\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   garage:
@@ -411,5 +473,7 @@ services:
 volumes:
   redis-data:
   postgres-data:
+  neo4j-data:
+  neo4j-logs:
   garage-data:
   garage-meta:

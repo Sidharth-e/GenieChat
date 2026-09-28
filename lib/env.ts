@@ -29,6 +29,8 @@ function withBuildPlaceholders(
     SECRET_ENCRYPTION_KEY: "build-placeholder-encryption-key-123456",
     REDIS_URL: "redis://build-placeholder:6379",
     POSTGRES_URL: "postgresql://placeholder:placeholder@localhost:5432/placeholder",
+    NEO4J_URI: "bolt://placeholder:7687",
+    NEO4J_PASSWORD: "placeholder",
   };
 
   for (const [key, fallback] of Object.entries(buildPlaceholders)) {
@@ -173,6 +175,29 @@ const envSchema = z
       .transform((value) => (value?.trim() ? value.trim() : undefined))
       .pipe(z.string().url().optional()),
 
+    // Neo4j graph memory — the sole store for memories. Optional at build time;
+    // production requires URI + password via `superRefine` below, because a
+    // deployment missing them loses every memory rather than degrading.
+    //
+    // Blank normalises to `undefined` before URL validation, so `NEO4J_URI=`
+    // means "not configured" rather than a boot error, matching the convention
+    // the other optional vars follow.
+    NEO4J_URI: z
+      .string()
+      .optional()
+      .transform((value) => {
+        const trimmed = value?.trim();
+        return trimmed ? trimmed : undefined;
+      })
+      .pipe(z.string().url().optional()),
+    NEO4J_USER: z.string().optional(),
+    // No default: there is no defensible password, unlike NEO4J_USER where
+    // `neo4j` is the image's own. An unset one means "unconfigured".
+    NEO4J_PASSWORD: z.string().optional(),
+    // Model for the asynchronous entity/relation extraction pass. Defaults to
+    // DEFAULT_MODEL_ID in `config.memory.extractionModel`.
+    MEMORY_EXTRACTION_MODEL: z.string().optional(),
+
     // Security
     CRON_SECRET: z.string().optional(),
     SECRET_ENCRYPTION_KEY: z.string().optional(),
@@ -252,6 +277,23 @@ const envSchema = z
         path: ["POSTGRES_URL"],
         message:
           "POSTGRES_URL is required in production. Without it knowledge search returns nothing.",
+      });
+    }
+
+    if (!values.NEO4J_URI) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["NEO4J_URI"],
+        message:
+          "NEO4J_URI is required in production. Without it every memory is unavailable.",
+      });
+    }
+
+    if (!values.NEO4J_PASSWORD) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["NEO4J_PASSWORD"],
+        message: "NEO4J_PASSWORD is required in production.",
       });
     }
   });
