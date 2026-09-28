@@ -94,6 +94,7 @@ export const config = {
 
   openrouter: {
     apiKey: env.OPENROUTER_API_KEY,
+    embeddingModel: env.OPENROUTER_EMBEDDING_MODEL,
   },
 
   ollama: {

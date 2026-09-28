@@ -135,6 +135,9 @@ const envSchema = z
     GOOGLE_API_KEY: z.string().optional(),
     EXA_API_KEY: z.string().optional(),
     OPENROUTER_API_KEY: z.string().optional(),
+    OPENROUTER_EMBEDDING_MODEL: z
+      .string()
+      .default("nvidia/nemotron-3-embed-1b:free"),
 
     // Auth
     GITHUB_CLIENT_ID: z.string().trim().optional(),

@@ -20,7 +20,7 @@ export class EmbeddingDimensionError extends Error {
   constructor(actual: number, expected: number, context: string) {
     super(
       `${context}: embedding width ${actual} does not match the index contract (${expected}). ` +
-        `Check OLLAMA_EMBEDDING_MODEL against EMBEDDING_DIMENSIONS.`,
+        `Check OPENROUTER_EMBEDDING_MODEL against EMBEDDING_DIMENSIONS.`,
     );
     this.name = "EmbeddingDimensionError";
     this.actual = actual;

@@ -1,5 +1,4 @@
-/** The index contract. Must match the configured OLLAMA_EMBEDDING_MODEL's width. */
-export const EMBEDDING_DIMENSIONS = 768;
+export const EMBEDDING_DIMENSIONS = 2048;
 
 export const EMBEDDING_MAX_INPUT_TOKENS = 8192;
 export const EMBEDDING_TOKEN_SAFETY_MARGIN = 256;

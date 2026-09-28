@@ -1,5 +1,6 @@
 import { MongoClient, type Filter } from "mongodb";
-import { OllamaEmbeddings } from "@langchain/ollama";
+import axios, { type AxiosInstance } from "axios";
+import { z } from "zod";
 import { Pool } from "pg";
 import {
   DELETE_CHUNKS_FOR_OWNER_SQL,
@@ -78,14 +79,29 @@ async function main(): Promise<void> {
 
   const pool = new Pool({ connectionString: postgresUrl });
   const mongo = new MongoClient(mongoUri);
-  const embeddings = new OllamaEmbeddings({
-    model: process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text",
-    baseUrl: process.env.OLLAMA_BASE_URL,
-    ...(process.env.OLLAMA_API_KEY
-      ? { headers: { Authorization: `Bearer ${process.env.OLLAMA_API_KEY}` } }
-      : {}),
-    truncate: true,
-    maxRetries: 3,
+
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    console.error("OPENROUTER_API_KEY is not set.");
+    process.exit(1);
+  }
+  const model =
+    process.env.OPENROUTER_EMBEDDING_MODEL ?? "nvidia/nemotron-3-embed-1b:free";
+
+  const openRouterClient: AxiosInstance = axios.create({
+    baseURL: "https://openrouter.ai/api/v1",
+    timeout: 60_000,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  const embeddingDataSchema = z.object({
+    embedding: z.array(z.number()),
+  });
+  const openRouterEmbeddingResponseSchema = z.object({
+    data: z.array(embeddingDataSchema).min(1),
   });
 
   let indexed = 0;
@@ -153,11 +169,18 @@ async function main(): Promise<void> {
             const content = contents[index];
             let embedding: number[] | null = null;
             try {
-              embedding = await embeddings.embedQuery(
-                truncateByEstimatedTokenBudget(
-                  normalizeTextForEmbedding(content),
-                ),
+              const candidate = truncateByEstimatedTokenBudget(
+                normalizeTextForEmbedding(content),
               );
+              const textToEmbed = candidate.trim() || ".";
+              const response = await openRouterClient.post("/embeddings", {
+                model,
+                input: textToEmbed,
+              });
+              const parsed = openRouterEmbeddingResponseSchema.parse(
+                response.data,
+              );
+              embedding = parsed.data[0].embedding;
               if (embedding.length !== EMBEDDING_DIMENSIONS) {
                 console.error(
                   `Embedding width ${embedding.length} != ${EMBEDDING_DIMENSIONS}; aborting.`,

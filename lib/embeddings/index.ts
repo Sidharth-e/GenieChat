@@ -1,8 +1,12 @@
 import "server-only";
-import { OllamaEmbeddings } from "@langchain/ollama";
+import axios, { type AxiosInstance } from "axios";
+import { z } from "zod";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
-import { assertEmbeddingDimensions } from "./dimensions";
+import {
+  assertEmbeddingDimensions,
+  isEmbeddingDimensionError,
+} from "./dimensions";
 import {
   estimateTokenCount,
   getErrorMessage,
@@ -13,46 +17,63 @@ import {
   truncateByEstimatedTokenBudget,
 } from "./text";
 
-// Re-exported rather than redefined here: this layer is `"server-only"`, and the
-// assertion and its error type are pure, so they live where they can be tested.
 export {
   EmbeddingDimensionError,
   assertEmbeddingDimensions,
   isEmbeddingDimensionError,
 } from "./dimensions";
 
-function getEmbeddingsInstance(): OllamaEmbeddings {
-  const model = config.ollama.embeddingModel;
-  if (!model) {
+const OPENROUTER_TIMEOUT_MS = 60_000;
+
+export const openRouterEmbeddingClient: AxiosInstance = axios.create({
+  baseURL: "https://openrouter.ai/api/v1",
+  timeout: OPENROUTER_TIMEOUT_MS,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+openRouterEmbeddingClient.interceptors.request.use((reqConfig) => {
+  const apiKey = config.openrouter.apiKey;
+  if (!apiKey) {
     throw new Error(
-      "Ollama embedding model not configured. Set OLLAMA_EMBEDDING_MODEL.",
+      "OpenRouter API key not configured. Set OPENROUTER_API_KEY.",
     );
   }
+  reqConfig.headers.Authorization = `Bearer ${apiKey}`;
+  return reqConfig;
+});
 
-  const baseUrl = config.ollama.baseUrl;
-  if (!baseUrl) {
-    throw new Error(
-      "Ollama base URL not configured. Set OLLAMA_BASE_URL (Ollama Cloud: https://ollama.com).",
-    );
-  }
+openRouterEmbeddingClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const message =
+      error.response?.data?.error?.message ||
+      error.response?.data?.message ||
+      error.message ||
+      "OpenRouter embedding request failed";
+    return Promise.reject(new Error(message));
+  },
+);
 
-  const apiKey = config.ollama.apiKey;
+const embeddingDataSchema = z.object({
+  embedding: z.array(z.number()),
+  index: z.number().optional(),
+});
 
-  return new OllamaEmbeddings({
-    model,
-    baseUrl,
-    ...(apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {}),
-    // OLLAMA_EMBEDDING_DIMENSIONS is deliberately NOT forwarded: nomic-embed-text
-    // rejects a custom width, and EMBEDDING_DIMENSIONS is already asserted on the
-    // way out — a mismatch should fail loudly, not be coerced.
-    // Let the server clamp over-long inputs rather than erroring on them.
-    truncate: true,
-    maxRetries: 3,
-  });
-}
+const openRouterEmbeddingResponseSchema = z.object({
+  data: z.array(embeddingDataSchema).min(1),
+  model: z.string().optional(),
+});
 
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const embeddings = getEmbeddingsInstance();
+  const model = config.openrouter.embeddingModel;
+  if (!model) {
+    throw new Error(
+      "OpenRouter embedding model not configured. Set OPENROUTER_EMBEDDING_MODEL.",
+    );
+  }
+
   let candidate = truncateByEstimatedTokenBudget(
     normalizeTextForEmbedding(text),
   );
@@ -61,29 +82,50 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const embedding = await embeddings.embedQuery(candidate);
+      const textToEmbed = candidate.trim() || ".";
+      const response = await openRouterEmbeddingClient.post("/embeddings", {
+        model,
+        input: textToEmbed,
+      });
+
+      const parsed = openRouterEmbeddingResponseSchema.safeParse(response.data);
+      if (!parsed.success) {
+        throw new Error(
+          `Invalid response structure from OpenRouter embeddings: ${parsed.error.message}`,
+        );
+      }
+
+      const embedding = parsed.data.data[0].embedding;
       assertEmbeddingDimensions(embedding, "generateEmbedding");
       return embedding;
     } catch (error) {
       lastError = error;
-      if (!isContextLengthError(error)) throw error;
-
-      const parsed = parseContextLengthError(error);
-      const ratio =
-        parsed && parsed.requested > 0 ? parsed.limit / parsed.requested : 0.5;
-      const shrunk = shrinkTextForRetry(candidate, ratio * 0.9);
-      if (!shrunk) {
-        logger.error(
-          { estimatedTokens: estimateTokenCount(original) },
-          "Embedding failed: text cannot be shrunk any further",
+      if (isEmbeddingDimensionError(error)) throw error;
+      if (isContextLengthError(error)) {
+        const parsed = parseContextLengthError(error);
+        const ratio =
+          parsed && parsed.requested > 0 ? parsed.limit / parsed.requested : 0.5;
+        const shrunk = shrinkTextForRetry(candidate, ratio * 0.9);
+        if (!shrunk) {
+          logger.error(
+            { estimatedTokens: estimateTokenCount(original) },
+            "Embedding failed: text cannot be shrunk any further",
+          );
+          throw error;
+        }
+        logger.warn(
+          { attempt, from: candidate.length, to: shrunk.length },
+          "Embedding exceeded the context window; retrying with a shorter text",
         );
-        throw error;
+        candidate = shrunk;
+        continue;
       }
-      logger.warn(
-        { attempt, from: candidate.length, to: shrunk.length },
-        "Embedding exceeded the context window; retrying with a shorter text",
-      );
-      candidate = shrunk;
+
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        continue;
+      }
+      throw error;
     }
   }
 

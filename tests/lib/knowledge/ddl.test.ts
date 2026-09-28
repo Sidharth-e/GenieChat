@@ -40,4 +40,10 @@ describe("buildKnowledgeDdl", () => {
   it("targets the table every other module reads", () => {
     expect(buildKnowledgeDdl(768)[1]).toContain(KNOWLEDGE_TABLE);
   });
+
+  it("builds a halfvec column and halfvec_cosine_ops index for dimensions over 2000", () => {
+    const ddl = buildKnowledgeDdl(2048).join("\n");
+    expect(ddl).toContain("embedding   halfvec(2048)");
+    expect(ddl).toContain("USING hnsw (embedding halfvec_cosine_ops)");
+  });
 });

@@ -26,7 +26,10 @@ async function main(): Promise<void> {
         WHERE attrelid = 'knowledge_chunks'::regclass
           AND attname = 'embedding'`,
     );
-    const expected = `vector(${EMBEDDING_DIMENSIONS})`;
+    const expected =
+      EMBEDDING_DIMENSIONS > 2000
+        ? `halfvec(${EMBEDDING_DIMENSIONS})`
+        : `vector(${EMBEDDING_DIMENSIONS})`;
     const actual = widthRows[0]?.column_type;
     if (actual !== expected) {
       console.error(

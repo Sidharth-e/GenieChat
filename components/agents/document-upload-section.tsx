@@ -321,8 +321,15 @@ export function DocumentUploadSection({
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || "Failed to upload file");
+          let errorMsg = `Upload failed (${response.status})`;
+          try {
+            const data = await response.json();
+            if (data?.error) errorMsg = data.error;
+          } catch {
+            const text = await response.text().catch(() => "");
+            if (text) errorMsg = text.slice(0, 200);
+          }
+          throw new Error(errorMsg);
         }
 
         const newDoc: AgentDocument = await response.json();
@@ -337,11 +344,11 @@ export function DocumentUploadSection({
         );
       }
     } catch (error) {
-      logger.error("Upload error:", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to upload file";
+      logger.error({ err: error }, `Upload error: ${message}`);
       resetProgressSimulation();
-      setUploadError(
-        error instanceof Error ? error.message : "Failed to upload file",
-      );
+      setUploadError(message);
     } finally {
       setIsUploading(false);
     }
@@ -374,16 +381,23 @@ export function DocumentUploadSection({
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete file");
+        let errorMsg = `Delete failed (${response.status})`;
+        try {
+          const data = await response.json();
+          if (data?.error) errorMsg = data.error;
+        } catch {
+          const text = await response.text().catch(() => "");
+          if (text) errorMsg = text.slice(0, 200);
+        }
+        throw new Error(errorMsg);
       }
 
       onDocumentsChange(documents.filter((d) => d.id !== documentId));
     } catch (error) {
-      logger.error("Delete error:", error);
-      setUploadError(
-        error instanceof Error ? error.message : "Failed to delete file",
-      );
+      const message =
+        error instanceof Error ? error.message : "Failed to delete file";
+      logger.error({ err: error }, `Delete error: ${message}`);
+      setUploadError(message);
     } finally {
       setDeletingId(null);
     }

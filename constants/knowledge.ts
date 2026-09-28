@@ -1,3 +1,5 @@
+import { EMBEDDING_DIMENSIONS } from "./embeddings";
+
 /** Owner kinds a knowledge chunk can belong to. */
 export const KNOWLEDGE_OWNER_TYPES = ["agent", "chat"] as const;
 export type KnowledgeOwnerType = (typeof KNOWLEDGE_OWNER_TYPES)[number];
@@ -50,9 +52,11 @@ export const DELETE_CHUNKS_FOR_SOURCE_SQL = `DELETE FROM ${KNOWLEDGE_TABLE}
  * reason as the deletes: the script runs under `tsx`, where the `"server-only"`
  * modules do not resolve, and a duplicated statement would let the two drift.
  */
+const VECTOR_TYPE = EMBEDDING_DIMENSIONS > 2000 ? "halfvec" : "vector";
+
 export const INSERT_CHUNK_SQL = `INSERT INTO ${KNOWLEDGE_TABLE}
   (id, owner_type, owner_id, user_id, source_id, title, chunk_index, content, embedding)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)`;
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::${VECTOR_TYPE})`;
 
 /**
  * One statement, two rankings. The vector branch and the lexical branch are
@@ -85,12 +89,12 @@ export const INSERT_CHUNK_SQL = `INSERT INTO ${KNOWLEDGE_TABLE}
  */
 export const KNOWLEDGE_SEARCH_SQL = `
   WITH vector_hits AS (
-    SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1::vector) AS vrank
+    SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1::${VECTOR_TYPE}) AS vrank
     FROM ${KNOWLEDGE_TABLE} c
     WHERE c.owner_type = $2 AND c.owner_id = $3 AND c.user_id = $6
       AND c.embedding IS NOT NULL
-      AND $1::vector IS NOT NULL
-    ORDER BY c.embedding <=> $1::vector
+      AND $1::${VECTOR_TYPE} IS NOT NULL
+    ORDER BY c.embedding <=> $1::${VECTOR_TYPE}
     LIMIT $4
   ),
   lexical_hits AS (
@@ -122,6 +126,9 @@ export function buildKnowledgeDdl(dimensions: number): string[] {
   if (!Number.isInteger(dimensions) || dimensions <= 0) {
     throw new Error(`Invalid embedding dimensions: ${dimensions}`);
   }
+  const isHalfVec = dimensions > 2000;
+  const colType = isHalfVec ? `halfvec(${dimensions})` : `vector(${dimensions})`;
+  const indexOps = isHalfVec ? "halfvec_cosine_ops" : "vector_cosine_ops";
   return [
     "CREATE EXTENSION IF NOT EXISTS vector",
     `CREATE TABLE IF NOT EXISTS ${KNOWLEDGE_TABLE} (
@@ -134,7 +141,7 @@ export function buildKnowledgeDdl(dimensions: number): string[] {
       chunk_index integer NOT NULL,
       content     text NOT NULL,
       content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
-      embedding   vector(${dimensions}),
+      embedding   ${colType},
       created_at  timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE INDEX IF NOT EXISTS ${KNOWLEDGE_INDEX_NAMES.owner}
@@ -144,7 +151,7 @@ export function buildKnowledgeDdl(dimensions: number): string[] {
     `CREATE INDEX IF NOT EXISTS ${KNOWLEDGE_INDEX_NAMES.tsv}
       ON ${KNOWLEDGE_TABLE} USING gin (content_tsv)`,
     `CREATE INDEX IF NOT EXISTS ${KNOWLEDGE_INDEX_NAMES.embedding}
-      ON ${KNOWLEDGE_TABLE} USING hnsw (embedding vector_cosine_ops)
+      ON ${KNOWLEDGE_TABLE} USING hnsw (embedding ${indexOps})
       WITH (m = ${HNSW_M}, ef_construction = ${HNSW_EF_CONSTRUCTION})`,
   ];
 }

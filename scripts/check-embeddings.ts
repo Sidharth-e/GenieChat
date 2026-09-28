@@ -1,10 +1,11 @@
-import { OllamaEmbeddings } from "@langchain/ollama";
+import axios, { type AxiosInstance } from "axios";
+import { z } from "zod";
+import { EMBEDDING_DIMENSIONS } from "../constants/embeddings";
 import {
   normalizeTextForEmbedding,
   truncateByEstimatedTokenBudget,
 } from "../lib/embeddings/text";
 
-const EMBEDDING_DIMENSIONS = 768;
 const failures: string[] = [];
 
 function report(name: string, ok: boolean, detail: string): void {
@@ -12,40 +13,69 @@ function report(name: string, ok: boolean, detail: string): void {
   if (!ok) failures.push(name);
 }
 
+const embeddingDataSchema = z.object({
+  embedding: z.array(z.number()),
+  index: z.number().optional(),
+});
+
+const openRouterEmbeddingResponseSchema = z.object({
+  data: z.array(embeddingDataSchema).min(1),
+  model: z.string().optional(),
+});
+
 async function main(): Promise<void> {
-  const baseUrl = process.env.OLLAMA_BASE_URL;
-  if (!baseUrl) {
-    console.error("OLLAMA_BASE_URL is not set. Add it to .env before running this.");
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    console.error(
+      "OPENROUTER_API_KEY is not set. Add it to .env before running this.",
+    );
     process.exit(1);
   }
 
-  const embeddings = new OllamaEmbeddings({
-    model: process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text",
-    baseUrl,
-    ...(process.env.OLLAMA_API_KEY
-      ? { headers: { Authorization: `Bearer ${process.env.OLLAMA_API_KEY}` } }
-      : {}),
-    truncate: true,
-    maxRetries: 3,
+  const model =
+    process.env.OPENROUTER_EMBEDDING_MODEL ?? "nvidia/nemotron-3-embed-1b:free";
+
+  const client: AxiosInstance = axios.create({
+    baseURL: "https://openrouter.ai/api/v1",
+    timeout: 60_000,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
   });
+
+  client.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      const message =
+        error.response?.data?.error?.message ||
+        error.response?.data?.message ||
+        error.message ||
+        "OpenRouter embedding request failed";
+      return Promise.reject(new Error(message));
+    },
+  );
 
   const cases: { name: string; text: string }[] = [
     { name: "short text", text: "I deploy on Fridays." },
-    // Far past the token budget: this is the case the head/tail truncation
-    // exists for, and the one that used to throw a context-length error.
     { name: "over-budget text", text: "deploy window ".repeat(20_000) },
-    // An empty string must not throw — an empty document is a real input.
     { name: "empty text", text: "" },
     { name: "punctuation only", text: "!!! ??? *** ..." },
   ];
 
   for (const testCase of cases) {
     try {
-      const vector = await embeddings.embedQuery(
-        truncateByEstimatedTokenBudget(
-          normalizeTextForEmbedding(testCase.text),
-        ),
+      const candidate = truncateByEstimatedTokenBudget(
+        normalizeTextForEmbedding(testCase.text),
       );
+      const textToEmbed = candidate.trim() || ".";
+      const response = await client.post("/embeddings", {
+        model,
+        input: textToEmbed,
+      });
+
+      const parsed = openRouterEmbeddingResponseSchema.parse(response.data);
+      const vector = parsed.data[0].embedding;
       const ok = vector.length === EMBEDDING_DIMENSIONS;
       report(testCase.name, ok, `width=${vector.length}`);
     } catch (error) {
@@ -58,7 +88,9 @@ async function main(): Promise<void> {
   }
 
   if (failures.length > 0) {
-    console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
+    console.error(
+      `\n${failures.length} check(s) failed: ${failures.join(", ")}`,
+    );
     process.exit(1);
   }
   console.log("\nall checks passed");
