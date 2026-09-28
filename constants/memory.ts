@@ -147,3 +147,12 @@ export const MEMORY_STOPWORDS = new Set([
 export function memorySeedLimit(top: number): number {
   return Math.max(top * MEMORY_SEED_MULTIPLIER, MEMORY_SEED_MIN);
 }
+
+/**
+ * Bound on the retrieval query string. Moved out of the store so the pure text
+ * primitives can read it without importing the Azure module.
+ */
+export const MEMORY_MAX_QUERY_CHARS = 24_000;
+
+/** Joins the kept head and tail of a truncated retrieval query. */
+export const MEMORY_QUERY_SEPARATOR = "\n...\n";
