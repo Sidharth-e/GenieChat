@@ -4,6 +4,8 @@ import type { ManagedTransaction } from "neo4j-driver";
 import {
   MEMORY_EDGE_CANDIDATE_LIMIT,
   MEMORY_EDGE_NEIGHBOR_LIMIT,
+  MEMORY_GRAPH_MEMORY_LIMIT,
+  MEMORY_LLM_EDGE_TYPES,
   MEMORY_TRAVERSABLE_TYPES,
   memorySeedLimit,
 } from "@/constants/memory";
@@ -16,23 +18,28 @@ import {
   ENTITY_ABOUT_CYPHER,
   ENTITY_GC_CYPHER,
   EXPAND_CYPHER,
+  GRAPH_ABOUT_CYPHER,
+  GRAPH_ENTITY_RELATIONS_CYPHER,
+  GRAPH_MEMORIES_CYPHER,
+  GRAPH_MEMORY_COUNT_CYPHER,
+  GRAPH_MEMORY_EDGES_CYPHER,
   MEMORY_DELETE_CYPHER,
   SEED_CYPHER,
 } from "./cypher";
 import { enrichMemory } from "./enrich";
 import { writeEnrichment } from "./enrichment-write";
 import type { Enrichment } from "./enrichment-schema";
+import type { MemoryGraphRows } from "./graph-view";
 import type { ExtractionNeighbour } from "./llm-extraction";
 import { mergeRecallCandidates, rankRecall } from "./recall";
 import { normalizeQueryForRetrieval } from "./text";
-import { buildMemoryUpdateSet, normalizeMemoryCategory } from "./update";
+import { buildMemoryUpdateSet } from "./update";
 import type { GraphRAGMemorySearchResult, Memory, MemoryMode } from "./types";
 
 interface MemoryNode {
   id: string;
   userId: string;
   content: string;
-  category: string;
   createdAt: string;
   updatedAt: string;
   userName?: string | null;
@@ -50,7 +57,6 @@ function nodeToMemory(node: MemoryNode): Memory {
     userName: node.userName ?? "",
     userEmail: node.userEmail ?? "",
     content: node.content,
-    category: (node.category ?? "other") as Memory["category"],
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     enrichedAt: node.enrichedAt ?? null,
@@ -103,7 +109,6 @@ function rowToRecallFields(record: Record<string, unknown>) {
   return {
     id: String(record.id ?? ""),
     content: String(record.content ?? ""),
-    category: normalizeMemoryCategory(record.category),
     userName: String(record.userName ?? ""),
     userEmail: String(record.userEmail ?? ""),
     createdAt: String(record.createdAt ?? ""),
@@ -140,7 +145,6 @@ export class MemoryGraphStore {
           `MERGE (m:Memory {id: $id})
            SET m.userId = $userId,
                m.content = $content,
-               m.category = $category,
                m.createdAt = $createdAt,
                m.updatedAt = $updatedAt,
                m.userName = $userName,
@@ -151,10 +155,6 @@ export class MemoryGraphStore {
             id,
             userId: memory.userId,
             content,
-            // The one constraint on a writable field: an unrecognised category
-            // would render as `- [nonsense] ...` in every prompt that retrieves
-            // this memory.
-            category: normalizeMemoryCategory(memory.category) ?? null,
             createdAt: now,
             updatedAt: now,
             userName: memory.userName ?? null,
@@ -179,9 +179,6 @@ export class MemoryGraphStore {
 
     return {
       ...memory,
-      // Echoed as the store wrote it, not as the caller passed it: a dropped
-      // category must not come back claiming it was stored.
-      category: normalizeMemoryCategory(memory.category),
       id,
       createdAt: now,
       updatedAt: now,
@@ -319,6 +316,107 @@ export class MemoryGraphStore {
         ),
       );
       return records.map((record) => nodeToMemory(record.get("m").properties as MemoryNode));
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
+   * The graph view's read: the drawn window, its edges, and the true total.
+   *
+   * Four statements in one session rather than one query, because the window has
+   * to be chosen *before* the edges are read — `GRAPH_MEMORIES_CYPHER` decides
+   * which memories exist for this view, and the edges are then scoped to that id
+   * set. A single pattern would return edges to memories the window excluded,
+   * which the view can only drop (making the picture disagree with the degrees
+   * it reports) or draw as an orphan.
+   *
+   * Deliberately not a transaction: this is a read, the window cannot change
+   * under it in any way the reader would notice, and `executeRead` per statement
+   * keeps each one's retry behaviour to the statement that failed.
+   */
+  async getMemoryGraph(
+    userId: string,
+    memoryLimit: number = MEMORY_GRAPH_MEMORY_LIMIT,
+  ): Promise<{ rows: MemoryGraphRows; totalMemories: number }> {
+    const driver = await this.requireDriver();
+    const session = driver.session();
+    try {
+      const memoryRows = await session.executeRead(async (tx) => {
+        const { records } = await tx.run(GRAPH_MEMORIES_CYPHER, {
+          userId,
+          limit: memoryLimit,
+        });
+        return records.map((record) => ({
+          id: String(record.get("id") ?? ""),
+          content: String(record.get("content") ?? ""),
+          createdAt: String(record.get("createdAt") ?? ""),
+        }));
+      });
+
+      const totalMemories = await session.executeRead(async (tx) => {
+        const { records } = await tx.run(GRAPH_MEMORY_COUNT_CYPHER, { userId });
+        return Number(records[0]?.get("total") ?? 0);
+      });
+
+      const memoryIds = memoryRows.map((row) => row.id);
+      // Nothing to attach edges to, and `IN []` is a wasted round trip each.
+      if (memoryIds.length === 0) {
+        return {
+          rows: { memories: [], about: [], memoryEdges: [], entityRelations: [] },
+          totalMemories,
+        };
+      }
+
+      const about = await session.executeRead(async (tx) => {
+        const { records } = await tx.run(GRAPH_ABOUT_CYPHER, { userId, memoryIds });
+        return records.map((record) => ({
+          memoryId: String(record.get("memoryId") ?? ""),
+          entityId: String(record.get("entityId") ?? ""),
+          entityName: record.get("entityName") as string | null,
+          normalizedName: record.get("normalizedName") as string | null,
+        }));
+      });
+
+      const memoryEdges = await session.executeRead(async (tx) => {
+        const { records } = await tx.run(GRAPH_MEMORY_EDGES_CYPHER, {
+          userId,
+          memoryIds,
+          // From the same constant `buildMemoryEdgeCypher` guards with, so a type
+          // the writer may not create is also not one the reader asks for.
+          edgeTypes: [...MEMORY_LLM_EDGE_TYPES],
+        });
+        return records.map((record) => ({
+          source: String(record.get("source") ?? ""),
+          target: String(record.get("target") ?? ""),
+          type: String(record.get("type") ?? ""),
+          weight: record.get("weight") as number | null,
+          reason: record.get("reason") as string | null,
+        }));
+      });
+
+      // Read from the ABOUT rows rather than from a full entity scan: the
+      // relations that matter are the ones between entities this window drew.
+      const entityIds = [...new Set(about.map((row) => row.entityId))];
+      const entityRelations =
+        entityIds.length === 0
+          ? []
+          : await session.executeRead(async (tx) => {
+              const { records } = await tx.run(GRAPH_ENTITY_RELATIONS_CYPHER, {
+                userId,
+                entityIds,
+              });
+              return records.map((record) => ({
+                source: String(record.get("source") ?? ""),
+                target: String(record.get("target") ?? ""),
+                relationType: record.get("relationType") as string | null,
+              }));
+            });
+
+      return {
+        rows: { memories: memoryRows, about, memoryEdges, entityRelations },
+        totalMemories,
+      };
     } finally {
       await session.close();
     }
@@ -572,7 +670,6 @@ export class MemoryGraphStore {
           userName: candidate.userName,
           userEmail: candidate.userEmail,
           content: candidate.content,
-          category: candidate.category,
           createdAt: candidate.createdAt,
           updatedAt: candidate.updatedAt,
           enrichedAt: null,

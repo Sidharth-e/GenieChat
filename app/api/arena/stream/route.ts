@@ -167,9 +167,7 @@ export async function POST(req: NextRequest) {
           message,
           5,
         );
-        memoryStrings = result.memories.map(
-          (m) => `- [${m.category || "other"}] ${m.content}`,
-        );
+        memoryStrings = result.memories.map((m) => `- ${m.content}`);
       } catch (err) {
         logger.warn({ err }, "Failed to load memories for arena");
       }

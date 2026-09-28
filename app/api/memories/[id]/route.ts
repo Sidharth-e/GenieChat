@@ -5,7 +5,6 @@ import { MemoryGraphStore } from "@/lib/memory/graph-store";
 import { api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
-import { MemoryCategory } from "@/lib/types";
 
 const memoryStore = new MemoryGraphStore();
 
@@ -66,11 +65,10 @@ export async function PUT(
             return api.forbidden("Access denied");
         }
 
-        const { content, category } = await req.json();
+        const { content } = await req.json();
 
         const updated = await memoryStore.updateMemory(id, user.id, {
             content: content?.trim(),
-            category: category as MemoryCategory | undefined,
         });
 
         return NextResponse.json(updated);

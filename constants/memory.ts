@@ -1,5 +1,3 @@
-import type { MemoryCategory } from "@/lib/types";
-
 export const MEMORY_VECTOR_INDEX_NAMES = {
   memory: "memory_embedding",
   entity: "entity_embedding",
@@ -56,21 +54,6 @@ export function buildNeo4jDdl(dimensions: number): string[] {
        }}`,
   ];
 }
-
-/**
- * The categories a memory may carry, and the runtime half of the
- * `MemoryCategory` union in `lib/types.ts`. Moved here from the retired
- * `vector-memory-store.ts`, which validated every write against it and is
- * deleted whole: typed as `Set<MemoryCategory>` so narrowing the union fails to
- * compile here rather than silently rejecting a category the UI still offers.
- */
-export const MEMORY_CATEGORIES: Set<MemoryCategory> = new Set([
-  "preference",
-  "fact",
-  "instruction",
-  "professional",
-  "other",
-]);
 
 /** Carried over from the retired `vector-memory-store.ts`, unchanged. */
 export const MEMORY_EDGE_THRESHOLD = 0.2;
@@ -149,6 +132,18 @@ export type MemoryLlmEdgeType = (typeof MEMORY_LLM_EDGE_TYPES)[number];
  */
 export const MEMORY_TRAVERSABLE_TYPES: string[] = [...MEMORY_RELATION_TYPES];
 
+/**
+ * Every edge type the graph view can draw: the four relation types, plus
+ * `RELATION`, which is the entity→entity carrier and deliberately lives outside
+ * `MEMORY_RELATION_TYPES` (see `RELATION_CYPHER` — it holds its type as a
+ * property, not as the type itself).
+ */
+export const MEMORY_GRAPH_EDGE_KINDS = [
+  ...MEMORY_RELATION_TYPES,
+  "RELATION",
+] as const;
+export type MemoryGraphEdgeKind = (typeof MEMORY_GRAPH_EDGE_KINDS)[number];
+
 /** Carried over verbatim from the retired `vector-memory-store.ts`. */
 export const MEMORY_STOPWORDS = new Set([
   "the",
@@ -200,3 +195,78 @@ export const MEMORY_MAX_QUERY_CHARS = 24_000;
 
 /** Joins the kept head and tail of a truncated retrieval query. */
 export const MEMORY_QUERY_SEPARATOR = "\n...\n";
+
+/**
+ * How many memories the graph view reads before their entities are added.
+ * Separate from `MEMORY_GRAPH_NODE_LIMIT` because the two bound different
+ * things: this bounds the traversal's input, that bounds what is drawn.
+ */
+export const MEMORY_GRAPH_MEMORY_LIMIT = 120;
+
+/**
+ * The ceiling on *total* nodes the graph view renders — memories plus entities.
+ *
+ * It exists because `layoutMemoryGraph` is O(n²) per iteration, so the layout
+ * cost tracks the square of whatever this allows. Entities are ranked by how
+ * many of the kept memories link them, so a cap drops the least-connected
+ * ones rather than an arbitrary slice. Memories are never dropped here: the
+ * read cap above already chose them, newest first.
+ *
+ * 150 is a wall-clock bound, not an aesthetic one. The layout runs
+ * synchronously when the view renders, so this is what keeps a graph of the cap
+ * size inside a frame or two (~1.8M pair-iterations) instead of the second a
+ * 300-node graph takes. Raising it means moving the layout off the render path
+ * first — a worker or a chunked loop — because a synchronous second is a frozen
+ * tab.
+ */
+export const MEMORY_GRAPH_NODE_LIMIT = 150;
+
+/**
+ * Drawn sizes, in layout units, and therefore also what the simulation is told
+ * a node's radius is. They live here rather than in the component because
+ * `layoutMemoryGraph` and the renderer have to agree: a node the layout thinks
+ * is a pill and the view draws as a card sits on top of its neighbours.
+ */
+export const MEMORY_GRAPH_MEMORY_NODE_SIZE = { width: 176, height: 64 } as const;
+export const MEMORY_GRAPH_ENTITY_NODE_SIZE = { width: 112, height: 28 } as const;
+
+/**
+ * Layout tuning, and the reason each number is what it is.
+ *
+ * The forces are Fruchterman–Reingold's, which is what makes the numbers here
+ * few: every force is expressed against `k`, the ideal edge length derived from
+ * the canvas area and the node count, so there is nothing to retune when the
+ * panel is resized. Repulsion is `k²/d` and attraction is `d²/k`; the two cross
+ * at exactly `d = k`, so a connected pair settles at the ideal spacing rather
+ * than at a distance some constant happened to pick.
+ *
+ * `LAYOUT_CENTER_PULL` — gravity toward the middle, applied as a fraction of
+ * each node's distance from it. It is what keeps a graph of several disconnected
+ * components from drifting off-canvas, and it must stay well *below* the
+ * repulsion at a typical distance or it collapses the layout to a point: at a
+ * distance of `k` repulsion is `k` itself, so a pull of 0.01 is two orders of
+ * magnitude weaker. That margin is the whole reason the value looks so small.
+ * `LAYOUT_MAX_STEP` — an absolute ceiling on one iteration's movement, on top of
+ * the cooling temperature. Repulsion diverges as `d → 0`, so a pair that drifts
+ * coincident would otherwise fling both nodes across the canvas in a single
+ * step and drag the rest of the graph after them.
+ * `LAYOUT_TEMPERATURE_DECAY` — the cooling schedule, from `min(width, height)/10`
+ * down to roughly a tenth of that over `LAYOUT_ITERATIONS`. A layout that cools
+ * too fast freezes in its seeded spiral; one that never cools oscillates.
+ * `LAYOUT_ITERATIONS` — a fixed count rather than a convergence test, because a
+ * graph that never fully settles would never terminate the test. 160 is where a
+ * graph of the cap size stops visibly moving.
+ */
+export const MEMORY_GRAPH_LAYOUT_ITERATIONS = 160;
+export const MEMORY_GRAPH_LAYOUT_CENTER_PULL = 0.01;
+export const MEMORY_GRAPH_LAYOUT_MAX_STEP = 18;
+export const MEMORY_GRAPH_LAYOUT_TEMPERATURE_DECAY = 0.985;
+
+/**
+ * Bounds on the drawn canvas, in layout units. The simulation runs in its own
+ * coordinate space and these give it an area to aim for; React Flow then fits
+ * the result to whatever the panel actually is, so these are not pixels and do
+ * not need to track the viewport.
+ */
+export const MEMORY_GRAPH_LAYOUT_WIDTH = 1400;
+export const MEMORY_GRAPH_LAYOUT_HEIGHT = 900;

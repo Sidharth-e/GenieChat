@@ -3,18 +3,15 @@
 import { useState } from "react";
 import { X, Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
-import { MemoryCategory } from "@/lib/types";
 import { motion } from "framer-motion";
 
 interface MemoryFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (content: string, category: MemoryCategory) => Promise<void>;
+  onSave: (content: string) => Promise<void>;
   isSaving: boolean;
   mode?: "create" | "edit";
   initialContent?: string;
-  initialCategory?: MemoryCategory;
 }
 
 export function MemoryForm({
@@ -24,19 +21,17 @@ export function MemoryForm({
   isSaving,
   mode = "create",
   initialContent = "",
-  initialCategory = "fact",
 }: MemoryFormProps) {
   if (!isOpen) return null;
 
   return (
     <MemoryFormBody
-      key={`${mode}:${initialCategory}:${initialContent}`}
+      key={`${mode}:${initialContent}`}
       onClose={onClose}
       onSave={onSave}
       isSaving={isSaving}
       mode={mode}
       initialContent={initialContent}
-      initialCategory={initialCategory}
     />
   );
 }
@@ -47,27 +42,21 @@ function MemoryFormBody({
   isSaving,
   mode,
   initialContent,
-  initialCategory,
 }: Omit<MemoryFormProps, "isOpen">) {
   const [content, setContent] = useState(initialContent ?? "");
-  const [category, setCategory] = useState<MemoryCategory>(
-    initialCategory ?? "fact",
-  );
 
   const handleSave = async () => {
     if (!content.trim()) return;
-    await onSave(content.trim(), category);
+    await onSave(content.trim());
 
     // Keep create mode ready for another entry; edit mode closes from parent.
     if (mode === "create") {
       setContent("");
-      setCategory("fact");
     }
   };
 
   const handleClose = () => {
     setContent("");
-    setCategory("fact");
     onClose();
   };
 
@@ -101,22 +90,7 @@ function MemoryFormBody({
         rows={3}
         autoFocus
       />
-      <div className="flex items-center justify-between mt-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-text-secondary">Category:</span>
-          <Select
-            value={category}
-            onChange={(v) => setCategory(v as MemoryCategory)}
-            options={[
-              { value: "preference", label: "Preference" },
-              { value: "fact", label: "Fact" },
-              { value: "instruction", label: "Instruction" },
-              { value: "professional", label: "Professional" },
-              { value: "other", label: "Other" },
-            ]}
-            size="sm"
-          />
-        </div>
+      <div className="flex items-center justify-end mt-3">
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"

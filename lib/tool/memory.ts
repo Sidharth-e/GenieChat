@@ -1,6 +1,5 @@
 import { tool } from "langchain";
 import * as z from "zod";
-import type { MemoryCategory } from "@/lib/types";
 export const createSaveMemoryTool = (
   userId: string,
   userName: string = "",
@@ -18,7 +17,6 @@ export const createSaveMemoryTool = (
           userName,
           userEmail,
           content: input.content,
-          category: input.category as MemoryCategory | undefined,
         });
 
         return JSON.stringify({
@@ -42,12 +40,6 @@ export const createSaveMemoryTool = (
           .string()
           .describe(
             "The memory to remember. Be concise but complete. Example: 'User prefers concise responses', 'User's favorite color is blue', or 'User works as a backend engineer'.",
-          ),
-        category: z
-          .enum(["preference", "fact", "instruction", "professional", "other"])
-          .optional()
-          .describe(
-            "Category of the memory. 'preference' for likes/dislikes, 'fact' for personal info, 'instruction' for how to behave, 'professional' for work/career context, 'other' for misc.",
           ),
       }),
     },
@@ -91,14 +83,10 @@ export const createEditMemoryTool = (userId: string) =>
 
         const updates: {
           content?: string;
-          category?: MemoryCategory;
         } = {};
 
         if (input.content !== undefined) {
           updates.content = input.content.trim();
-        }
-        if (input.category !== undefined) {
-          updates.category = input.category;
         }
 
         const updatedMemory = await memoryStore.updateMemory(
@@ -118,7 +106,6 @@ export const createEditMemoryTool = (userId: string) =>
           message: "Memory updated successfully.",
           memory_id: updatedMemory.id,
           content: updatedMemory.content,
-          category: updatedMemory.category,
           note: "Memory has been re-indexed for future semantic retrieval.",
         });
       } catch (error) {
@@ -147,16 +134,6 @@ export const createEditMemoryTool = (userId: string) =>
             .string()
             .optional()
             .describe("Updated memory text. Keep it concise and specific."),
-          category: z
-            .enum([
-              "preference",
-              "fact",
-              "instruction",
-              "professional",
-              "other",
-            ])
-            .optional()
-            .describe("Optional updated category for this memory."),
         })
         .refine(
           (data) =>
@@ -166,12 +143,9 @@ export const createEditMemoryTool = (userId: string) =>
               "Provide memory_id or target_content to locate the memory.",
           },
         )
-        .refine(
-          (data) => data.content !== undefined || data.category !== undefined,
-          {
-            message: "At least one of content or category must be provided.",
-          },
-        ),
+        .refine((data) => data.content !== undefined, {
+          message: "Updated memory text is required.",
+        }),
     },
   );
 

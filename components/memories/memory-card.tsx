@@ -11,23 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { Memory, MemoryCategory } from "@/lib/types";
-
-const categoryColors: Record<MemoryCategory, string> = {
-  preference: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  fact: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  instruction: "bg-green-500/20 text-green-400 border-green-500/30",
-  professional: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-  other: "bg-gray-500/20 text-gray-400 border-gray-500/30",
-};
-
-const categoryLabels: Record<MemoryCategory, string> = {
-  preference: "Preference",
-  fact: "Fact",
-  instruction: "Instruction",
-  professional: "Professional",
-  other: "Other",
-};
+import { Memory } from "@/lib/types";
 
 interface MemoryCardProps {
   memory: Memory;
@@ -63,17 +47,6 @@ export function MemoryCard({
           <Brain className="h-3.5 w-3.5" />
         </div>
 
-        {memory.category && (
-          <span
-            className={cn(
-              "rounded px-1.5 py-px text-[10px] font-medium border",
-              categoryColors[memory.category],
-            )}
-          >
-            {categoryLabels[memory.category]}
-          </span>
-        )}
-
         <div className="flex-1" />
 
         <DropdownMenu>
@@ -98,7 +71,7 @@ export function MemoryCard({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="cursor-pointer gap-2 text-xs text-red-500 focus:text-red-500"
+              className="cursor-pointer gap-2 text-xs text-[var(--red)] focus:text-[var(--red)]"
               onClick={(e) => onDelete(e)}
             >
               <Trash2 className="h-3.5 w-3.5" />

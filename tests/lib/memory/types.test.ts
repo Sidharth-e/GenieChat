@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MemoryCategory } from "@/lib/types";
 import {
-  MEMORY_CATEGORIES,
   MEMORY_EDGE_NEIGHBOR_LIMIT,
   MEMORY_EDGE_THRESHOLD,
   MEMORY_ENTITY_MERGE_THRESHOLD,
@@ -56,29 +54,6 @@ describe("memory tuning constants", () => {
 
   it("weights the seed above the graph walk", () => {
     expect(MEMORY_WEIGHT_SEED).toBeGreaterThan(MEMORY_WEIGHT_GRAPH);
-  });
-});
-
-describe("MEMORY_CATEGORIES", () => {
-  // Moved here from vector-memory-store.ts:29, which Task 10 deletes whole. The
-  // write path validates a category against this set, so it has to outlive the
-  // store — otherwise every category arrives unvalidated and a typo silently
-  // persists as an unreachable memory.
-  it("keeps all five categories, including the two the UI offers", () => {
-    expect([...MEMORY_CATEGORIES].sort()).toEqual([
-      "fact",
-      "instruction",
-      "other",
-      "preference",
-      "professional",
-    ]);
-  });
-
-  it("rejects a category that is not one of them", () => {
-    // The cast is how the write path presents an untrusted request body to the
-    // same set — see MEMORY_CATEGORIES in constants/memory.ts.
-    expect(MEMORY_CATEGORIES.has("other")).toBe(true);
-    expect(MEMORY_CATEGORIES.has("nonsense" as MemoryCategory)).toBe(false);
   });
 });
 

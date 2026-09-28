@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
                 5,
               );
             const strings = retrievalResult.memories.map(
-              (m) => `- [${m.category || "other"}] ${m.content}`,
+              (m) => `- ${m.content}`,
             );
             if (strings.length > 0) {
               logger.info(

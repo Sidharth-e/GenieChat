@@ -103,19 +103,6 @@ describe("relationScore", () => {
     expect(relationScore(same, same)).toBeLessThanOrEqual(1);
   });
 
-  it("gives a matching category the weight the source gave it", () => {
-    // Carried over from vector-memory-store.ts:605: +0.12 when both memories
-    // share a category. Taking only two strings loses this term entirely.
-    const left = { content: "deploy window is friday" };
-    const right = { content: "deploy window is monday" };
-    expect(
-      relationScore(
-        { ...left, category: "fact" },
-        { ...right, category: "fact" },
-      ),
-    ).toBeGreaterThan(relationScore(left, right));
-  });
-
   it("gives recency no weight when nothing else matches", () => {
     // :605 returns 0 before it reaches the recency term. Without that guard two
     // unrelated memories written a day apart would be linked by the clock alone.

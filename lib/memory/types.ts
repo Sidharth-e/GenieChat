@@ -1,14 +1,11 @@
 /**
- * Memory types. `Memory` and `MemoryCategory` are re-exported from
- * `lib/types.ts` rather than redeclared: the API routes, the memory UI and
- * `lib/tool/memory.ts` all import them from there, and `MEMORY_CATEGORIES`
- * (constants/memory.ts) is typed against the live union. Declaring a second,
- * narrower copy here would drop `"instruction"` and `"professional"` —
- * categories the UI offers and stored memories already carry.
+ * Memory types. `Memory` is re-exported from `lib/types.ts` rather than
+ * redeclared: the API routes, the memory UI and `lib/tool/memory.ts` all import
+ * it from there. Declaring a second copy here would let the two drift.
  */
 import type { Memory } from "@/lib/types";
 
-export type { Memory, MemoryCategory } from "@/lib/types";
+export type { Memory } from "@/lib/types";
 
 /**
  * "vector" means the graph layer was unavailable and recall fell back to a

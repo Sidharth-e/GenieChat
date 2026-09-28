@@ -2,6 +2,7 @@ import neo4j, { type ManagedTransaction } from "neo4j-driver";
 import { EMBEDDING_DIMENSIONS } from "@/constants/embeddings";
 import {
   MEMORY_EDGE_CANDIDATE_LIMIT,
+  MEMORY_LLM_EDGE_TYPES,
   MEMORY_TRAVERSABLE_TYPES,
   MEMORY_VECTOR_INDEX_NAMES,
   memorySeedLimit,
@@ -11,6 +12,11 @@ import {
   ENRICH_PENDING_CYPHER,
   ENTITY_GC_CYPHER,
   EXPAND_CYPHER,
+  GRAPH_ABOUT_CYPHER,
+  GRAPH_ENTITY_RELATIONS_CYPHER,
+  GRAPH_MEMORIES_CYPHER,
+  GRAPH_MEMORY_COUNT_CYPHER,
+  GRAPH_MEMORY_EDGES_CYPHER,
   MEMORY_DELETE_CYPHER,
   SEED_CYPHER,
 } from "@/lib/memory/cypher";
@@ -153,7 +159,7 @@ async function runChecks(
   await session.run(
     `CREATE (m:Memory {
        id:'check_a_1', userId:$a, content:'Acme is our deploy vendor',
-       category:'fact', createdAt:'2026-01-01T00:00:00.000Z',
+       createdAt:'2026-01-01T00:00:00.000Z',
        updatedAt:'2026-01-01T00:00:00.000Z', embedding:$embedding
      })
      CREATE (e:Entity {id:'check_a_acme', userId:$a, normalizedName:'acme', name:'acme'})
@@ -167,7 +173,7 @@ async function runChecks(
      UNWIND range(1, 500) AS i
      CREATE (m:Memory {
        id:'check_b_' + i, userId:$b, content:'Acme memory ' + i,
-       category:'fact', createdAt:'2026-01-01T00:00:00.000Z',
+       createdAt:'2026-01-01T00:00:00.000Z',
        updatedAt:'2026-01-01T00:00:00.000Z', embedding:$embedding
      })
      CREATE (m)-[:ABOUT]->(e)`,
@@ -178,7 +184,7 @@ async function runChecks(
   await session.run(
     `CREATE (m:Memory {
        id:'check_a_novector', userId:$a, content:'Acme but unembedded',
-       category:'other', createdAt:'2026-01-01T00:00:00.000Z',
+       createdAt:'2026-01-01T00:00:00.000Z',
        updatedAt:'2026-01-01T00:00:00.000Z'
      })`,
     { a: USER_A },
@@ -264,7 +270,7 @@ async function runChecks(
      CREATE (m1)-[:ABOUT]->(shared)
      CREATE (m1)-[:ABOUT]->(exclusive)
      CREATE (m2:Memory {
-       id:'check_a_2', userId:$a, content:'still here', category:'other',
+       id:'check_a_2', userId:$a, content:'still here',
        createdAt:'2026-01-01T00:00:00.000Z', updatedAt:'2026-01-01T00:00:00.000Z'
      })
      CREATE (m2)-[:ABOUT]->(shared)`,
@@ -318,7 +324,7 @@ async function runChecks(
      ] AS row
      CREATE (m:Memory {
        id: row.id, userId: $a, content:'Recent memory ' + row.id,
-       category:'other', createdAt: row.at, updatedAt: row.at
+       createdAt: row.at, updatedAt: row.at
      })`,
     { a: USER_A },
   );
@@ -367,22 +373,22 @@ async function runChecks(
   await session.run(
     `CREATE (m:Memory {
        id:'check_a_enrich', userId:$a, content:'Acme replaced Globex',
-       category:'fact', createdAt:'2026-04-01T00:00:00.000Z',
+       createdAt:'2026-04-01T00:00:00.000Z',
        updatedAt:'2026-04-01T00:00:00.000Z'
      })
      CREATE (target:Memory {
        id:'check_a_target', userId:$a, content:'Globex is our vendor',
-       category:'fact', createdAt:'2026-04-01T00:00:00.000Z',
+       createdAt:'2026-04-01T00:00:00.000Z',
        updatedAt:'2026-04-01T00:00:00.000Z'
      })
      CREATE (empty:Memory {
        id:'check_a_empty', userId:$a, content:'Nothing to extract',
-       category:'other', createdAt:'2026-04-01T00:00:00.000Z',
+       createdAt:'2026-04-01T00:00:00.000Z',
        updatedAt:'2026-04-01T00:00:00.000Z', embedding:$embedding
      })
      CREATE (foreign:Memory {
        id:'check_b_target', userId:$b, content:'Globex is our vendor',
-       category:'fact', createdAt:'2026-04-01T00:00:00.000Z',
+       createdAt:'2026-04-01T00:00:00.000Z',
        updatedAt:'2026-04-01T00:00:00.000Z'
      })`,
     { a: USER_A, b: USER_B, embedding: weaker },
@@ -474,6 +480,156 @@ async function runChecks(
       `relation=${relation.records[0]?.get("type")} superseded=[${superseded.join(", ")}] ` +
       `emptyStamped=${empty?.get("enrichedAt") !== null} ` +
       `pending=[${pendingIds.filter((id) => id.startsWith("check_a_")).join(", ")}]`,
+  );
+
+  // ---- 9. the graph view's reads ----
+  // Nothing else executes these: the store is `server-only`, so this script is
+  // the only place they run against a real server. Three properties are worth a
+  // live check and are invisible to any other kind of test — the standalone
+  // LIMIT needs its `toInteger` coercion (the driver sends Double, and a bare
+  // `LIMIT $n` raises 22003), each branch has to carry the tenant into the
+  // MATCH rather than filtering after it, and the id window has to be what
+  // bounds the edges rather than a full scan.
+  //
+  // The two cross-tenant edges below are written directly rather than through a
+  // store method, because no store method will produce them: they stand in for
+  // the one thing the `e.userId` / `b.userId` checks exist for and that nothing
+  // else in the script covers — a future writer merging a node across users.
+  await session.run(
+    `CREATE (g1:Memory {id:'check_a_graph1', userId:$a, content:'The deploy window is Friday',
+        createdAt:'2026-05-01T00:00:00.000Z', updatedAt:'2026-05-01T00:00:00.000Z'})
+     CREATE (g2:Memory {id:'check_a_graph2', userId:$a, content:'We deploy on Fridays',
+        createdAt:'2026-05-02T00:00:00.000Z', updatedAt:'2026-05-02T00:00:00.000Z'})
+     CREATE (g3:Memory {id:'check_a_graph3', userId:$a, content:'Older than both',
+        createdAt:'2026-04-30T00:00:00.000Z', updatedAt:'2026-04-30T00:00:00.000Z'})
+     CREATE (e1:Entity {id:'check_a_graph_e1', userId:$a, normalizedName:'graphcorp', name:'Graphcorp'})
+     CREATE (e2:Entity {id:'check_a_graph_e2', userId:$a, normalizedName:'graphlabs', name:'Graph Labs'})
+     CREATE (bf:Memory {id:'check_b_graph1', userId:$b, content:'Another tenant',
+        createdAt:'2026-05-03T00:00:00.000Z', updatedAt:'2026-05-03T00:00:00.000Z'})
+     CREATE (bfe:Entity {id:'check_b_graph_e1', userId:$b, normalizedName:'graphcorp', name:'Graphcorp'})
+     CREATE (g1)-[:ABOUT]->(e1)
+     CREATE (g2)-[:ABOUT]->(e2)
+     CREATE (g1)-[:RELATES_TO {weight:0.5}]->(g2)
+     CREATE (g2)-[:SUPERSEDES {reason:'newer window'}]->(g3)
+     CREATE (e1)-[:RELATION {type:'employs'}]->(e2)
+     CREATE (g1)-[:RELATES_TO {weight:0.9}]->(bf)
+     CREATE (g1)-[:ABOUT]->(bfe)`,
+    { a: USER_A, b: USER_B },
+  );
+
+  const graphWindow = await session.run(GRAPH_MEMORIES_CYPHER, {
+    userId: USER_A,
+    limit: 2,
+  });
+  const windowIds = graphWindow.records.map((r) => String(r.get("id")));
+
+  const graphCount = await session.run(GRAPH_MEMORY_COUNT_CYPHER, { userId: USER_A });
+  const totalForA = Number(graphCount.records[0]?.get("total") ?? -1);
+  // The expectation is computed here rather than written as a literal, so this
+  // does not rot when a fixture is added — and it still catches the failure that
+  // matters: a pattern that lost its `{userId}`, which would count every tenant.
+  const expectedForA = await session.run(
+    "MATCH (m:Memory {userId:$a}) RETURN count(m) AS n",
+    { a: USER_A },
+  );
+  const allMemories = await session.run("MATCH (m:Memory) RETURN count(m) AS n");
+  const totalForEveryone = Number(allMemories.records[0]?.get("n") ?? 0);
+
+  const about = await session.run(GRAPH_ABOUT_CYPHER, {
+    userId: USER_A,
+    memoryIds: ["check_a_graph1", "check_a_graph2"],
+  });
+  const aboutEntities = about.records
+    .map((r) => String(r.get("entityId")))
+    .sort();
+
+  // `check_b_graph1` is in the id list on purpose. The window alone would admit
+  // it; only the pattern's `userId` can refuse it, so this asserts that the
+  // tenant check is doing work the id filter is not.
+  const graphEdgeWindow = [
+    "check_a_graph1",
+    "check_a_graph2",
+    "check_a_graph3",
+    "check_b_graph1",
+  ];
+  const edgesInWindow = await session.run(GRAPH_MEMORY_EDGES_CYPHER, {
+    userId: USER_A,
+    memoryIds: graphEdgeWindow,
+    edgeTypes: [...MEMORY_LLM_EDGE_TYPES],
+  });
+  const edgeKeys = edgesInWindow.records
+    .map((r) => `${r.get("source")}->${r.get("target")}:${r.get("type")}`)
+    .sort();
+
+  const edgesNarrowed = await session.run(GRAPH_MEMORY_EDGES_CYPHER, {
+    userId: USER_A,
+    memoryIds: ["check_a_graph1", "check_a_graph2"],
+    edgeTypes: [...MEMORY_LLM_EDGE_TYPES],
+  });
+
+  const edgesOtherType = await session.run(GRAPH_MEMORY_EDGES_CYPHER, {
+    userId: USER_A,
+    memoryIds: ["check_a_graph1", "check_a_graph2", "check_a_graph3"],
+    edgeTypes: ["CONTRADICTS"],
+  });
+
+  const relations = await session.run(GRAPH_ENTITY_RELATIONS_CYPHER, {
+    userId: USER_A,
+    entityIds: ["check_a_graph_e1", "check_a_graph_e2"],
+  });
+
+  const relationsNarrowed = await session.run(GRAPH_ENTITY_RELATIONS_CYPHER, {
+    userId: USER_A,
+    entityIds: ["check_a_graph_e1"],
+  });
+
+  report(
+    "GRAPH_MEMORIES_CYPHER reads the newest slice, and the LIMIT coercion holds",
+    windowIds.join(",") === "check_a_graph2,check_a_graph1",
+    `window=[${windowIds.join(", ")}]`,
+  );
+
+  report(
+    "GRAPH_MEMORY_COUNT_CYPHER counts one tenant's memories",
+    totalForA === Number(expectedForA.records[0]?.get("n") ?? -2) &&
+      totalForEveryone - totalForA > 400,
+    `forA=${totalForA} everyone=${totalForEveryone}`,
+  );
+
+  report(
+    "GRAPH_ABOUT_CYPHER returns the window's entities, not another tenant's",
+    aboutEntities.join(",") === "check_a_graph_e1,check_a_graph_e2",
+    `entities=[${aboutEntities.join(", ")}]`,
+  );
+
+  report(
+    "GRAPH_MEMORY_EDGES_CYPHER scopes to the window and to the tenant",
+    edgeKeys.join(",") ===
+      "check_a_graph1->check_a_graph2:RELATES_TO,check_a_graph2->check_a_graph3:SUPERSEDES",
+    `edges=[${edgeKeys.join(", ")}]`,
+  );
+
+  report(
+    "GRAPH_MEMORY_EDGES_CYPHER drops an edge whose other endpoint is outside the window",
+    edgesNarrowed.records.length === 1 &&
+      String(edgesNarrowed.records[0]?.get("source")) === "check_a_graph1",
+    `n=${edgesNarrowed.records.length}`,
+  );
+
+  report(
+    "GRAPH_MEMORY_EDGES_CYPHER returns nothing for a type it was not asked for",
+    edgesOtherType.records.length === 0,
+    `n=${edgesOtherType.records.length}`,
+  );
+
+  report(
+    "GRAPH_ENTITY_RELATIONS_CYPHER names the relation and needs both endpoints in the window",
+    relations.records.length === 1 &&
+      String(relations.records[0]?.get("relationType")) === "employs" &&
+      String(relations.records[0]?.get("source")) === "check_a_graph_e1" &&
+      relationsNarrowed.records.length === 0,
+    `n=${relations.records.length} type=${relations.records[0]?.get("relationType")} ` +
+      `halfWindow=${relationsNarrowed.records.length}`,
   );
 }
 

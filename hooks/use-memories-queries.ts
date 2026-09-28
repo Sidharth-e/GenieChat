@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Memory, MemoryCategory } from "@/lib/types";
+import { Memory } from "@/lib/types";
+import type { MemoryGraphView } from "@/lib/memory/graph-view";
 
 export const memoryKeys = {
     all: ["memories"] as const,
@@ -9,6 +10,7 @@ export const memoryKeys = {
     list: (filters: string) => [...memoryKeys.lists(), { filters }] as const,
     details: () => [...memoryKeys.all, "detail"] as const,
     detail: (id: string) => [...memoryKeys.details(), id] as const,
+    graph: () => [...memoryKeys.all, "graph"] as const,
 };
 
 /**
@@ -47,6 +49,29 @@ export function useMemory(id: string | null) {
 }
 
 /**
+ * Fetches the drawn memory graph — memories plus the entities and relations
+ * that connect them.
+ *
+ * A separate query from the list rather than something derived from it, because
+ * the list has no entities on it. It is not gated on a flag: the component that
+ * calls it is only mounted while the graph tab is selected, so the fetch — five
+ * Neo4j round trips — does not happen while the reader is still on the list.
+ */
+export function useMemoryGraph() {
+    return useQuery<MemoryGraphView>({
+        queryKey: memoryKeys.graph(),
+        queryFn: async () => {
+            const response = await fetch("/api/memories/graph");
+            if (!response.ok) {
+                throw new Error("Failed to fetch the memory graph");
+            }
+            return response.json();
+        },
+        staleTime: 1000 * 60 * 5,
+    });
+}
+
+/**
  * Creates a new memory with automatic cache invalidation.
  */
 export function useCreateMemory() {
@@ -55,7 +80,6 @@ export function useCreateMemory() {
     return useMutation({
         mutationFn: async (memoryData: {
             content: string;
-            category?: MemoryCategory;
         }) => {
             const response = await fetch("/api/memories", {
                 method: "POST",
@@ -73,6 +97,10 @@ export function useCreateMemory() {
             queryClient.setQueryData<Memory[]>(memoryKeys.lists(), (old) =>
                 old ? [newMemory, ...old] : [newMemory]
             );
+            // The graph is derived from the memories, so a new one makes the
+            // drawn version wrong until it is refetched. Marking it stale is
+            // free when the graph is not mounted.
+            queryClient.invalidateQueries({ queryKey: memoryKeys.graph() });
         },
     });
 }
@@ -116,6 +144,7 @@ export function useUpdateMemory() {
         onSettled: (_data, _error, { id }) => {
             queryClient.invalidateQueries({ queryKey: memoryKeys.lists() });
             queryClient.invalidateQueries({ queryKey: memoryKeys.detail(id) });
+            queryClient.invalidateQueries({ queryKey: memoryKeys.graph() });
         },
     });
 }
@@ -142,6 +171,7 @@ export function useDeleteMemory() {
             queryClient.setQueryData<Memory[]>(memoryKeys.lists(), (old) =>
                 old?.filter((memory) => memory.id !== deletedId)
             );
+            queryClient.invalidateQueries({ queryKey: memoryKeys.graph() });
         },
     });
 }

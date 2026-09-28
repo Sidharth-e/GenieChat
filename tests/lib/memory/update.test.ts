@@ -1,38 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildMemoryUpdateSet, normalizeMemoryCategory } from "@/lib/memory/update";
-
-describe("normalizeMemoryCategory", () => {
-  it("keeps a category the store recognises", () => {
-    expect(normalizeMemoryCategory("fact")).toBe("fact");
-    expect(normalizeMemoryCategory("other")).toBe("other");
-  });
-
-  it("drops a category outside the set rather than writing it", () => {
-    // MEMORY_CATEGORIES is the only runtime check on this field. Without it an
-    // unrecognised string lands on the node and the prompt line renders
-    // `- [nonsense] ...`.
-    expect(normalizeMemoryCategory("nonsense")).toBeUndefined();
-    expect(normalizeMemoryCategory("Fact")).toBeUndefined();
-  });
-
-  it("drops a non-string without throwing", () => {
-    expect(normalizeMemoryCategory(null)).toBeUndefined();
-    expect(normalizeMemoryCategory(undefined)).toBeUndefined();
-    expect(normalizeMemoryCategory(7)).toBeUndefined();
-    expect(normalizeMemoryCategory({ category: "fact" })).toBeUndefined();
-    expect(normalizeMemoryCategory("")).toBeUndefined();
-  });
-});
+import { buildMemoryUpdateSet } from "@/lib/memory/update";
 
 describe("buildMemoryUpdateSet", () => {
   it("keeps the fields a caller may edit", () => {
-    const set = buildMemoryUpdateSet({ content: "new", category: "fact" });
-    expect(set).toEqual({ content: "new", category: "fact" });
-  });
-
-  it("drops an unrecognised category instead of writing it", () => {
-    const set = buildMemoryUpdateSet({ content: "x", category: "nonsense" as never });
-    expect(set).toEqual({ content: "x" });
+    const set = buildMemoryUpdateSet({ content: "new", userName: "Ada" });
+    expect(set).toEqual({ content: "new", userName: "Ada" });
   });
 
   it("drops userId, so a body cannot re-own a memory", () => {
@@ -67,8 +39,8 @@ describe("buildMemoryUpdateSet", () => {
   });
 
   it("drops undefined values rather than writing null over a field", () => {
-    expect(buildMemoryUpdateSet({ content: undefined, category: "fact" })).toEqual({
-      category: "fact",
+    expect(buildMemoryUpdateSet({ content: undefined, userName: "Ada" })).toEqual({
+      userName: "Ada",
     });
   });
 

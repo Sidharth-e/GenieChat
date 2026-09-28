@@ -73,9 +73,9 @@ const DEFAULT_TOP = 5;
  * seed similarity and the graph path are the two things worth weighting.
  *
  * Generic in its candidate type so a caller that carries display fields the
- * ranking does not use — the store's `category`, `userName`, `userEmail` —
- * gets them back typed rather than having to look them up again by id. The
- * ranking reads only `RecallCandidate`'s members either way.
+ * ranking does not use — the store's `userName`, `userEmail` — gets them back
+ * typed rather than having to look them up again by id. The ranking reads only
+ * `RecallCandidate`'s members either way.
  */
 export function rankRecall<T extends RecallCandidate>(
   candidates: T[],

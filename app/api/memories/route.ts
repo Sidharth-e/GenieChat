@@ -5,7 +5,6 @@ import { MemoryGraphStore } from "@/lib/memory/graph-store";
 import { api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
-import { MemoryCategory } from "@/lib/types";
 
 const memoryStore = new MemoryGraphStore();
 
@@ -55,7 +54,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const { content, category } = await req.json();
+        const { content } = await req.json();
 
         if (!content || typeof content !== "string") {
             return api.badRequest("Content is required");
@@ -66,7 +65,6 @@ export async function POST(req: NextRequest) {
             userName: user.name,
             userEmail: user.email,
             content: content.trim(),
-            category: category as MemoryCategory | undefined,
         });
 
         return NextResponse.json(memory, { status: 201 });

@@ -59,7 +59,7 @@ Package manager is **pnpm** (v11.1.2, `node-linker=hoisted`). Node >= 20 require
 - `lib/postgres/` — PostgreSQL + pgvector, the knowledge-RAG store. `config.ts` reads `config.postgres` and is pure; `client.ts` is the `"server-only"` layer holding one lazily-built `Pool`; `vector.ts` holds `toVectorLiteral()` and is pure and unit-tested. `lib/knowledge/` sits on top: `chunking.ts`, `ranking.ts` and `embed.ts` are pure and unit-tested, `index.ts` is the writer, `search.ts` the hybrid retriever, `documents.ts` and `citation-services.ts` the ports of the old `rag-services.ts` and `citation-services.ts`. `embed.ts` holds the embed-before-transaction loop and the policy that separates a width mismatch (rethrow — the index is broken) from an outage (store the chunk vectorless). See [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector).
 - `lib/embeddings/` — Ollama embeddings, no longer reached through the Azure module. `text.ts` is pure (token estimation, normalization, head/tail truncation, context-length retry parsing) and unit-tested; `dimensions.ts` holds `EmbeddingDimensionError` plus `assertEmbeddingDimensions` / `isEmbeddingDimensionError` and is pure and unit-tested — a typed error rather than message-matching, because the predicate has to recognise the provider's wording while this one is ours; `index.ts` is the `"server-only"` provider that calls both and re-exports them. `constants/embeddings.ts` holds `EMBEDDING_DIMENSIONS`, the index contract every vector store must match.
 - `lib/neo4j/` — the Neo4j driver. `config.ts` reads `config.neo4j` and is pure, returning null unless the URI *and* a password are present; `client.ts` is the `"server-only"` layer holding one lazily-built `Driver` plus `isNeo4jConfigured()`, so every caller degrades rather than throws.
-- `lib/memory/` — the memory graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore`; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same SQL the store does; `extract.ts`, `recall.ts`, `text.ts` and `update.ts` are pure and unit-tested; `enrichment-schema.ts` and `llm-extraction.ts` hold the model contract and the call, and `enrichment-write.ts` and `enrich.ts` write what it returns. `constants/memory.ts` holds the edge types, weights and limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j).
+- `lib/memory/` — the memory graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore`; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same SQL the store does; `extract.ts`, `recall.ts`, `text.ts` and `update.ts` are pure and unit-tested; `enrichment-schema.ts` and `llm-extraction.ts` hold the model contract and the call, and `enrichment-write.ts` and `enrich.ts` write what it returns. `graph-view.ts` assembles the four graph reads into the drawn node/edge set and `graph-layout.ts` positions it — both pure and unit-tested, and both deliberately unaware of React Flow, so the decisions worth testing (which entities survive the cap, what an edge is called, what "degree" means, where a node lands) need no browser. `constants/memory.ts` holds the edge types, weights and limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
 - `lib/redis-client.ts` — Shared ioredis connections, one per named consumer, with a per-consumer circuit breaker. `getRedisClient(name, options)` returns a discriminated result (`ready` / `unconfigured` / `circuit-open`) so each caller picks its own degradation policy. See [Redis](#redis).
 - `lib/mongodb/` — MongoDB data layer using the official `mongodb` driver. `client.ts` provides synchronous collection accessors that connect lazily on first use. Most `*-store.ts` files hold exactly one document shape, but some span more — `workflow-store.ts` spans workflows, rich workflows and executions — and one collection can back several stores — `tools` backs `tool-store.ts`, `secret-store.ts` and `api-key-store.ts`.
 - `lib/langchain/` — LLM orchestration layer:
@@ -182,6 +182,48 @@ and `MEMORY_RECALL_HOPS` is verified as a positive integer at import.
 memory:check` exercises the store against a live graph. `pnpm memory:migrate`
 moved the old collection across; it is a one-off, and any deployment holding real
 memories must run it before this branch ships.
+
+### Memory Graph View
+
+`/memories` has a List / Graph toggle. The graph is read through
+`GET /api/memories/graph`, which is session-scoped like every other memory route,
+and assembled by `buildMemoryGraphView` from `lib/memory/graph-view.ts`.
+
+Four reads, not one, and the order matters: `GRAPH_MEMORIES_CYPHER` picks the
+window — newest first, capped — and the other three are then scoped to that id
+set, which is what makes the drawn edges exactly those whose endpoints are drawn.
+A single pattern would return edges to memories the window excluded, and the view
+could only drop them (making the picture disagree with the degrees it reports) or
+draw an orphan. `GRAPH_MEMORY_COUNT_CYPHER` supplies the true total, because the
+truncation notice cannot be inferred from "the read returned exactly the limit" —
+that reports truncation for a user who has exactly that many memories.
+
+Two ceilings, bounding different things. `MEMORY_GRAPH_MEMORY_LIMIT` (120) bounds
+the read; `MEMORY_GRAPH_NODE_LIMIT` (150) bounds what is drawn, memories plus
+entities, with entities ranked by how many kept memories link them so a cap drops
+the least-connected rather than an arbitrary slice. The node cap is a wall-clock
+bound rather than an aesthetic one: `layoutMemoryGraph` is O(n²) per iteration and
+runs synchronously in the render, so raising it means moving the layout off the
+render path first.
+
+The layout is hand-rolled Fruchterman–Reingold, deterministic — no `Math.random`
+anywhere, so a remount does not reshuffle the picture. Repulsion is `k²/d` and
+attraction `d²/k` against the ideal spacing `k`, which is what makes the result
+need no per-graph tuning; the two cross at `d = k`. `MEMORY_GRAPH_LAYOUT_CENTER_PULL`
+must stay far below the repulsion at a typical distance or the graph collapses to
+a point — that margin is why the value looks so small. `constants/memory.ts`
+carries the reasoning for each number, and `MEMORY_GRAPH_MEMORY_NODE_SIZE` /
+`MEMORY_GRAPH_ENTITY_NODE_SIZE` live there too because the simulation and the
+renderer have to agree on them.
+
+Identity is never colour-alone. Node kind is shape and size (a bordered card is a
+memory, a pill is an entity); edge kind is line style, paired with a legend that
+names each one, with `--red` reserved for the single semantically loaded kind
+(CONTRADICTS). The hover card is also the accessibility fallback: it shows the
+full memory text a clamped node cannot, and it is the only place an edge's
+model-written `reason` is readable. `scripts/check-memory.ts` covers these four
+statements, since the store is `"server-only"` and the script is the only thing
+that executes the same Cypher.
 
 ### Document Parsing (Docling)
 

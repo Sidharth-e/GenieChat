@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Brain, AlertCircle } from "lucide-react";
+import { Plus, Brain, AlertCircle, List, Network } from "lucide-react";
 import {
   useMemories,
   useDeleteMemory,
@@ -10,17 +10,26 @@ import {
   useUpdateMemory,
 } from "@/hooks/use-memories-queries";
 import { useChatSettings } from "@/lib/stores";
-import { Memory, MemoryCategory } from "@/lib/types";
+import { Memory } from "@/lib/types";
 import { MemoryCard } from "@/components/memories/memory-card";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 import { MemoryForm } from "@/components/memories/memory-form";
+import { MemoryGraph } from "@/components/memories/memory-graph";
 import { AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 import { ContentLayout } from "@/components/common/content-layout";
 
 interface MemoriesContentProps {
   initialMemories?: Memory[];
 }
+
+type MemoriesView = "list" | "graph";
+
+const VIEWS: { id: MemoriesView; label: string; icon: typeof List }[] = [
+  { id: "list", label: "List", icon: List },
+  { id: "graph", label: "Graph", icon: Network },
+];
 
 export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
   const {
@@ -34,6 +43,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
   const updateMemoryMutation = useUpdateMemory();
 
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [view, setView] = React.useState<MemoriesView>("list");
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<
     string | null
   >(null);
@@ -42,23 +52,20 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
 
   const filteredMemories = memories.filter((memory) => {
     const query = searchQuery.toLowerCase();
-    return (
-      memory.content?.toLowerCase().includes(query) ||
-      (memory.category && memory.category.toLowerCase().includes(query))
-    );
+    return memory.content?.toLowerCase().includes(query);
   });
 
-  const handleCreate = async (content: string, category: MemoryCategory) => {
-    await createMemoryMutation.mutateAsync({ content, category });
+  const handleCreate = async (content: string) => {
+    await createMemoryMutation.mutateAsync({ content });
     setIsCreating(false);
   };
 
-  const handleUpdate = async (content: string, category: MemoryCategory) => {
+  const handleUpdate = async (content: string) => {
     if (!editingMemory) return;
 
     await updateMemoryMutation.mutateAsync({
       id: editingMemory.id,
-      updates: { content, category },
+      updates: { content },
     });
     setEditingMemory(null);
   };
@@ -80,6 +87,27 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
       searchPlaceholder="Search memories..."
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
+      navigation={
+        <div className="flex gap-4">
+          {VIEWS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={view === id}
+              onClick={() => setView(id)}
+              className={cn(
+                "-mb-px flex items-center gap-1.5 border-b-2 px-1 pb-2 text-sm transition-colors",
+                view === id
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-text-secondary hover:text-foreground",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      }
       actionButton={
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button
@@ -121,11 +149,14 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
           }
           mode={editingMemory ? "edit" : "create"}
           initialContent={editingMemory?.content}
-          initialCategory={editingMemory?.category || "fact"}
         />
       </AnimatePresence>
 
-      {isLoading && memories.length === 0 ? (
+      {/* The graph reads its own query and handles its own empty states: the
+          list's "no memories found" copy is about rows, not about the drawing. */}
+      {view === "graph" ? (
+        <MemoryGraph searchQuery={searchQuery} />
+      ) : isLoading && memories.length === 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
@@ -140,7 +171,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
           ))}
         </div>
       ) : error ? (
-        <div className="mb-4 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/30 dark:bg-red-900/20 dark:text-red-300">
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-[var(--red-border)] bg-[var(--red-bg)] p-3 text-sm text-[var(--red)]">
           <AlertCircle className="h-4 w-4" />
           <span>
             {error instanceof Error ? error.message : "Failed to load memories"}

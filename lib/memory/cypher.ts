@@ -47,7 +47,7 @@ export const SEED_CYPHER = `
       WHERE m.userId = $userId
       LIMIT $k
     ) SCORE AS vectorScore
-  RETURN m.id AS id, m.content AS content, m.category AS category,
+  RETURN m.id AS id, m.content AS content,
          m.userName AS userName, m.userEmail AS userEmail,
          m.createdAt AS createdAt, m.updatedAt AS updatedAt,
          vectorScore
@@ -73,7 +73,7 @@ export const EXPAND_CYPHER = `
     AND n.userId = $userId
     AND all(x IN nodes(path) WHERE x.userId = $userId)
     AND all(r IN rels WHERE type(r) IN $allowedTypes)
-  RETURN n.id AS id, n.content AS content, n.category AS category,
+  RETURN n.id AS id, n.content AS content,
          n.userName AS userName, n.userEmail AS userEmail,
          n.createdAt AS createdAt, n.updatedAt AS updatedAt,
          length(path) AS hops,
@@ -135,7 +135,6 @@ export const MIGRATE_MEMORY_CYPHER = `
       m.userName = $userName,
       m.userEmail = $userEmail,
       m.content = $content,
-      m.category = $category,
       m.createdAt = $createdAt,
       m.updatedAt = $updatedAt,
       m.embedding = $embedding
@@ -251,4 +250,79 @@ export const ENRICH_PENDING_CYPHER = `
 export const MEMORY_EMBEDDING_CYPHER = `
   MATCH (m:Memory {id: $id, userId: $userId})
   SET m.embedding = $embedding
+`;
+
+/**
+ * The graph view's four reads. Everything they return is drawn, so each one is
+ * bounded — an unbounded read here is a browser tab that stops responding
+ * rather than a slow query.
+ *
+ * `GRAPH_MEMORIES_CYPHER` is the only one that decides *which* memories are in
+ * the window: newest first, capped. The other three are scoped to that set by
+ * id, which is what keeps the drawn edges exactly those whose endpoints are
+ * drawn. Without that scoping an edge would arrive pointing at a node the
+ * window excluded and React Flow would drop it silently, leaving a node whose
+ * degree the view reported as higher than the picture shows.
+ */
+export const GRAPH_MEMORIES_CYPHER = `
+  MATCH (m:Memory {userId: $userId})
+  RETURN m.id AS id, m.content AS content, m.createdAt AS createdAt
+  ORDER BY m.createdAt DESC
+  LIMIT toInteger($limit)
+`;
+
+/**
+ * How many memories the user actually has, against the capped read above. The
+ * view tells the reader when it is showing a window rather than the whole
+ * corpus, and that is only honest with a real count: inferring it from
+ * "the read returned exactly the limit" reports truncation for a user who
+ * happens to have exactly that many memories.
+ */
+export const GRAPH_MEMORY_COUNT_CYPHER = `
+  MATCH (m:Memory {userId: $userId})
+  RETURN count(m) AS total
+`;
+
+/**
+ * `e.userId` is checked on the entity as well as the memory. ABOUT is only ever
+ * written within one tenant, so the check cannot fail today — it is here
+ * because the statement is what would silently become a cross-tenant read if a
+ * future writer merged an entity across users.
+ */
+export const GRAPH_ABOUT_CYPHER = `
+  MATCH (m:Memory {userId: $userId})-[r:ABOUT]->(e:Entity {userId: $userId})
+  WHERE m.id IN $memoryIds
+  RETURN m.id AS memoryId, e.id AS entityId, e.name AS entityName,
+         e.normalizedName AS normalizedName
+`;
+
+/**
+ * `type(r)` is filtered rather than matched to one relationship type, because
+ * Cypher cannot parameterise a type and writing one branch per type would mean
+ * a new edge type is invisible here until someone remembers to add it. The
+ * permitted set is passed in, mirroring `EXPAND_CYPHER`.
+ *
+ * The `IN` on both ids is a second filter on top of the tenant check, not a
+ * replacement for it: the edges are already tenant-scoped by the pattern, and
+ * the id lists are what bound the result to the drawn window.
+ */
+export const GRAPH_MEMORY_EDGES_CYPHER = `
+  MATCH (a:Memory {userId: $userId})-[r]->(b:Memory {userId: $userId})
+  WHERE type(r) IN $edgeTypes
+    AND a.id IN $memoryIds
+    AND b.id IN $memoryIds
+  RETURN a.id AS source, b.id AS target, type(r) AS type,
+         r.weight AS weight, r.reason AS reason
+`;
+
+/**
+ * Entity-to-entity relations. One generic `:RELATION` carrying its type as a
+ * property (see `RELATION_CYPHER`), so `type(r)` here is always `RELATION` and
+ * the interesting value is `r.type` — hence the alias.
+ */
+export const GRAPH_ENTITY_RELATIONS_CYPHER = `
+  MATCH (a:Entity {userId: $userId})-[r:RELATION]->(b:Entity {userId: $userId})
+  WHERE a.id IN $entityIds
+    AND b.id IN $entityIds
+  RETURN a.id AS source, b.id AS target, r.type AS relationType
 `;

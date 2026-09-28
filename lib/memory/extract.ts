@@ -4,7 +4,6 @@
  * the instant a memory is written, and what keeps it correct when no model is
  * reachable.
  */
-import type { MemoryCategory } from "@/lib/types";
 import {
   MEMORY_EDGE_NEIGHBOR_LIMIT,
   MEMORY_EDGE_THRESHOLD,
@@ -22,14 +21,11 @@ import {
 const ENTITY_MIN_LENGTH = 2;
 
 /**
- * Carried over from `vector-memory-store.ts:605`, term for term. The two
- * constants the plan's rewrite dropped — the same-category bonus and the
- * recency bonus — are here because the spec calls for that arithmetic verbatim
- * and because a pair of memories that share a category and were written the
- * same week is a real signal that token overlap alone misses.
+ * Carried over from `vector-memory-store.ts:605`, term for term. The
+ * same-category bonus that used to sit beside these is gone with the `category`
+ * field itself.
  */
 const CONCEPT_WEIGHT = 0.34;
-const SAME_CATEGORY_BONUS = 0.12;
 const RECENT_PAIR_DAYS = 14;
 const RECENT_PAIR_BONUS = 0.06;
 const NEAR_PAIR_DAYS = 60;
@@ -38,7 +34,6 @@ const NEAR_PAIR_BONUS = 0.03;
 /** The fields an edge score is computed from. */
 export interface ScorableMemory {
   content: string;
-  category?: MemoryCategory;
   createdAt?: string;
 }
 
@@ -95,8 +90,8 @@ export function extractEntityNames(content: string): string[] {
 
 /**
  * How related two memories are, in [0, 1]: token overlap, plus a concept-space
- * cosine, plus a bonus for a shared category, plus a small bonus for having
- * been written close together. Carried over from `vector-memory-store.ts:605`.
+ * cosine, plus a small bonus for having been written close together. Carried
+ * over from `vector-memory-store.ts:605`.
  *
  * The early return is load-bearing: without it, two memories written a day
  * apart would be linked by the clock alone even with nothing in common.
@@ -114,14 +109,9 @@ export function relationScore(a: ScorableMemory, b: ScorableMemory): number {
     buildConceptVector(extractFeatures(right), space),
   );
 
-  const hasSameCategory = Boolean(
-    a.category && b.category && a.category === b.category,
-  );
-
-  if (lexical === 0 && concept === 0 && !hasSameCategory) return 0;
+  if (lexical === 0 && concept === 0) return 0;
 
   let score = lexical + concept * CONCEPT_WEIGHT;
-  if (hasSameCategory) score += SAME_CATEGORY_BONUS;
 
   const leftMs = a.createdAt ? Date.parse(a.createdAt) : Number.NaN;
   const rightMs = b.createdAt ? Date.parse(b.createdAt) : Number.NaN;

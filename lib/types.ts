@@ -615,20 +615,12 @@ export interface ArenaLeaderboard {
   updatedAt: string;
 }
 
-export type MemoryCategory =
-  | "preference"
-  | "fact"
-  | "instruction"
-  | "professional"
-  | "other";
-
 export interface Memory {
   id: string;
   userId: string;
   userName: string;
   userEmail: string;
   content: string;
-  category?: MemoryCategory;
   createdAt: string;
   updatedAt: string;
   /**

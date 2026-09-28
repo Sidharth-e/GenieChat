@@ -14,7 +14,6 @@ import {
   extractEntityNames,
   type ScorableMemory,
 } from "@/lib/memory/extract";
-import { normalizeMemoryCategory } from "@/lib/memory/update";
 import { generateId } from "@/lib/utils";
 
 /**
@@ -48,7 +47,6 @@ interface SourceMemory {
   userName?: string;
   userEmail?: string;
   content?: string;
-  category?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -153,7 +151,6 @@ async function main(): Promise<void> {
       id: string;
       userId: string;
       content: string;
-      category?: string;
     }[] = [];
     for (const document of documents) {
       const id = String(document._id);
@@ -177,7 +174,6 @@ async function main(): Promise<void> {
               userName: document.userName ?? null,
               userEmail: document.userEmail ?? null,
               content,
-              category: normalizeMemoryCategory(document.category) ?? null,
               // Preserved, not re-stamped: these are the dates the memories were
               // actually written, and `relationScore` reads `createdAt`.
               createdAt: document.createdAt ?? new Date().toISOString(),
@@ -211,7 +207,6 @@ async function main(): Promise<void> {
           id,
           userId,
           content,
-          category: normalizeMemoryCategory(document.category),
         });
       } catch (error) {
         console.warn(
@@ -233,9 +228,6 @@ async function main(): Promise<void> {
             limit: MEMORY_EDGE_CANDIDATE_LIMIT,
           }),
         );
-        // Annotated, not inferred: `buildDeterministicEdges` unifies its two
-        // arguments into one type, so an inferred candidate shape would make
-        // the memory's own `category` an excess property.
         const candidates: (ScorableMemory & { id: string })[] = records.map(
           (record) => ({
             id: String(record.get("id")),
@@ -243,7 +235,7 @@ async function main(): Promise<void> {
           }),
         );
         const edges = buildDeterministicEdges(
-          { id: memory.id, content: memory.content, category: normalizeMemoryCategory(memory.category) },
+          { id: memory.id, content: memory.content },
           candidates,
         );
         if (edges.length === 0) continue;
