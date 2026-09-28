@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   DELETE_CHUNKS_FOR_OWNER_SQL,
   DELETE_CHUNKS_FOR_SOURCE_SQL,
+  INSERT_CHUNK_SQL,
   KNOWLEDGE_TABLE,
 } from "@/constants/knowledge";
 import { generateEmbedding } from "@/lib/embeddings";
@@ -61,22 +62,17 @@ export async function indexChunks(params: IndexChunksParams): Promise<number> {
         }
       }
 
-      await client.query(
-        `INSERT INTO ${KNOWLEDGE_TABLE}
-           (id, owner_type, owner_id, user_id, source_id, title, chunk_index, content, embedding)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)`,
-        [
-          randomUUID(),
-          ownerType,
-          ownerId,
-          userId,
-          sourceId ?? null,
-          title ?? null,
-          index,
-          content,
-          embedding ? toVectorLiteral(embedding) : null,
-        ],
-      );
+      await client.query(INSERT_CHUNK_SQL, [
+        randomUUID(),
+        ownerType,
+        ownerId,
+        userId,
+        sourceId ?? null,
+        title ?? null,
+        index,
+        content,
+        embedding ? toVectorLiteral(embedding) : null,
+      ]);
       inserted += 1;
     }
 

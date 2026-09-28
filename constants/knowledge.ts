@@ -46,6 +46,15 @@ export const DELETE_CHUNKS_FOR_SOURCE_SQL = `DELETE FROM ${KNOWLEDGE_TABLE}
      WHERE owner_type = $1 AND owner_id = $2 AND source_id = $3`;
 
 /**
+ * The writer's insert, shared with scripts/backfill-chunks.ts for the same
+ * reason as the deletes: the script runs under `tsx`, where the `"server-only"`
+ * modules do not resolve, and a duplicated statement would let the two drift.
+ */
+export const INSERT_CHUNK_SQL = `INSERT INTO ${KNOWLEDGE_TABLE}
+  (id, owner_type, owner_id, user_id, source_id, title, chunk_index, content, embedding)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)`;
+
+/**
  * One statement, two rankings. The vector branch and the lexical branch are
  * computed independently and LEFT JOINed back to the rows, so a chunk found by
  * either arm survives; fusion happens in `combineRrf`, which only needs ranks.

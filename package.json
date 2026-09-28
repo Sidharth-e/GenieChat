@@ -17,6 +17,7 @@
     "db:setup:pg": "tsx --env-file=.env scripts/setup-postgres.ts",
     "embeddings:check": "tsx --env-file=.env scripts/check-embeddings.ts",
     "knowledge:check": "tsx --env-file=.env scripts/check-knowledge.ts",
+    "knowledge:backfill": "tsx --env-file=.env scripts/backfill-chunks.ts",
     "storage:check": "tsx --env-file=.env scripts/check-storage.ts",
     "ci:check": "pnpm type-check && pnpm lint && pnpm test"
   },
