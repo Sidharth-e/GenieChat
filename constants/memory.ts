@@ -100,6 +100,26 @@ export const MEMORY_RELATION_TYPES = [
 export type MemoryRelationType = (typeof MEMORY_RELATION_TYPES)[number];
 
 /**
+ * The memory→memory edge types a model is permitted to write back. Deliberately
+ * narrower than `MEMORY_RELATION_TYPES`: `ABOUT` is memory→entity and is written
+ * by the deterministic layer, so a model emitting one would be asserting a
+ * relationship to an entity it was never shown.
+ *
+ * Default-closed — adding a relation type does not grant the model write
+ * access to it; it has to be named here as well. The `satisfies` clause is the
+ * guard in the other direction: naming a type that is not in
+ * `MEMORY_RELATION_TYPES` is a build error rather than an edge the store
+ * rejects at runtime.
+ */
+export const MEMORY_LLM_EDGE_TYPES = [
+  "RELATES_TO",
+  "SUPERSEDES",
+  "CONTRADICTS",
+] as const satisfies readonly MemoryRelationType[];
+
+export type MemoryLlmEdgeType = (typeof MEMORY_LLM_EDGE_TYPES)[number];
+
+/**
  * The four types the graph walk is allowed to traverse. Kept as a Set so the
  * Cypher parameter is built from one source.
  */
