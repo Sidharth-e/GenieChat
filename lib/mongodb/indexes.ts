@@ -33,7 +33,6 @@ const NAMES = {
   tools: "tools",
   documents: "documents",
   deepResearch: "deep_research",
-  memories: "memories",
   notes: "notes",
   users: "users",
   autoTasks: "auto_tasks",
@@ -572,11 +571,6 @@ export const INDEX_SPECS: IndexSpec[] = [
     collection: NAMES.tools,
     keys: { userId: 1, createdAt: -1 },
     name: "tools_userId_createdAt",
-  },
-  {
-    collection: NAMES.memories,
-    keys: { userId: 1, createdAt: -1 },
-    name: "memories_userId_createdAt",
   },
   {
     collection: NAMES.notes,

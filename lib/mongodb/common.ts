@@ -12,7 +12,6 @@ import {
   Reminder,
   Bookmark,
   DeepResearchReport,
-  Memory,
   ArenaLeaderboardEntry,
   ApiKey,
   RichWorkflow,
@@ -123,10 +122,6 @@ export interface BookmarkDocument extends Bookmark {
 
 export interface DeepResearchReportDocument extends DeepResearchReport {
   type: "deep_research_report";
-}
-
-export interface MemoryDocument extends Memory {
-  type: "memory";
 }
 
 export interface ApiKeyDocument extends ApiKey {

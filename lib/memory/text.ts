@@ -1,6 +1,7 @@
 /**
  * Pure text primitives for memory extraction and recall, lifted out of the
- * `VectorMemoryStore` class, where they sat beside IO and could not be tested.
+ * store class that used to hold them, where they sat beside IO and could not
+ * be tested.
  *
  * Two of the functions below are shaped differently from their originals; the
  * arithmetic is the same, the container is not. `extractFeatures` takes text

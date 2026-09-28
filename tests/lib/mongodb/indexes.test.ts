@@ -37,8 +37,8 @@ process.env.MONGODB_URI ??= "mongodb://test.invalid:27017";
 const { config } = await import("@/lib/config");
 
 describe("COLLECTION_NAMES", () => {
-  it("covers all 18 collections", () => {
-    expect(COLLECTION_NAMES).toHaveLength(18);
+  it("covers all 17 collections", () => {
+    expect(COLLECTION_NAMES).toHaveLength(17);
   });
 
   it("matches the config collection names exactly", () => {
@@ -199,10 +199,6 @@ describe("INDEX_SPECS", () => {
       },
       tools_userId_createdAt: {
         collection: config.mongodb.collections.tools,
-        keys: { userId: 1, createdAt: -1 },
-      },
-      memories_userId_createdAt: {
-        collection: config.mongodb.collections.memories,
         keys: { userId: 1, createdAt: -1 },
       },
       notes_userId_updatedAt: {

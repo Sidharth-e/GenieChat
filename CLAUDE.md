@@ -8,9 +8,9 @@ Keep this file current. After any significant change — new features, architect
 
 ## Project Overview
 
-**GenieChat** — an enterprise AI chat interface built with Next.js 16 (App Router). It supports multi-model conversations across two providers — Ollama (Ollama Cloud by default, or a self-hosted daemon) and Google Gemini — plus multi-agent orchestration, tool execution, workflow automation, and workspace features (notes). Authentication is GitHub via NextAuth.js. Data is stored in MongoDB, accessed through the official `mongodb` driver. Object storage is self-hosted Garage behind the S3 API, referenced by canonical `s3://bucket/key` refs and signed on read, so no durable URL is ever stored. Deployed to Azure Web App via GitHub Actions on push to `master`.
+**GenieChat** — an enterprise AI chat interface built with Next.js 16 (App Router). It supports multi-model conversations across two providers — Ollama (Ollama Cloud by default, or a self-hosted daemon) and Google Gemini — plus multi-agent orchestration, tool execution, workflow automation, and workspace features (notes). Authentication is GitHub via NextAuth.js. Data is stored in MongoDB, accessed through the official `mongodb` driver, and the memory graph in Neo4j. Object storage is self-hosted Garage behind the S3 API, referenced by canonical `s3://bucket/key` refs and signed on read, so no durable URL is ever stored. Deployed to Azure Web App via GitHub Actions on push to `master`.
 
-Chat completions and text embeddings both come from Ollama. Embeddings feed two stores with **different widths**: agent- and chat-document knowledge RAG lives in PostgreSQL + pgvector at `EMBEDDING_DIMENSIONS` (768), while the memory path still uses the Azure AI Search index at `EMBEDDING_VECTOR_DIMENSIONS` (1536) until the Neo4j migration. Each must match the configured `OLLAMA_EMBEDDING_MODEL` output width.
+Chat completions and text embeddings both come from Ollama. Embeddings feed two stores — agent- and chat-document knowledge RAG in PostgreSQL + pgvector, and the memory graph in Neo4j — and both index at `EMBEDDING_DIMENSIONS` (`constants/embeddings.ts`), which must match the configured embedding model's output width.
 
 ## Commands
 
@@ -24,11 +24,15 @@ pnpm test             # Runs Vitest unit tests
 pnpm test:watch       # Runs Vitest in watch mode
 pnpm test:coverage    # Runs Vitest with coverage
 pnpm ci:check         # Runs type-check + lint + test
-pnpm db:setup         # Creates all 18 collections and their indexes; idempotent and safe to re-run
+pnpm db:setup         # Creates all 17 collections and their indexes; idempotent and safe to re-run
 pnpm db:setup:pg      # Creates the pgvector table and indexes; idempotent and safe to re-run
+pnpm db:setup:neo4j   # Creates the Neo4j constraints and memory vector indexes; idempotent
 pnpm embeddings:check # Exercises the Ollama embedding path: short, over-budget and empty input
 pnpm knowledge:check  # Exercises the knowledge store: lexical, vector, fusion, replace semantics
 pnpm knowledge:backfill # Re-chunks and re-embeds documents already in MongoDB
+pnpm memory:check     # Exercises the memory graph: writes, recall, delete, enrichment
+pnpm memory:enrich    # Re-runs enrichment for memories left pending (honours ENRICH_LIMIT)
+pnpm memory:migrate   # One-off: moves the `memories` collection into the Neo4j graph
 pnpm storage:check    # Exercises the Garage S3 client: put, presign, fetch, delete, NOT_FOUND
 ```
 
@@ -53,8 +57,9 @@ Package manager is **pnpm** (v11.1.2, `node-linker=hoisted`). Node >= 20 require
 - `lib/storage/` — object storage on Garage's S3 API. `ref.ts` parses and formats `s3://bucket/key` refs and is pure and unit-tested; `s3-core.ts` holds the operations; `s3-client.ts` is the `"server-only"` layer that binds `config.storage` to them; `index.ts` re-exports the public surface. `ref.ts` and `s3-core.ts` deliberately import neither `@/lib/config` nor `@/lib/env` — only `s3-client.ts` may, which keeps the reference format and the operations testable without environment configuration. `constants/storage.ts` holds the bucket names and the presigned-URL TTLs.
 - `lib/docling/` — document parsing on the self-hosted `docling-serve` sidecar. `response.ts` maps a conversion response to `ConvertedDocument` and is pure and unit-tested; `client.ts` is the `"server-only"` layer that performs the HTTP call; `index.ts` re-exports the public surface. `constants/docling.ts` holds the per-request `document_timeout` and the TableFormer mode. See [Document Parsing (Docling)](#document-parsing-docling).
 - `lib/postgres/` — PostgreSQL + pgvector, the knowledge-RAG store. `config.ts` reads `config.postgres` and is pure; `client.ts` is the `"server-only"` layer holding one lazily-built `Pool`; `vector.ts` holds `toVectorLiteral()` and is pure and unit-tested. `lib/knowledge/` sits on top: `chunking.ts`, `ranking.ts` and `embed.ts` are pure and unit-tested, `index.ts` is the writer, `search.ts` the hybrid retriever, `documents.ts` and `citation-services.ts` the ports of the old `rag-services.ts` and `citation-services.ts`. `embed.ts` holds the embed-before-transaction loop and the policy that separates a width mismatch (rethrow — the index is broken) from an outage (store the chunk vectorless). See [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector).
-- `lib/embeddings/` — Ollama embeddings, no longer reached through the Azure module. `text.ts` is pure (token estimation, normalization, head/tail truncation, context-length retry parsing) and unit-tested; `dimensions.ts` holds `EmbeddingDimensionError` plus `assertEmbeddingDimensions` / `isEmbeddingDimensionError` and is pure and unit-tested — a typed error rather than message-matching, because the predicate has to recognise the provider's wording while this one is ours; `index.ts` is the `"server-only"` provider that calls both and re-exports them. `constants/embeddings.ts` holds `EMBEDDING_DIMENSIONS` (768), the index contract.
-- `lib/azure-ai-search/` — reduced to `client.ts`, which only the memory path still uses. It is removed by the Neo4j memory migration.
+- `lib/embeddings/` — Ollama embeddings, no longer reached through the Azure module. `text.ts` is pure (token estimation, normalization, head/tail truncation, context-length retry parsing) and unit-tested; `dimensions.ts` holds `EmbeddingDimensionError` plus `assertEmbeddingDimensions` / `isEmbeddingDimensionError` and is pure and unit-tested — a typed error rather than message-matching, because the predicate has to recognise the provider's wording while this one is ours; `index.ts` is the `"server-only"` provider that calls both and re-exports them. `constants/embeddings.ts` holds `EMBEDDING_DIMENSIONS`, the index contract every vector store must match.
+- `lib/neo4j/` — the Neo4j driver. `config.ts` reads `config.neo4j` and is pure, returning null unless the URI *and* a password are present; `client.ts` is the `"server-only"` layer holding one lazily-built `Driver` plus `isNeo4jConfigured()`, so every caller degrades rather than throws.
+- `lib/memory/` — the memory graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore`; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same SQL the store does; `extract.ts`, `recall.ts`, `text.ts` and `update.ts` are pure and unit-tested; `enrichment-schema.ts` and `llm-extraction.ts` hold the model contract and the call, and `enrichment-write.ts` and `enrich.ts` write what it returns. `constants/memory.ts` holds the edge types, weights and limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j).
 - `lib/redis-client.ts` — Shared ioredis connections, one per named consumer, with a per-consumer circuit breaker. `getRedisClient(name, options)` returns a discriminated result (`ready` / `unconfigured` / `circuit-open`) so each caller picks its own degradation policy. See [Redis](#redis).
 - `lib/mongodb/` — MongoDB data layer using the official `mongodb` driver. `client.ts` provides synchronous collection accessors that connect lazily on first use. Most `*-store.ts` files hold exactly one document shape, but some span more — `workflow-store.ts` spans workflows, rich workflows and executions — and one collection can back several stores — `tools` backs `tool-store.ts`, `secret-store.ts` and `api-key-store.ts`.
 - `lib/langchain/` — LLM orchestration layer:
@@ -90,7 +95,7 @@ The switch to GitHub OAuth deleted the Microsoft Graph integration and the works
 
 ### Environment Variables
 
-Required: `MONGODB_URI` (and optional `MONGODB_DB_NAME`, defaulting to `geniechat`). In production, also requires `NEXTAUTH_SECRET` (>= 32 chars), `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SECRET_ENCRYPTION_KEY`, `CRON_SECRET`, `REDIS_URL`, `POSTGRES_URL`. Chat, embeddings and web search need `OLLAMA_API_KEY` (for Ollama Cloud) and `EXA_API_KEY`; `GOOGLE_API_KEY` enables the Gemini models. `GITHUB_ADMIN_USERNAMES`, `GITHUB_MANAGER_USERNAMES` and `GITHUB_VIEWER_USERNAMES` are optional — an unset allowlist grants nobody that role, and a role already stored on the user record still takes precedence. `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_FORCE_PATH_STYLE` configure object storage and are optional as well: `S3_PUBLIC_ENDPOINT` is a second endpoint because SigV4 signs the Host header, so a URL presigned against an internal service name fails in a browser that resolves that name differently, and `S3_REGION` must match Garage's `s3_region` or every signature fails validation. `DOCLING_SERVE_URL`, `DOCLING_SERVE_API_KEY` and `DOCLING_SERVE_TIMEOUT_MS` configure the document-parsing sidecar and are optional too — see [Document Parsing (Docling)](#document-parsing-docling). `AZURE_SEARCH_NAME` and `AZURE_SEARCH_API_KEY` are still read by the memory path and are removed by the Neo4j memory migration, not by the pgvector one. All other Azure/API vars are optional. See `lib/env.ts` for the full schema.
+Required: `MONGODB_URI` (and optional `MONGODB_DB_NAME`, defaulting to `geniechat`). In production, also requires `NEXTAUTH_SECRET` (>= 32 chars), `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SECRET_ENCRYPTION_KEY`, `CRON_SECRET`, `REDIS_URL`, `POSTGRES_URL`, `NEO4J_URI`, `NEO4J_PASSWORD`. Chat, embeddings and web search need `OLLAMA_API_KEY` (for Ollama Cloud) and `EXA_API_KEY`; `GOOGLE_API_KEY` enables the Gemini models. `GITHUB_ADMIN_USERNAMES`, `GITHUB_MANAGER_USERNAMES` and `GITHUB_VIEWER_USERNAMES` are optional — an unset allowlist grants nobody that role, and a role already stored on the user record still takes precedence. `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_FORCE_PATH_STYLE` configure object storage and are optional as well: `S3_PUBLIC_ENDPOINT` is a second endpoint because SigV4 signs the Host header, so a URL presigned against an internal service name fails in a browser that resolves that name differently, and `S3_REGION` must match Garage's `s3_region` or every signature fails validation. `DOCLING_SERVE_URL`, `DOCLING_SERVE_API_KEY` and `DOCLING_SERVE_TIMEOUT_MS` configure the document-parsing sidecar and are optional too — see [Document Parsing (Docling)](#document-parsing-docling). `NEO4J_URI` and `NEO4J_PASSWORD` are required in production and are how the memory graph is reached; a blank `NEO4J_URI` is treated as unconfigured, so memory degrades to nothing rather than to a failed call. `OPENROUTER_API_KEY` and `OPENROUTER_EMBEDDING_MODEL` back the embedding provider. All other vars are optional. See `lib/env.ts` for the full schema.
 
 **When adding a new env var:** update all four — `lib/env.ts` (schema + `superRefine` if prod-required), its `buildPlaceholders` map if prod-required (otherwise `pnpm build` fails validation, since `next build` runs with `NODE_ENV=production`), `.env.example` (value + comment), and Azure App Service Configuration if prod-required. `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` still need adding there.
 
@@ -124,13 +129,67 @@ Deleting a document deletes its chunks, and a stored object is no longer enough 
 
 The table's vector column width is `EMBEDDING_DIMENSIONS` (768) and must match `OLLAMA_EMBEDDING_MODEL`'s output width. Changing the model means changing both and re-running the backfill.
 
+### Memory Graph (Neo4j)
+
+Memories are a graph in Neo4j and nowhere else — this branch retired the MongoDB
+`memories` collection, its store and its index spec, and `lib/azure-ai-search/`
+with them. Two node labels carry everything: `:Memory` and `:Entity`. Edges are
+`ABOUT` (memory→entity, written synchronously from the content), `RELATES_TO`
+(memory→memory, scored from content alone), and `SUPERSEDES`, `CONTRADICTS` and
+`RELATION` (LLM-written).
+
+**Tenant isolation is a `userId` property, checked inside the query.** Neo4j has
+no collection scoping, so the old "a query that omits `userId` is a cross-user
+read" rule now lives in the `MATCH` clauses: the seed `SEARCH` filters in-index
+(`WHERE m.userId = $userId` inside the `SEARCH`, not after it — a post-filter
+would let another tenant's nearer matches consume the top-K), and `EXPAND_SQL`
+re-checks `userId` on every node and edge of every hop, so a shared `:Entity` can
+never bridge two users. The in-index `WHERE` is a restricted subset — equality
+and `AND` only; an `OR`, a `<>` or a string operator fails with error 22ND3.
+
+A write does its deterministic work in one transaction: the `:Memory` node, an
+`:Entity` per extracted name, the `ABOUT` edges, and `RELATES_TO` edges scored
+against the newest `MEMORY_EDGE_CANDIDATE_LIMIT` neighbours. Enrichment is fired
+**detached** and never awaited — `enrichMemory` cannot throw and never rejects,
+because a model call must not decide whether a memory is saved. `enrichedAt` is
+the sweep's marker, and `embedding IS NULL` marks a memory written during an
+embedding outage; `pnpm memory:enrich` selects on `enrichedAt IS NULL OR
+embedding IS NULL` and must clear **both**, or every run re-enriches at a model
+call each. That is why it writes the memory's own vector in the same transaction
+as the enrichment.
+
+Recall is a vector seed plus a bounded traversal, ranked in TypeScript
+(`lib/memory/recall.ts`): the seed's cosine score and the path weight, decayed
+per hop, plus a recency bonus. Seeds are vector-only. Degradation follows spec
+§7.6 — no seeds or any error returns an **empty** result with `mode:
+"vector"`, never `slice(0, top)`, because the first `top` rows of a corpus are
+not an answer to a question. An unconfigured or unreachable Neo4j is an error
+for CRUD rather than a silent empty list: memories *are* the feature, so the
+store being down has to surface as a failure.
+
+Two structural notes that outlive this branch. `lib/memory/cypher.ts` holds every
+statement specifically so `scripts/check-memory.ts` can execute the same SQL the
+store does — the store is `"server-only"`, a check script cannot import it, and a
+script carrying its own copy would be verifying the copy. And the `"server-only"`
+guard does not resolve under `tsx`, which is why `cypher.ts`, `llm-extraction.ts`
+and `enrichment-write.ts` carry no guard and hold no connection, while the sweep
+in `scripts/enrich-memories.ts` builds its own model and embedding clients and
+shares only those modules. Cypher cannot parameterise a relationship type or a
+variable-length bound, so `buildMemoryEdgeSql` interpolates behind an allow-list
+and `MEMORY_RECALL_HOPS` is verified as a positive integer at import.
+
+`pnpm db:setup:neo4j` creates the constraints and vector indexes. `pnpm
+memory:check` exercises the store against a live graph. `pnpm memory:migrate`
+moved the old collection across; it is a one-off, and any deployment holding real
+memories must run it before this branch ships.
+
 ### Document Parsing (Docling)
 
 Document parsing runs on a self-hosted `docling-serve` sidecar (port 5001, loopback-only, since only the app talks to it), built from `scripts/docling.Dockerfile` to add the LibreOffice layer the published image omits — not for the legacy Office formats, which Docling 2.93.0 rejects with or without it, but for DrawingML/VML rendering inside DOCX. `DOCLING_SERVE_URL`, `DOCLING_SERVE_API_KEY` and `DOCLING_SERVE_TIMEOUT_MS` configure it and are optional: an unset or unreachable service degrades to empty extraction rather than blocking boot. The page cap and size cap that bound a conversion are container settings in `docker-compose.yml` (`DOCLING_SERVE_MAX_NUM_PAGES`, `DOCLING_SERVE_MAX_FILE_SIZE`) — both default to `sys.maxsize` upstream, so the compose file supplies the only limit there is.
 
 ### Deployment
 
-CI/CD via `.github/workflows/master-dev.yml`: pnpm install, build, test, then deploy standalone bundle to Azure Web App "geniechat-dev". `output: "standalone"` is enabled in `next.config.mjs` (requires Windows Developer Mode or admin for local builds due to symlinks). The Web App needs `REDIS_URL` set in its Configuration — see [Redis](#redis) — and cannot host Redis itself; it needs `POSTGRES_URL` there too, pointing at a Postgres the Web App can reach over the network, since Web App cannot host Postgres either — see [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector). It also needs Garage reachable by the **browser**, not only from the app, because presigned URLs are fetched directly — see [Object Storage (Garage)](#object-storage-garage). The `docling-serve` sidecar is currently **local development only**, so the Web App has no `DOCLING_SERVE_URL` and needs it set once a host for the sidecar exists, alongside the `REDIS_URL` it already needs. Until then nothing is parsed in production, and in chat that is deliberately not silent: plain-text attachments are still decoded directly because they bypass the sidecar, and a binary attachment produces a turn carrying an explicit notice that the file could not be read — so a misconfigured deployment makes itself visible in use rather than looking like a model that ignored the document. Agent documents go through the RAG path instead, where a conversion failure is logged and the document is attached unindexed. See [Document Parsing (Docling)](#document-parsing-docling).
+CI/CD via `.github/workflows/master-dev.yml`: pnpm install, build, test, then deploy standalone bundle to Azure Web App "geniechat-dev". `output: "standalone"` is enabled in `next.config.mjs` (requires Windows Developer Mode or admin for local builds due to symlinks). The Web App needs `REDIS_URL` set in its Configuration — see [Redis](#redis) — and cannot host Redis itself; it needs `POSTGRES_URL` there too, pointing at a Postgres the Web App can reach over the network, since Web App cannot host Postgres either — see [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector). It also needs Garage reachable by the **browser**, not only from the app, because presigned URLs are fetched directly — see [Object Storage (Garage)](#object-storage-garage). It needs `NEO4J_URI` and `NEO4J_PASSWORD` pointing at a Neo4j it can reach, and it cannot host one itself — see [Memory Graph (Neo4j)](#memory-graph-neo4j). Community Edition is single-instance with no clustering or online backup, which the spec accepts explicitly. The `docling-serve` sidecar is currently **local development only**, so the Web App has no `DOCLING_SERVE_URL` and needs it set once a host for the sidecar exists, alongside the `REDIS_URL` it already needs. Until then nothing is parsed in production, and in chat that is deliberately not silent: plain-text attachments are still decoded directly because they bypass the sidecar, and a binary attachment produces a turn carrying an explicit notice that the file could not be read — so a misconfigured deployment makes itself visible in use rather than looking like a model that ignored the document. Agent documents go through the RAG path instead, where a conversion failure is logged and the document is attached unindexed. See [Document Parsing (Docling)](#document-parsing-docling).
 
 ## Next.js 16 (Breaking Changes)
 
@@ -164,10 +223,13 @@ This project uses **Next.js 16**, which has breaking changes from earlier versio
   (`threads_userId_lastMessageAt` is `{ userId: 1, lastMessageAt: -1 }`).
   **This is a convention, not an invariant the store layer enforces.** Accessors
   addressed by an unguessable identifier take no `userId` at all — `getTool(toolId)`,
-  `getMemory(memoryId)`, `getMCPServer(serverId)`, `deleteThread(threadId)` — and
-  ownership for those is enforced by hand at the route
-  (`app/api/memories/[id]/route.ts` rejects `memory.userId !== user.id`), which makes
-  that route check load-bearing rather than belt-and-braces. Two nearby accessors are
+  `getMCPServer(serverId)`, `deleteThread(threadId)` — and ownership for those is
+  enforced by hand at the route, which makes that route check load-bearing rather
+  than belt-and-braces. The memory store is the counter-example: `getMemory(id,
+  userId)`, `updateMemory(id, userId)` and `deleteMemory(id, userId)` carry the
+  boundary themselves — the graph is queried with the owner in the `MATCH` — so
+  `app/api/memories/[id]/route.ts`'s `memory.userId !== user.id` is a second lock on
+  a door the store already closed. Two nearby accessors are
   guarded differently rather than by ownership: `getAllUsers()` takes no argument at all
   and sits behind RBAC (`app/api/admin/users/route.ts`'s `requirePermission("users:manage")`),
   and `findByHash(hash)` is the API-key authentication path, where the hash *is* the

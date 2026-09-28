@@ -14,7 +14,6 @@ import {
   toolCollectionName,
   documentCollectionName,
   deepResearchCollectionName,
-  memoriesCollectionName,
   notesCollectionName,
   usersCollectionName,
   autoTasksCollectionName,
@@ -36,7 +35,6 @@ import type {
   CustomToolDocument,
   ChatDocument,
   DeepResearchReportDocument,
-  MemoryDocument,
   NotesDocument,
   UserDocument,
   AutoTaskDocument,
@@ -123,10 +121,6 @@ export function getDocumentCollection(): Collection<WithMongoId<ChatDocument>> {
 
 export function getDeepResearchCollection(): Collection<WithMongoId<DeepResearchReportDocument>> {
   return getDb().collection<WithMongoId<DeepResearchReportDocument>>(deepResearchCollectionName);
-}
-
-export function getMemoryCollection(): Collection<WithMongoId<MemoryDocument>> {
-  return getDb().collection<WithMongoId<MemoryDocument>>(memoriesCollectionName);
 }
 
 export function getNotesCollection(): Collection<WithMongoId<NotesDocument>> {

@@ -1,6 +1,6 @@
 import "server-only";
 /**
- * Centralized configuration for all Azure services and application settings.
+ * Centralized configuration for all external services and application settings.
  * All environment variables and configuration constants are defined here
  * for type safety and easier maintenance.
  */
@@ -25,7 +25,6 @@ export const config = {
       tools: "tools",
       documents: "documents",
       deepResearch: "deep_research",
-      memories: "memories",
       notes: "notes",
       users: "users",
       autoTasks: "auto_tasks",

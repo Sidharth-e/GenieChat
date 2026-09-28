@@ -17,7 +17,6 @@ const workflowExecutionCollectionName = config.mongodb.collections.workflowExecu
 const toolCollectionName = config.mongodb.collections.tools;
 const documentCollectionName = config.mongodb.collections.documents;
 const deepResearchCollectionName = config.mongodb.collections.deepResearch;
-const memoriesCollectionName = config.mongodb.collections.memories;
 const notesCollectionName = config.mongodb.collections.notes;
 const usersCollectionName = config.mongodb.collections.users;
 const autoTasksCollectionName = config.mongodb.collections.autoTasks;
@@ -39,7 +38,6 @@ export {
   toolCollectionName,
   documentCollectionName,
   deepResearchCollectionName,
-  memoriesCollectionName,
   notesCollectionName,
   usersCollectionName,
   autoTasksCollectionName,
