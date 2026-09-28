@@ -16,6 +16,7 @@
     "db:setup": "tsx scripts/setup-mongodb.ts",
     "db:setup:pg": "tsx --env-file=.env scripts/setup-postgres.ts",
     "embeddings:check": "tsx --env-file=.env scripts/check-embeddings.ts",
+    "knowledge:check": "tsx --env-file=.env scripts/check-knowledge.ts",
     "storage:check": "tsx --env-file=.env scripts/check-storage.ts",
     "ci:check": "pnpm type-check && pnpm lint && pnpm test"
   },
