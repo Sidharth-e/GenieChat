@@ -12,6 +12,8 @@ import { combineRrf } from "../lib/knowledge/ranking";
 const OWNER_TYPE = "agent";
 const OWNER_ID = "__knowledge_check__";
 const CANDIDATE_LIMIT = 20;
+/** The user every probe row belongs to unless a check says otherwise. */
+const CHECK_USER = "u-check";
 
 const failures: string[] = [];
 
@@ -37,6 +39,7 @@ async function search(
   pool: Pool,
   vectorLiteral: string | null,
   queryText: string,
+  userId: string = CHECK_USER,
 ): Promise<SearchRow[]> {
   const { rows } = await pool.query<SearchRow>(KNOWLEDGE_SEARCH_SQL, [
     vectorLiteral,
@@ -44,6 +47,7 @@ async function search(
     OWNER_ID,
     CANDIDATE_LIMIT,
     queryText,
+    userId,
   ]);
   return rows;
 }
@@ -67,12 +71,13 @@ async function insert(
   content: string,
   embedding: string | null,
   sourceId: string | null = "doc-check",
+  userId: string = CHECK_USER,
 ): Promise<void> {
   await pool.query(
     `INSERT INTO ${KNOWLEDGE_TABLE}
        (id, owner_type, owner_id, user_id, source_id, title, chunk_index, content, embedding)
-     VALUES ($1, $2, $3, 'u-check', $4, 'check.pdf', 0, $5, $6::vector)`,
-    [id, OWNER_TYPE, OWNER_ID, sourceId, content, embedding],
+     VALUES ($1, $2, $3, $4, $5, 'check.pdf', 0, $6, $7::vector)`,
+    [id, OWNER_TYPE, OWNER_ID, userId, sourceId, content, embedding],
   );
 }
 
@@ -262,6 +267,25 @@ async function main(): Promise<void> {
       "null query vector empties the vector arm",
       degraded.length === 0,
       `returned ${degraded.length} rows when the query embedding failed`,
+    );
+
+    // 12. The owner is not an authorization boundary, so the search must be
+    //     scoped to the querying user as well. An agent id is not secret: the
+    //     agent stream route hands the model the id of whichever agent the
+    //     request named, and nothing checks that the caller owns it. With only
+    //     the owner filter, naming another user's agent id returns their chunks.
+    await pool.query(DELETE_CHUNKS_FOR_OWNER_SQL, [OWNER_TYPE, OWNER_ID, null]);
+    await insert(pool, "OWN-A", "pension alpha", axis(0), "doc-own", "user-a");
+    await insert(pool, "OWN-B", "pension alpha", axis(0), "doc-own", "user-b");
+    const asA = await search(pool, axis(0), "pension", "user-a");
+    const asB = await search(pool, axis(0), "pension", "user-b");
+    report(
+      "search returns only the querying user's chunks",
+      asA.length === 1 &&
+        asA[0].id === "OWN-A" &&
+        asB.length === 1 &&
+        asB[0].id === "OWN-B",
+      `user-a saw ${asA.map((r) => r.id).join(",") || "(none)"}; user-b saw ${asB.map((r) => r.id).join(",") || "(none)"}`,
     );
   } finally {
     await cleanup();

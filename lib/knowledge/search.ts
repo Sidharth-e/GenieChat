@@ -1,6 +1,7 @@
 import "server-only";
 import { KNOWLEDGE_SEARCH_SQL, RRF_K } from "@/constants/knowledge";
 import { generateEmbedding } from "@/lib/embeddings";
+import { isEmbeddingDimensionError } from "@/lib/embeddings/dimensions";
 import { logger } from "@/lib/logger";
 import { getPostgresClient } from "@/lib/postgres/client";
 import { toVectorLiteral } from "@/lib/postgres/vector";
@@ -10,6 +11,11 @@ import type { KnowledgeHit, KnowledgeOwnerType } from "./types";
 export interface SearchKnowledgeParams {
   ownerType: KnowledgeOwnerType;
   ownerId: string;
+  /**
+   * The querying user. Not a hint: the owner is not an authorization boundary,
+   * so this is what keeps one user's chunks out of another user's results.
+   */
+  userId: string;
   query: string;
   top?: number;
 }
@@ -27,7 +33,7 @@ interface CandidateRow {
 export async function searchKnowledge(
   params: SearchKnowledgeParams,
 ): Promise<KnowledgeHit[]> {
-  const { ownerType, ownerId, query } = params;
+  const { ownerType, ownerId, userId, query } = params;
   const top = Math.max(1, params.top ?? 5);
   const candidateLimit = top * 4;
 
@@ -41,6 +47,11 @@ export async function searchKnowledge(
   try {
     vectorLiteral = toVectorLiteral(await generateEmbedding(trimmed));
   } catch (error) {
+    // A width mismatch is not an outage: the query vector can never match the
+    // stored ones, so quietly answering from the lexical arm alone would present
+    // a broken index as a working one. An outage, by contrast, is worth
+    // degrading past — the lexical arm still has something to say.
+    if (isEmbeddingDimensionError(error)) throw error;
     logger.error(
       { err: error, ownerType, ownerId },
       "Query embedding failed; falling back to lexical search only",
@@ -54,6 +65,7 @@ export async function searchKnowledge(
     ownerId,
     candidateLimit,
     trimmed,
+    userId,
   ]);
 
   const byId = new Map(rows.map((row) => [row.id, row]));

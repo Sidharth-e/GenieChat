@@ -94,6 +94,7 @@ export function createKnowledgeBaseSearchTool(userId: string) {
         const hits = await searchKnowledge({
           ownerType: "agent",
           ownerId: input.agentId,
+          userId,
           query: input.query,
           top: 5,
         });

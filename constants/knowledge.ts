@@ -70,23 +70,35 @@ export const INSERT_CHUNK_SQL = `INSERT INTO ${KNOWLEDGE_TABLE}
  * a failed embedding leaves the arm empty and the lexical half carries the
  * query alone.
  *
+ * `c.user_id = $6` is the authorization boundary, and the owner is not one. An
+ * agent id is not a secret: the agent stream route passes the model whichever
+ * agent id the request named, without checking that the caller owns it, so a
+ * query scoped only by `owner_id` hands one user's chunks to another user who
+ * names their agent. Every chunk carries the `user_id` that indexed it, and the
+ * search must be the same user's.
+ *
+ * Parameters, in order: $1 query vector, $2 owner_type, $3 owner_id, $4 limit,
+ * $5 query text, $6 the querying user.
+ *
  * Lives here rather than in the module that runs it so the infrastructure check
  * can exercise this exact statement without importing a `server-only` module.
  */
 export const KNOWLEDGE_SEARCH_SQL = `
   WITH vector_hits AS (
-    SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $1::vector) AS vrank
-    FROM ${KNOWLEDGE_TABLE}
-    WHERE owner_type = $2 AND owner_id = $3 AND embedding IS NOT NULL
+    SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1::vector) AS vrank
+    FROM ${KNOWLEDGE_TABLE} c
+    WHERE c.owner_type = $2 AND c.owner_id = $3 AND c.user_id = $6
+      AND c.embedding IS NOT NULL
       AND $1::vector IS NOT NULL
-    ORDER BY embedding <=> $1::vector
+    ORDER BY c.embedding <=> $1::vector
     LIMIT $4
   ),
   lexical_hits AS (
     SELECT c.id,
            ROW_NUMBER() OVER (ORDER BY ts_rank_cd(c.content_tsv, q) DESC) AS lrank
     FROM ${KNOWLEDGE_TABLE} c, websearch_to_tsquery('english', $5) q
-    WHERE c.owner_type = $2 AND c.owner_id = $3 AND c.content_tsv @@ q
+    WHERE c.owner_type = $2 AND c.owner_id = $3 AND c.user_id = $6
+      AND c.content_tsv @@ q
     LIMIT $4
   )
   SELECT c.id, c.content, c.title, c.source_id, c.chunk_index, v.vrank, l.lrank
