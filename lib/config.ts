@@ -45,16 +45,18 @@ export const config = {
     forcePathStyle: env.S3_FORCE_PATH_STYLE,
   },
 
+  // Only the memory path still reads these; the knowledge RAG moved to
+  // Postgres. The whole block goes with the Neo4j memory migration.
   azureSearch: {
     name: env.AZURE_SEARCH_NAME,
     apiKey: env.AZURE_SEARCH_API_KEY,
-    agentDocumentsIndexName: "agent-documents-index",
     memoryIndexName: "memory-index",
   },
 
-  // Knowledge RAG storage. `url` is undefined when POSTGRES_URL is unset, which
-  // is what `isPostgresConfigured()` gates on — an unconfigured Postgres
-  // degrades to "knowledge search returns nothing" rather than blocking boot.
+  // Knowledge RAG storage. `url` is undefined when POSTGRES_URL is unset, and
+  // the readers throw rather than degrading: a knowledge store that answers
+  // nothing while claiming to work is harder to diagnose than one that says it
+  // is unconfigured, and boot is not what would be blocked either way.
   postgres: {
     url: env.POSTGRES_URL,
     poolMax: 10,

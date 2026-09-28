@@ -1,5 +1,5 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
+import { generateId } from "@/lib/utils";
 import {
   DELETE_CHUNKS_FOR_OWNER_SQL,
   DELETE_CHUNKS_FOR_SOURCE_SQL,
@@ -62,7 +62,7 @@ export async function indexChunks(params: IndexChunksParams): Promise<number> {
 
     for (const row of rows) {
       await client.query(INSERT_CHUNK_SQL, [
-        randomUUID(),
+        generateId(),
         ownerType,
         ownerId,
         userId,

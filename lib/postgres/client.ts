@@ -1,7 +1,7 @@
 import "server-only";
 import { Pool } from "pg";
 import { logger } from "@/lib/logger";
-import { getPostgresSettings, isPostgresConfigured } from "./config";
+import { getPostgresSettings } from "./config";
 
 let pool: Pool | null = null;
 
@@ -42,5 +42,3 @@ export async function closePostgresPool(): Promise<void> {
   pool = null;
   await closing.end();
 }
-
-export { isPostgresConfigured };

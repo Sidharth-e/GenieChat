@@ -99,6 +99,11 @@ export const KNOWLEDGE_SEARCH_SQL = `
     FROM ${KNOWLEDGE_TABLE} c, websearch_to_tsquery('english', $5) q
     WHERE c.owner_type = $2 AND c.owner_id = $3 AND c.user_id = $6
       AND c.content_tsv @@ q
+    -- Explicit, not redundant with the window's own ordering: it is this clause
+    -- that decides which rows survive the LIMIT below. Without it the
+    -- truncation is whatever the plan happens to produce, so the semantics would
+    -- rest on the planner rather than on the statement.
+    ORDER BY ts_rank_cd(c.content_tsv, q) DESC
     LIMIT $4
   )
   SELECT c.id, c.content, c.title, c.source_id, c.chunk_index, v.vrank, l.lrank

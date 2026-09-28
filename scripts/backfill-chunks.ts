@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { MongoClient } from "mongodb";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { Pool } from "pg";
@@ -9,6 +8,7 @@ import {
 } from "../constants/knowledge";
 import { EMBEDDING_DIMENSIONS } from "../constants/embeddings";
 import { chunkDocumentWithOverlap } from "../lib/knowledge/chunking";
+import { generateId } from "../lib/utils";
 import { toVectorLiteral } from "../lib/postgres/vector";
 import {
   normalizeTextForEmbedding,
@@ -73,6 +73,7 @@ async function main(): Promise<void> {
   });
 
   let indexed = 0;
+  let cleared = 0;
   let skipped = 0;
   let failed = 0;
 
@@ -88,11 +89,19 @@ async function main(): Promise<void> {
 
     for await (const document of cursor) {
       const owner = ownerOf(document);
-      const contents = chunkDocumentWithOverlap(document.content ?? "");
-      if (!owner || contents.length === 0) {
+      // The only thing worth skipping for: with no owner tuple there is nothing
+      // to delete under and nothing to write to.
+      if (!owner) {
         skipped += 1;
         continue;
       }
+
+      // An empty extraction is not a skip. `indexChunks` treats zero chunks as a
+      // valid clear, and this has to agree: a document whose extraction shrinks
+      // to nothing on a re-parse must lose the chunks it had, not keep them
+      // answering questions because there happened to be nothing to insert.
+      const contents = chunkDocumentWithOverlap(document.content ?? "");
+      if (contents.length === 0) cleared += 1;
 
       const client = await pool.connect();
       try {
@@ -127,7 +136,7 @@ async function main(): Promise<void> {
           }
 
           await client.query(INSERT_CHUNK_SQL, [
-            randomUUID(),
+            generateId(),
             owner.ownerType,
             owner.ownerId,
             document.userId,
@@ -155,7 +164,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `Backfill complete: ${indexed} chunks indexed, ${skipped} documents skipped, ${failed} failures.`,
+    `Backfill complete: ${indexed} chunks indexed, ${cleared} documents cleared, ${skipped} documents skipped, ${failed} failures.`,
   );
   if (failed > 0) process.exit(1);
 }

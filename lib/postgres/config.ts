@@ -14,7 +14,3 @@ export function getPostgresSettings(): PostgresSettings | null {
   if (!url) return null;
   return { url, poolMax, idleTimeoutMillis, connectionTimeoutMillis };
 }
-
-export function isPostgresConfigured(): boolean {
-  return getPostgresSettings() !== null;
-}
