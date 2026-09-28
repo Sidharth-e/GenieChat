@@ -33,6 +33,38 @@ export interface RecallCandidate {
   pathWeight: number;
 }
 
+/**
+ * Fuses the semantic seeds with the rows the traversal reached, keeping the
+ * best hop count where both name the same memory.
+ *
+ * It returns the *added* count alongside the rows because that is what
+ * `graphExpandedCount` reports, and the two are not the same number. `EXPAND_CYPHER`
+ * starts from the seeds, so every seed comes back as an expanded row too: the
+ * length of the expanded array counts seeds the dedupe then discards, and an
+ * operator reading it would conclude the graph reached memories it never
+ * reached. Counting what survived — ids the seeds did not already name —
+ * leaves that one metric honest.
+ */
+export function mergeRecallCandidates<T extends RecallCandidate>(
+  seeds: T[],
+  expanded: T[],
+): { candidates: T[]; addedCount: number } {
+  const byId = new Map<string, T>();
+  const seeded = new Set<string>();
+  for (const candidate of seeds) {
+    const existing = byId.get(candidate.id);
+    if (!existing || candidate.hops < existing.hops) byId.set(candidate.id, candidate);
+    seeded.add(candidate.id);
+  }
+  for (const candidate of expanded) {
+    const existing = byId.get(candidate.id);
+    if (!existing || candidate.hops < existing.hops) byId.set(candidate.id, candidate);
+  }
+  let addedCount = 0;
+  for (const id of byId.keys()) if (!seeded.has(id)) addedCount += 1;
+  return { candidates: [...byId.values()], addedCount };
+}
+
 const DEFAULT_TOP = 5;
 
 /**

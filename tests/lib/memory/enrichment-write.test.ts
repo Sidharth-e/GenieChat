@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyEnrichmentOutcome,
   writeEnrichment,
   type StatementRunner,
 } from "@/lib/memory/enrichment-write";
 import {
-  ENTITY_ABOUT_SQL,
-  ENTITY_EXACT_SQL,
-  ENTITY_NEAREST_SQL,
-  MEMORY_ENRICHED_AT_SQL,
-  RELATION_SQL,
-  buildMemoryEdgeSql,
+  ENTITY_ABOUT_CYPHER,
+  ENTITY_EXACT_CYPHER,
+  ENTITY_NEAREST_CYPHER,
+  MEMORY_ENRICHED_AT_CYPHER,
+  RELATION_CYPHER,
+  buildMemoryEdgeCypher,
 } from "@/lib/memory/cypher";
 import type { Enrichment } from "@/lib/memory/enrichment-schema";
 
@@ -21,21 +22,21 @@ import type { Enrichment } from "@/lib/memory/enrichment-schema";
 type Answers = { exact?: string[]; nearest?: string };
 
 function recorder(answers: Answers = {}) {
-  const calls: { sql: string; params: Record<string, unknown> }[] = [];
-  const run: StatementRunner = async (sql, params) => {
-    calls.push({ sql, params });
-    if (sql === ENTITY_EXACT_SQL) {
+  const calls: { cypher: string; params: Record<string, unknown> }[] = [];
+  const run: StatementRunner = async (cypher, params) => {
+    calls.push({ cypher, params });
+    if (cypher === ENTITY_EXACT_CYPHER) {
       return answers.exact?.includes(String(params.normalizedName))
         ? [{ id: "existing" }]
         : [];
     }
-    if (sql === ENTITY_NEAREST_SQL) {
+    if (cypher === ENTITY_NEAREST_CYPHER) {
       return answers.nearest ? [{ normalizedName: answers.nearest }] : [];
     }
     return [];
   };
-  const about = () => calls.filter((call) => call.sql === ENTITY_ABOUT_SQL);
-  const of = (sql: string) => calls.filter((call) => call.sql === sql);
+  const about = () => calls.filter((call) => call.cypher === ENTITY_ABOUT_CYPHER);
+  const of = (cypher: string) => calls.filter((call) => call.cypher === cypher);
   return { run, calls, about, of };
 }
 
@@ -67,7 +68,7 @@ describe("writeEnrichment entity resolution", () => {
     expect(about()).toHaveLength(1);
     expect(about()[0].params.normalizedName).toBe("acme");
     // Step 2 is the *else* of step 1: an exact hit must not cost a search.
-    expect(of(ENTITY_NEAREST_SQL)).toHaveLength(0);
+    expect(of(ENTITY_NEAREST_CYPHER)).toHaveLength(0);
   });
 
   it("collapses onto the nearest entity when no exact one exists", async () => {
@@ -81,8 +82,8 @@ describe("writeEnrichment entity resolution", () => {
       entityEmbeddings: new Map([["acme corp", [1, 0]]]),
     });
 
-    expect(of(ENTITY_NEAREST_SQL)).toHaveLength(1);
-    expect(of(ENTITY_NEAREST_SQL)[0].params.threshold).toBe(0.9);
+    expect(of(ENTITY_NEAREST_CYPHER)).toHaveLength(1);
+    expect(of(ENTITY_NEAREST_CYPHER)[0].params.threshold).toBe(0.9);
     expect(about()[0].params.normalizedName).toBe("acme");
   });
 
@@ -109,7 +110,7 @@ describe("writeEnrichment entity resolution", () => {
       entityEmbeddings: new Map(),
     });
 
-    expect(of(ENTITY_NEAREST_SQL)).toHaveLength(0);
+    expect(of(ENTITY_NEAREST_CYPHER)).toHaveLength(0);
     expect(about()[0].params.normalizedName).toBe("acme");
   });
 
@@ -128,7 +129,7 @@ describe("writeEnrichment entity resolution", () => {
       entityEmbeddings: new Map([["acme corp", [1, 0]]]),
     });
 
-    const relations = of(RELATION_SQL)[0].params.relations as {
+    const relations = of(RELATION_CYPHER)[0].params.relations as {
       from: string;
       to: string;
     }[];
@@ -152,7 +153,7 @@ describe("writeEnrichment writes", () => {
     // "asked and there was nothing" must not read as "never asked", or the
     // sweep pays a model call for this memory forever.
     expect(calls).toHaveLength(1);
-    expect(calls[0].sql).toBe(MEMORY_ENRICHED_AT_SQL);
+    expect(calls[0].cypher).toBe(MEMORY_ENRICHED_AT_CYPHER);
   });
 
   it("writes one statement per edge type present, skipping the absent ones", async () => {
@@ -169,10 +170,10 @@ describe("writeEnrichment writes", () => {
       entityEmbeddings: new Map(),
     });
 
-    expect(of(buildMemoryEdgeSql("CONTRADICTS"))).toHaveLength(1);
-    expect(of(buildMemoryEdgeSql("SUPERSEDES"))).toHaveLength(0);
-    expect(of(buildMemoryEdgeSql("RELATES_TO"))).toHaveLength(0);
-    const edges = of(buildMemoryEdgeSql("CONTRADICTS"))[0].params.edges;
+    expect(of(buildMemoryEdgeCypher("CONTRADICTS"))).toHaveLength(1);
+    expect(of(buildMemoryEdgeCypher("SUPERSEDES"))).toHaveLength(0);
+    expect(of(buildMemoryEdgeCypher("RELATES_TO"))).toHaveLength(0);
+    const edges = of(buildMemoryEdgeCypher("CONTRADICTS"))[0].params.edges;
     expect(edges).toHaveLength(2);
   });
 
@@ -185,6 +186,36 @@ describe("writeEnrichment writes", () => {
       entityEmbeddings: new Map(),
     });
 
-    expect(calls.filter((call) => call.sql !== MEMORY_ENRICHED_AT_SQL)).toHaveLength(0);
+    expect(calls.filter((call) => call.cypher !== MEMORY_ENRICHED_AT_CYPHER)).toHaveLength(0);
+  });
+});
+
+describe("classifyEnrichmentOutcome", () => {
+  it("counts a still-vectorless memory as failed, not enriched", () => {
+    // The sweep queues a memory for one of two reasons, and this is the second:
+    // `embedding IS NULL`, meaning it was written while the provider was down.
+    // The sweep's entire job for that memory is to give it a vector — `embedOrNull`
+    // returns null when the provider is down or unconfigured, so a run can end
+    // with the memory exactly as vectorless as it began. Reporting that as
+    // `enriched` exits the sweep 0 and tells the operator the corpus is
+    // repaired while the rows it was run for are still invisible to recall.
+    expect(
+      classifyEnrichmentOutcome({ vectorless: true, embedded: false }),
+    ).toBe("failed");
+  });
+
+  it("counts a vectorless memory that got its vector as enriched", () => {
+    expect(
+      classifyEnrichmentOutcome({ vectorless: true, embedded: true }),
+    ).toBe("enriched");
+  });
+
+  it("does not fail a memory that never lacked a vector", () => {
+    // `embedded` is only ever asked about a vectorless memory. An already-embedded
+    // one arrives here as `vectorless: false, embedded: false` and must not be
+    // counted as a failure for a vector it was never missing.
+    expect(
+      classifyEnrichmentOutcome({ vectorless: false, embedded: false }),
+    ).toBe("enriched");
   });
 });

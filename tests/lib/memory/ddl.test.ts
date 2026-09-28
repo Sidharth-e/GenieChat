@@ -35,6 +35,19 @@ describe("buildNeo4jDdl", () => {
     );
   });
 
+  it("indexes the edge-candidate window the write path orders by", () => {
+    // `EDGE_CANDIDATE_CYPHER` is `MATCH (other:Memory {userId}) ... ORDER BY
+    // other.createdAt DESC LIMIT 200`, and every create and content-changing
+    // update runs it. `memory_user` on (userId) alone leaves Neo4j reading and
+    // sorting the user's entire memory set before it can take the newest 200,
+    // so the write cost the spec calls "proportional to this memory's entity
+    // count, not to the corpus" was proportional to the corpus after all. The
+    // composite index is what makes the ORDER BY an index-order read.
+    expect(buildNeo4jDdl(768).join("\n")).toContain(
+      "FOR (m:Memory) ON (m.userId, m.createdAt)",
+    );
+  });
+
   it("names every vector index exactly once", () => {
     const ddl = buildNeo4jDdl(768).join("\n");
     for (const name of Object.values(MEMORY_VECTOR_INDEX_NAMES)) {

@@ -12,21 +12,21 @@ import { logger } from "@/lib/logger";
 import { getNeo4jDriver, isNeo4jConfigured } from "@/lib/neo4j/client";
 import { buildDeterministicEdges, extractEntityNames } from "./extract";
 import {
-  EDGE_CANDIDATE_SQL,
-  ENTITY_ABOUT_SQL,
-  ENTITY_GC_SQL,
-  EXPAND_SQL,
-  MEMORY_DELETE_SQL,
-  SEED_SQL,
+  EDGE_CANDIDATE_CYPHER,
+  ENTITY_ABOUT_CYPHER,
+  ENTITY_GC_CYPHER,
+  EXPAND_CYPHER,
+  MEMORY_DELETE_CYPHER,
+  SEED_CYPHER,
 } from "./cypher";
 import { enrichMemory } from "./enrich";
 import { writeEnrichment } from "./enrichment-write";
 import type { Enrichment } from "./enrichment-schema";
 import type { ExtractionNeighbour } from "./llm-extraction";
-import { rankRecall, type RecallCandidate } from "./recall";
+import { mergeRecallCandidates, rankRecall } from "./recall";
 import { normalizeQueryForRetrieval } from "./text";
 import { buildMemoryUpdateSet, normalizeMemoryCategory } from "./update";
-import type { GraphRAGMemorySearchResult, Memory, MemoryCategory, MemoryMode } from "./types";
+import type { GraphRAGMemorySearchResult, Memory, MemoryMode } from "./types";
 
 interface MemoryNode {
   id: string;
@@ -96,13 +96,6 @@ async function embedOrNull(text: string, context: string): Promise<number[] | nu
     logger.error({ err: error, context }, "Embedding unavailable; writing without a vector");
     return null;
   }
-}
-
-/** A recall candidate carrying the fields `rankRecall` does not rank on. */
-interface RecallRow extends RecallCandidate {
-  category?: MemoryCategory;
-  userName: string;
-  userEmail: string;
 }
 
 /** The columns both recall queries return, read the same way. */
@@ -215,7 +208,7 @@ export class MemoryGraphStore {
       // because an empty name would MERGE one node shared by every user, which
       // is unrecoverable.
       if (!entity.normalizedName) continue;
-      await tx.run(ENTITY_ABOUT_SQL, {
+      await tx.run(ENTITY_ABOUT_CYPHER, {
         id: memory.id,
         userId: memory.userId,
         normalizedName: entity.normalizedName,
@@ -260,7 +253,7 @@ export class MemoryGraphStore {
         // Ordered, so the candidate window is a stable recent slice rather
         // than an arbitrary one — see MEMORY_EDGE_CANDIDATE_LIMIT. The statement
         // lives in cypher.ts so scripts/check-memory.ts executes the same one.
-        tx.run(EDGE_CANDIDATE_SQL, {
+        tx.run(EDGE_CANDIDATE_CYPHER, {
           userId: memory.userId,
           id: memory.id,
           limit: MEMORY_EDGE_CANDIDATE_LIMIT,
@@ -311,7 +304,7 @@ export class MemoryGraphStore {
     tx: ManagedTransaction,
     userId: string,
   ): Promise<void> {
-    await tx.run(ENTITY_GC_SQL, { userId });
+    await tx.run(ENTITY_GC_CYPHER, { userId });
   }
 
   async getMemories(userId: string): Promise<Memory[]> {
@@ -420,7 +413,7 @@ export class MemoryGraphStore {
     const session = driver.session();
     try {
       return await session.executeWrite(async (tx) => {
-        const result = await tx.run(MEMORY_DELETE_SQL, { id: memoryId, userId });
+        const result = await tx.run(MEMORY_DELETE_CYPHER, { id: memoryId, userId });
         if (result.summary.counters.updates().nodesDeleted === 0) return false;
 
         await this.garbageCollectOrphanEntities(tx, userId);
@@ -463,8 +456,8 @@ export class MemoryGraphStore {
     try {
       await session.executeWrite(async (tx) => {
         await writeEnrichment(
-          async (sql, params) => {
-            const result = await tx.run(sql, params);
+          async (cypher, params) => {
+            const result = await tx.run(cypher, params);
             return result.records.map((record) => record.toObject());
           },
           { memoryId, userId, enrichment, entityEmbeddings },
@@ -503,6 +496,17 @@ export class MemoryGraphStore {
 
     if (!normalized) return empty("graph");
 
+    // Spec §8: with no `NEO4J_URI`, retrieval returns empty and logs. This guard
+    // is the whole of that promise — `requireDriver` throws, and it is called
+    // outside every `try` below, so before this an unconfigured deployment threw
+    // out of each chat turn instead of quietly remembering nothing. CRUD still
+    // throws, deliberately: "I remember nothing about that" is an honest answer
+    // when the graph is gone, and a write that only appears to succeed is not.
+    if (!isNeo4jConfigured()) {
+      logger.error({ userId }, "Graph memory recall skipped; Neo4j is not configured");
+      return empty("graph");
+    }
+
     const driver = await this.requireDriver();
     const seedLimit = memorySeedLimit(top);
 
@@ -519,7 +523,7 @@ export class MemoryGraphStore {
     const session = driver.session();
     try {
       const seeds = await session.executeRead(async (tx) => {
-        const { records } = await tx.run(SEED_SQL, {
+        const { records } = await tx.run(SEED_CYPHER, {
           queryVector,
           userId,
           k: seedLimit,
@@ -535,7 +539,7 @@ export class MemoryGraphStore {
       if (seeds.length === 0) return empty("graph");
 
       const expanded = await session.executeRead(async (tx) => {
-        const { records } = await tx.run(EXPAND_SQL, {
+        const { records } = await tx.run(EXPAND_CYPHER, {
           seedIds: seeds.map((seed) => seed.id),
           userId,
           allowedTypes: MEMORY_TRAVERSABLE_TYPES,
@@ -549,16 +553,15 @@ export class MemoryGraphStore {
         }));
       });
 
-      // A node reached by more than one path keeps its best hop count.
-      const byId = new Map<string, RecallRow>();
-      for (const candidate of [...seeds, ...expanded]) {
-        const existing = byId.get(candidate.id);
-        if (!existing || candidate.hops < existing.hops) byId.set(candidate.id, candidate);
-      }
-
-      const ranked = rankRecall([...byId.values()], { top });
+      const merged = mergeRecallCandidates(seeds, expanded);
+      const ranked = rankRecall(merged.candidates, { top });
       logger.info(
-        { userId, seedCount: seeds.length, expandedCount: expanded.length, returned: ranked.length },
+        {
+          userId,
+          seedCount: seeds.length,
+          expandedCount: merged.addedCount,
+          returned: ranked.length,
+        },
         "Graph memory recall complete",
       );
 
@@ -578,8 +581,8 @@ export class MemoryGraphStore {
           mode: "graph",
           semanticSeedCount: seeds.length,
           lexicalSeedCount: 0,
-          graphExpandedCount: expanded.length,
-          totalCandidates: byId.size,
+          graphExpandedCount: merged.addedCount,
+          totalCandidates: merged.candidates.length,
         },
       };
     } catch (error) {

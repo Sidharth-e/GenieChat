@@ -29,7 +29,15 @@ export function buildNeo4jDdl(dimensions: number): string[] {
     // from becoming one node. Both matter.
     `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.entityUserName} IF NOT EXISTS
        FOR (e:Entity) REQUIRE (e.userId, e.normalizedName) IS UNIQUE`,
-    `CREATE INDEX memory_user IF NOT EXISTS FOR (m:Memory) ON (m.userId)`,
+    // The sort key is the point. `EDGE_CANDIDATE_CYPHER` reads
+    // `MATCH (other:Memory {userId}) ... ORDER BY other.createdAt DESC LIMIT
+    // $limit` on every write, and without `createdAt` in the index Neo4j has to
+    // read *and sort* the user's whole memory set before it can take the newest
+    // 200 — the write cost then tracks the corpus, not the entity count. A
+    // `(userId)`-only index is this index minus the sort key, so it is replaced
+    // rather than kept beside it: same prefix, same lookups, extra write cost.
+    `CREATE INDEX memory_user_created IF NOT EXISTS
+       FOR (m:Memory) ON (m.userId, m.createdAt)`,
     `CREATE INDEX memory_enriched IF NOT EXISTS FOR (m:Memory) ON (m.enrichedAt)`,
     `CREATE INDEX entity_user IF NOT EXISTS FOR (e:Entity) ON (e.userId)`,
     `CREATE VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.memory} IF NOT EXISTS

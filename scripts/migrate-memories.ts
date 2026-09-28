@@ -3,7 +3,11 @@ import neo4j from "neo4j-driver";
 import axios, { type AxiosInstance } from "axios";
 import { z } from "zod";
 import { MEMORY_EDGE_CANDIDATE_LIMIT } from "@/constants/memory";
-import { ENTITY_ABOUT_SQL, EDGE_CANDIDATE_SQL } from "@/lib/memory/cypher";
+import {
+  ENTITY_ABOUT_CYPHER,
+  EDGE_CANDIDATE_CYPHER,
+  MIGRATE_MEMORY_CYPHER,
+} from "@/lib/memory/cypher";
 import { assertEmbeddingDimensions } from "@/lib/embeddings/dimensions";
 import {
   buildDeterministicEdges,
@@ -166,16 +170,7 @@ async function main(): Promise<void> {
 
         await session.executeWrite(async (tx) => {
           await tx.run(
-            `MERGE (m:Memory {id: $id})
-             SET m.userId = $userId,
-                 m.userName = $userName,
-                 m.userEmail = $userEmail,
-                 m.content = $content,
-                 m.category = $category,
-                 m.createdAt = $createdAt,
-                 m.updatedAt = $updatedAt,
-                 m.embedding = $embedding,
-                 m.enrichedAt = null`,
+            MIGRATE_MEMORY_CYPHER,
             {
               id,
               userId,
@@ -193,7 +188,7 @@ async function main(): Promise<void> {
 
           for (const name of extractEntityNames(content)) {
             if (!name) continue;
-            await tx.run(ENTITY_ABOUT_SQL, {
+            await tx.run(ENTITY_ABOUT_CYPHER, {
               id,
               userId,
               normalizedName: name,
@@ -232,7 +227,7 @@ async function main(): Promise<void> {
     for (const memory of migrated) {
       try {
         const { records } = await session.executeRead((tx) =>
-          tx.run(EDGE_CANDIDATE_SQL, {
+          tx.run(EDGE_CANDIDATE_CYPHER, {
             userId: memory.userId,
             id: memory.id,
             limit: MEMORY_EDGE_CANDIDATE_LIMIT,

@@ -8,9 +8,9 @@ import {
   MEMORY_EDGE_NEIGHBOR_LIMIT,
 } from "@/constants/memory";
 import {
-  EDGE_CANDIDATE_SQL,
-  ENRICH_PENDING_SQL,
-  MEMORY_EMBEDDING_SQL,
+  EDGE_CANDIDATE_CYPHER,
+  ENRICH_PENDING_CYPHER,
+  MEMORY_EMBEDDING_CYPHER,
 } from "@/lib/memory/cypher";
 import {
   assertEmbeddingDimensions,
@@ -20,14 +20,17 @@ import {
   extractEnrichment,
   type ExtractionNeighbour,
 } from "@/lib/memory/llm-extraction";
-import { writeEnrichment } from "@/lib/memory/enrichment-write";
+import {
+  classifyEnrichmentOutcome,
+  writeEnrichment,
+} from "@/lib/memory/enrichment-write";
 import type { Enrichment } from "@/lib/memory/enrichment-schema";
 
 /**
  * The recovery sweep for memory enrichment, and for memories written while the
  * embedding provider was down.
  *
- * `ENRICH_PENDING_SQL`'s two predicates are one command's worth of work on
+ * `ENRICH_PENDING_CYPHER`'s two predicates are one command's worth of work on
  * purpose: `enrichedAt IS NULL` picks up a memory whose background enrichment
  * failed, and `embedding IS NULL` picks up one written during an outage, which
  * may well have been enriched already. Both are indexed, so this is a cheap
@@ -174,8 +177,8 @@ async function embedOrNull(
 }
 
 function statementRunner(tx: ManagedTransaction) {
-  return async (sql: string, params: Record<string, unknown>) => {
-    const result = await tx.run(sql, params);
+  return async (cypher: string, params: Record<string, unknown>) => {
+    const result = await tx.run(cypher, params);
     return result.records.map((record) => record.toObject());
   };
 }
@@ -199,7 +202,7 @@ async function pendingNeighbours(
   memory: { id: string; userId: string },
 ): Promise<ExtractionNeighbour[]> {
   const { records } = await session.executeRead((tx) =>
-    tx.run(EDGE_CANDIDATE_SQL, {
+    tx.run(EDGE_CANDIDATE_CYPHER, {
       userId: memory.userId,
       id: memory.id,
       limit: MEMORY_EDGE_CANDIDATE_LIMIT,
@@ -228,7 +231,7 @@ async function enrichPendingMemories(options: { limit?: number } = {}) {
   let failed = 0;
   try {
     const { records } = await session.executeRead((tx) =>
-      tx.run(ENRICH_PENDING_SQL, { limit }),
+      tx.run(ENRICH_PENDING_CYPHER, { limit }),
     );
     enqueued = records.length;
 
@@ -266,7 +269,7 @@ async function enrichPendingMemories(options: { limit?: number } = {}) {
         await session.executeWrite(async (tx) => {
           const run = statementRunner(tx);
           if (embedding) {
-            await run(MEMORY_EMBEDDING_SQL, {
+            await run(MEMORY_EMBEDDING_CYPHER, {
               id: memory.id,
               userId: memory.userId,
               embedding,
@@ -279,6 +282,24 @@ async function enrichPendingMemories(options: { limit?: number } = {}) {
             entityEmbeddings,
           });
         });
+
+        // The enrichment above is still worth keeping — the memory stays queued
+        // either way, because `ENRICH_PENDING_CYPHER` matches on `embedding IS
+        // NULL` as well as on `enrichedAt`. What must not happen is the sweep
+        // calling this a success.
+        if (
+          classifyEnrichmentOutcome({
+            vectorless: memory.vectorless,
+            embedded: embedding !== null,
+          }) === "failed"
+        ) {
+          console.warn(
+            `  ${memory.id}: still vectorless; the embedding provider did not answer`,
+          );
+          failed += 1;
+          continue;
+        }
+
         enriched += 1;
       } catch (error) {
         console.warn(

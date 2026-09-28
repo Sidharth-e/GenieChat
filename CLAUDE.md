@@ -142,7 +142,7 @@ with them. Two node labels carry everything: `:Memory` and `:Entity`. Edges are
 no collection scoping, so the old "a query that omits `userId` is a cross-user
 read" rule now lives in the `MATCH` clauses: the seed `SEARCH` filters in-index
 (`WHERE m.userId = $userId` inside the `SEARCH`, not after it — a post-filter
-would let another tenant's nearer matches consume the top-K), and `EXPAND_SQL`
+would let another tenant's nearer matches consume the top-K), and `EXPAND_CYPHER`
 re-checks `userId` on every node and edge of every hop, so a shared `:Entity` can
 never bridge two users. The in-index `WHERE` is a restricted subset — equality
 and `AND` only; an `OR`, a `<>` or a string operator fails with error 22ND3.
@@ -175,7 +175,7 @@ guard does not resolve under `tsx`, which is why `cypher.ts`, `llm-extraction.ts
 and `enrichment-write.ts` carry no guard and hold no connection, while the sweep
 in `scripts/enrich-memories.ts` builds its own model and embedding clients and
 shares only those modules. Cypher cannot parameterise a relationship type or a
-variable-length bound, so `buildMemoryEdgeSql` interpolates behind an allow-list
+variable-length bound, so `buildMemoryEdgeCypher` interpolates behind an allow-list
 and `MEMORY_RECALL_HOPS` is verified as a positive integer at import.
 
 `pnpm db:setup:neo4j` creates the constraints and vector indexes. `pnpm

@@ -7,12 +7,12 @@ import {
   memorySeedLimit,
 } from "@/constants/memory";
 import {
-  EDGE_CANDIDATE_SQL,
-  ENRICH_PENDING_SQL,
-  ENTITY_GC_SQL,
-  EXPAND_SQL,
-  MEMORY_DELETE_SQL,
-  SEED_SQL,
+  EDGE_CANDIDATE_CYPHER,
+  ENRICH_PENDING_CYPHER,
+  ENTITY_GC_CYPHER,
+  EXPAND_CYPHER,
+  MEMORY_DELETE_CYPHER,
+  SEED_CYPHER,
 } from "@/lib/memory/cypher";
 import { writeEnrichment } from "@/lib/memory/enrichment-write";
 import type { Enrichment } from "@/lib/memory/enrichment-schema";
@@ -26,7 +26,7 @@ import type { Enrichment } from "@/lib/memory/enrichment-schema";
  *    the reason `setup-mongodb.ts` and `check-storage.ts` document: `lib/config`
  *    is `server-only` and reaches the whole `lib/env.ts` schema, so an unrelated
  *    blank optional var would stop this script from running.
- * 2. It imports the SQL from `@/lib/memory/cypher` — a module with no
+ * 2. It imports the Cypher from `@/lib/memory/cypher` — a module with no
  *    `"server-only"` guard — so these checks execute the *same* statements the
  *    store does. It cannot import `@/lib/memory/graph-store` (guarded) or
  *    `@/lib/embeddings` (guarded), which is why the vectors below are built by
@@ -135,8 +135,8 @@ async function assertIndexContract(
  * `resolveEntityName` reads (`id`, `normalizedName`).
  */
 function runner(tx: ManagedTransaction) {
-  return async (sql: string, params: Record<string, unknown>) => {
-    const result = await tx.run(sql, params);
+  return async (cypher: string, params: Record<string, unknown>) => {
+    const result = await tx.run(cypher, params);
     return result.records.map((record) => record.toObject());
   };
 }
@@ -187,14 +187,14 @@ async function runChecks(
   const k = memorySeedLimit(5);
 
   // ---- 1. the seed query finds the user's own memory ----
-  const seedResult = await session.run(SEED_SQL, {
+  const seedResult = await session.run(SEED_CYPHER, {
     queryVector: probe,
     userId: USER_A,
     k,
   });
   const seedIds = seedResult.records.map((r) => String(r.get("id")));
   report(
-    "SEED_SQL returns the target user's memory",
+    "SEED_CYPHER returns the target user's memory",
     seedIds.includes("check_a_1"),
     `ids=[${seedIds.join(", ")}]`,
   );
@@ -208,7 +208,7 @@ async function runChecks(
   );
 
   // A shared entity name is not a bridge: B's "acme" is a different node.
-  const expandResult = await session.run(EXPAND_SQL, {
+  const expandResult = await session.run(EXPAND_CYPHER, {
     seedIds: ["check_a_1"],
     userId: USER_A,
     allowedTypes: MEMORY_TRAVERSABLE_TYPES,
@@ -216,7 +216,7 @@ async function runChecks(
   });
   const expandedIds = expandResult.records.map((r) => String(r.get("id")));
   report(
-    "EXPAND_SQL from A's seed returns no B memory via the shared entity name",
+    "EXPAND_CYPHER from A's seed returns no B memory via the shared entity name",
     expandedIds.every((id) => !id.startsWith("check_b_")),
     `expanded=[${expandedIds.join(", ")}]`,
   );
@@ -227,13 +227,13 @@ async function runChecks(
     `MATCH (b:Memory {id:'check_b_1'}), (e:Entity {id:'check_a_acme'})
      CREATE (b)-[:ABOUT]->(e)`,
   );
-  const crossA = await session.run(EXPAND_SQL, {
+  const crossA = await session.run(EXPAND_CYPHER, {
     seedIds: ["check_a_1"],
     userId: USER_A,
     allowedTypes: MEMORY_TRAVERSABLE_TYPES,
     expansionLimit: k * 2,
   });
-  const crossB = await session.run(EXPAND_SQL, {
+  const crossB = await session.run(EXPAND_CYPHER, {
     seedIds: ["check_b_1"],
     userId: USER_B,
     allowedTypes: MEMORY_TRAVERSABLE_TYPES,
@@ -242,7 +242,7 @@ async function runChecks(
   const crossAIds = crossA.records.map((r) => String(r.get("id")));
   const crossBIds = crossB.records.map((r) => String(r.get("id")));
   report(
-    "EXPAND_SQL refuses a path crossing users in either direction",
+    "EXPAND_CYPHER refuses a path crossing users in either direction",
     crossAIds.every((id) => !id.startsWith("check_b_")) &&
       crossBIds.every((id) => !id.startsWith("check_a_")),
     `fromA=[${crossAIds.join(", ")}] fromB=[${crossBIds.join(", ")}]`,
@@ -250,7 +250,7 @@ async function runChecks(
 
   // ---- 4. a vectorless memory is skipped, not an error ----
   report(
-    "SEED_SQL skips a memory with no embedding instead of erroring",
+    "SEED_CYPHER skips a memory with no embedding instead of erroring",
     !seedIds.includes("check_a_novector"),
     `returned=${seedIds.join(", ")}`,
   );
@@ -272,8 +272,8 @@ async function runChecks(
   );
 
   await session.executeWrite(async (tx) => {
-    await tx.run(MEMORY_DELETE_SQL, { id: "check_a_1", userId: USER_A });
-    await tx.run(ENTITY_GC_SQL, { userId: USER_A });
+    await tx.run(MEMORY_DELETE_CYPHER, { id: "check_a_1", userId: USER_A });
+    await tx.run(ENTITY_GC_CYPHER, { userId: USER_A });
   });
   const afterDelete = await session.run(
     `RETURN EXISTS { MATCH (m:Memory {id:'check_a_1'}) } AS memoryGone,
@@ -283,7 +283,7 @@ async function runChecks(
   );
   const row = afterDelete.records[0];
   report(
-    "MEMORY_DELETE_SQL + ENTITY_GC_SQL remove the memory, its edges and only its orphaned entities",
+    "MEMORY_DELETE_CYPHER + ENTITY_GC_CYPHER remove the memory, its edges and only its orphaned entities",
     row.get("memoryGone") === false &&
       row.get("orphanKept") === false &&
       row.get("sharedKept") === true &&
@@ -323,7 +323,7 @@ async function runChecks(
     { a: USER_A },
   );
 
-  const bounded = await session.run(EDGE_CANDIDATE_SQL, {
+  const bounded = await session.run(EDGE_CANDIDATE_CYPHER, {
     userId: USER_A,
     id: "check_a_recent3",
     limit: 2,
@@ -333,7 +333,7 @@ async function runChecks(
   let productionBoundOk = true;
   let productionBoundDetail = "ok";
   try {
-    const full = await session.run(EDGE_CANDIDATE_SQL, {
+    const full = await session.run(EDGE_CANDIDATE_CYPHER, {
       userId: USER_A,
       id: "check_a_recent3",
       limit: MEMORY_EDGE_CANDIDATE_LIMIT,
@@ -351,7 +351,7 @@ async function runChecks(
   }
 
   report(
-    "EDGE_CANDIDATE_SQL returns the bounded recent slice, newest first, excluding the memory itself",
+    "EDGE_CANDIDATE_CYPHER returns the bounded recent slice, newest first, excluding the memory itself",
     boundedIds.join(",") === "check_a_recent2,check_a_recent1" && productionBoundOk,
     `bounded=[${boundedIds.join(", ")}] atLimit${MEMORY_EDGE_CANDIDATE_LIMIT}=${productionBoundDetail}`,
   );
@@ -451,7 +451,7 @@ async function runChecks(
   // so a limit below the scratch count truncates the very rows being asserted
   // on, and check 2's 500 memories have no `enrichedAt` at all, which counts as
   // null.
-  const pending = await session.run(ENRICH_PENDING_SQL, { limit: 1000 });
+  const pending = await session.run(ENRICH_PENDING_CYPHER, { limit: 1000 });
   const pendingIds = pending.records.map((record) => String(record.get("id")));
 
   const entities = (main?.get("entities") as string[]) ?? [];
