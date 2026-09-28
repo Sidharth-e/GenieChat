@@ -97,6 +97,10 @@ export async function POST(request: NextRequest) {
         const ragFormData = new FormData();
         ragFormData.append("file", file);
         ragFormData.append("agentId", agentId);
+        // The document row and its chunks are stored under the id generated
+        // above, so the DELETE handler below can address them by the same value
+        // it finds in `agent.documents`.
+        ragFormData.append("documentId", documentId);
 
         try {
             const { CrackDocument } = await import("@/lib/knowledge/documents");
@@ -171,6 +175,31 @@ export async function DELETE(request: NextRequest) {
         // line for an audit to find.
         if (deleteResult.status !== "OK") {
             logger.error({ err: deleteResult }, "[AgentFiles] Delete object failed");
+        }
+
+        // Removing the stored object is not enough to remove the document: its
+        // text and its chunks are what `knowledge_base_search` actually reads,
+        // so a file deleted here would otherwise keep answering questions.
+        // `DeleteChatDocument` clears both stores, and it finds them because the
+        // upload indexed under this same `documentId`.
+        //
+        // Deliberately before the agent's document list is pruned: if this
+        // fails, the file stays listed and the user can retry, and the retry is
+        // safe because the object delete above tolerates an already-missing
+        // object.
+        try {
+            const { DeleteChatDocument } = await import("@/lib/knowledge/documents");
+            const forgotten = await DeleteChatDocument("", documentId);
+            if (forgotten.status !== "OK") {
+                logger.error(
+                    { err: forgotten.errors },
+                    `[AgentFiles] Failed to delete the document and chunks for ${documentId}`,
+                );
+                return api.serverError("Failed to delete document");
+            }
+        } catch (err) {
+            logger.error({ err }, `[AgentFiles] Error deleting document ${documentId}`);
+            return api.serverError("Failed to delete document");
         }
 
         const updatedDocuments = existingDocuments.filter(d => d.id !== documentId);

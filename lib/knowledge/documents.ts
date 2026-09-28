@@ -80,6 +80,9 @@ export const CrackDocument = async (
     );
     const chatThreadId = formData.get("chatThreadId") as string;
     const agentId = formData.get("agentId") as string;
+    // Optional: a caller that already tracks this upload under its own id passes
+    // it here, so the chunks' `source_id` is an id the caller can delete by.
+    const documentId = (formData.get("documentId") as string | null) ?? undefined;
     const sessionUser = await getSessionUser();
 
     if (fileResponse.status === "OK") {
@@ -102,7 +105,8 @@ export const CrackDocument = async (
           fileResponse.response.totalPages,
           splitDocuments.length,
           Date.now(),
-          agentId
+          agentId,
+          documentId
         );
 
         if (created.status !== "OK") {
@@ -320,6 +324,13 @@ export const CreateChatDocument = async (
   numberOfIndexes?: number,
   uploadTime?: number,
   agentId?: string,
+  /**
+   * The id to store under, when the caller already generated one. An agent file
+   * upload generates its own id for the `AgentDocument` it tracks, and the
+   * delete path addresses this document's chunks by that same id — so the two
+   * have to be one value, and only the caller can supply it.
+   */
+  documentId?: string,
 ): Promise<ServerActionResponse<ChatDocumentModel>> => {
   try {
     const user = await getSessionUser();
@@ -327,7 +338,7 @@ export const CreateChatDocument = async (
 
     const modelToSave: ChatDocumentModel = {
       chatThreadId: chatThreadID,
-      id: generateId(),
+      id: documentId ?? generateId(),
       userId: user.id,
       createdAt: new Date(),
       type: CHAT_DOCUMENT_ATTRIBUTE,
