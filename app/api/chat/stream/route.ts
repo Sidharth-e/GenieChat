@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import { chatService } from "@/lib/langchain/chat-service";
 import { store } from "@/lib/store";
 import { convertCustomToolsToLangChain } from "@/lib/tool/custom-tool-converter";
-import { VectorMemoryStore } from "@/lib/memory/vector-memory-store";
+import { MemoryGraphStore } from "@/lib/memory/graph-store";
 import {
   createSaveMemoryTool,
   createEditMemoryTool,
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
     const memoryPromise: Promise<string[]> = memoryEnabled
       ? (async () => {
           try {
-            const memoryStore = new VectorMemoryStore();
+            const memoryStore = new MemoryGraphStore();
             const retrievalResult =
               await memoryStore.searchRelevantMemoriesWithGraph(
                 userId,

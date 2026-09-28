@@ -92,10 +92,6 @@ const envSchema = z
       .pipe(z.enum(["true", "false"]).default("true"))
       .transform((value) => value === "true"),
 
-    // Search
-    AZURE_SEARCH_NAME: z.string().optional(),
-    AZURE_SEARCH_API_KEY: z.string().optional(),
-
     // Docling (self-hosted document parsing). Optional by design: an
     // unconfigured service degrades to empty extraction, it does not block
     // boot — the same convention the storage vars follow. Blank normalises to

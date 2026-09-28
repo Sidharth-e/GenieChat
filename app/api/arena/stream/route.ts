@@ -159,9 +159,9 @@ export async function POST(req: NextRequest) {
     let memoryStrings: string[] = [];
     if (memoryEnabled !== false) {
       try {
-        const { VectorMemoryStore } =
-          await import("@/lib/memory/vector-memory-store");
-        const memoryStore = new VectorMemoryStore();
+        const { MemoryGraphStore } =
+          await import("@/lib/memory/graph-store");
+        const memoryStore = new MemoryGraphStore();
         const result = await memoryStore.searchRelevantMemoriesWithGraph(
           userId,
           message,

@@ -9,9 +9,9 @@ export const createSaveMemoryTool = (
   tool(
     async (input) => {
       try {
-        const { VectorMemoryStore } =
-          await import("@/lib/memory/vector-memory-store");
-        const memoryStore = new VectorMemoryStore();
+        const { MemoryGraphStore } =
+          await import("@/lib/memory/graph-store");
+        const memoryStore = new MemoryGraphStore();
 
         const memory = await memoryStore.createMemory({
           userId,
@@ -57,16 +57,16 @@ export const createEditMemoryTool = (userId: string) =>
   tool(
     async (input) => {
       try {
-        const { VectorMemoryStore } =
-          await import("@/lib/memory/vector-memory-store");
-        const memoryStore = new VectorMemoryStore();
+        const { MemoryGraphStore } =
+          await import("@/lib/memory/graph-store");
+        const memoryStore = new MemoryGraphStore();
 
         let existingMemory = null as Awaited<
           ReturnType<typeof memoryStore.getMemory>
         >;
 
         if (input.memory_id) {
-          existingMemory = await memoryStore.getMemory(input.memory_id);
+          existingMemory = await memoryStore.getMemory(input.memory_id, userId);
         } else if (input.target_content) {
           const allMemories = await memoryStore.getMemories(userId);
           const target = input.target_content.trim().toLowerCase();
@@ -89,12 +89,6 @@ export const createEditMemoryTool = (userId: string) =>
           });
         }
 
-        if (existingMemory.userId !== userId) {
-          return JSON.stringify({
-            error: "Access denied: you can only edit your own memories.",
-          });
-        }
-
         const updates: {
           content?: string;
           category?: MemoryCategory;
@@ -109,6 +103,7 @@ export const createEditMemoryTool = (userId: string) =>
 
         const updatedMemory = await memoryStore.updateMemory(
           existingMemory.id,
+          userId,
           updates,
         );
 
@@ -184,16 +179,16 @@ export const createDeleteMemoryTool = (userId: string) =>
   tool(
     async (input) => {
       try {
-        const { VectorMemoryStore } =
-          await import("@/lib/memory/vector-memory-store");
-        const memoryStore = new VectorMemoryStore();
+        const { MemoryGraphStore } =
+          await import("@/lib/memory/graph-store");
+        const memoryStore = new MemoryGraphStore();
 
         let existingMemory = null as Awaited<
           ReturnType<typeof memoryStore.getMemory>
         >;
 
         if (input.memory_id) {
-          existingMemory = await memoryStore.getMemory(input.memory_id);
+          existingMemory = await memoryStore.getMemory(input.memory_id, userId);
         } else if (input.target_content) {
           const allMemories = await memoryStore.getMemories(userId);
           const target = input.target_content.trim().toLowerCase();
@@ -216,13 +211,10 @@ export const createDeleteMemoryTool = (userId: string) =>
           });
         }
 
-        if (existingMemory.userId !== userId) {
-          return JSON.stringify({
-            error: "Access denied: you can only delete your own memories.",
-          });
-        }
-
-        const deleted = await memoryStore.deleteMemory(existingMemory.id);
+        const deleted = await memoryStore.deleteMemory(
+          existingMemory.id,
+          userId,
+        );
         if (!deleted) {
           return JSON.stringify({
             error: `Failed to delete memory with id: ${existingMemory.id}`,

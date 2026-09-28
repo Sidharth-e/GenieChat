@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { getSessionUser } from "@/lib/auth/get-session-user";
-import { VectorMemoryStore } from "@/lib/memory/vector-memory-store";
+import { MemoryGraphStore } from "@/lib/memory/graph-store";
 import { api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
 import { MemoryCategory } from "@/lib/types";
 
-const memoryStore = new VectorMemoryStore();
+const memoryStore = new MemoryGraphStore();
 
 export async function GET(req: NextRequest) {
     try {

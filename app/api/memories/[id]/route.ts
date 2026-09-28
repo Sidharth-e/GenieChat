@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { getSessionUser } from "@/lib/auth/get-session-user";
-import { VectorMemoryStore } from "@/lib/memory/vector-memory-store";
+import { MemoryGraphStore } from "@/lib/memory/graph-store";
 import { api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
 import { MemoryCategory } from "@/lib/types";
 
-const memoryStore = new VectorMemoryStore();
+const memoryStore = new MemoryGraphStore();
 
 export async function GET(
     req: NextRequest,
@@ -18,7 +18,7 @@ export async function GET(
         if (!user) return api.unauthorized();
 
         const { id } = await params;
-        const memory = await memoryStore.getMemory(id);
+        const memory = await memoryStore.getMemory(id, user.id);
 
         if (!memory) {
             return api.notFound("Memory not found");
@@ -56,7 +56,7 @@ export async function PUT(
         }
 
         const { id } = await params;
-        const memory = await memoryStore.getMemory(id);
+        const memory = await memoryStore.getMemory(id, user.id);
 
         if (!memory) {
             return api.notFound("Memory not found");
@@ -68,7 +68,7 @@ export async function PUT(
 
         const { content, category } = await req.json();
 
-        const updated = await memoryStore.updateMemory(id, {
+        const updated = await memoryStore.updateMemory(id, user.id, {
             content: content?.trim(),
             category: category as MemoryCategory | undefined,
         });
@@ -101,7 +101,7 @@ export async function DELETE(
         }
 
         const { id } = await params;
-        const memory = await memoryStore.getMemory(id);
+        const memory = await memoryStore.getMemory(id, user.id);
 
         if (!memory) {
             return api.notFound("Memory not found");
@@ -111,7 +111,7 @@ export async function DELETE(
             return api.forbidden("Access denied");
         }
 
-        await memoryStore.deleteMemory(id);
+        await memoryStore.deleteMemory(id, user.id);
         return new NextResponse(null, { status: 204 });
     } catch (error) {
         logger.error({ err: error }, "Error deleting memory");

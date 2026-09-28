@@ -3,10 +3,8 @@ import { Memory } from "@/lib/types";
 import { MemoryStore } from "@/lib/mongodb/memory-store";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
 import { getSessionUser } from "@/lib/auth/get-session-user";
-import {
-    GraphRAGMemorySearchResult,
-    VectorMemoryStore,
-} from "@/lib/memory/vector-memory-store";
+import { MemoryGraphStore } from "@/lib/memory/graph-store";
+import type { GraphRAGMemorySearchResult } from "@/lib/memory/types";
 
 /**
  * Server-side function to fetch memories for the current user.
@@ -38,11 +36,11 @@ export async function getRelevantMemories(
     const emptyResult: GraphRAGMemorySearchResult = {
         memories: [],
         metadata: {
-            mode: "cosmos_fallback",
+            mode: "vector",
             semanticSeedCount: 0,
             lexicalSeedCount: 0,
             graphExpandedCount: 0,
-            candidateCount: 0,
+            totalCandidates: 0,
         },
     };
 
@@ -52,7 +50,7 @@ export async function getRelevantMemories(
 
         if (!isDatabaseConfigured()) return emptyResult;
 
-        const memoryStore = new VectorMemoryStore();
+        const memoryStore = new MemoryGraphStore();
         return memoryStore.searchRelevantMemoriesWithGraph(user.id, query, top);
     } catch (error) {
         logger.error("Error fetching relevant memories server-side:", error);
