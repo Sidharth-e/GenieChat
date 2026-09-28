@@ -1,5 +1,5 @@
 import { logger } from "@/lib/logger";
-import { generateEmbedding } from "@/lib/azure-ai-search/embeddings";
+import { generateEmbedding } from "@/lib/embeddings";
 import {
   AzureAISearchInstance,
   AzureAISearchIndexClientInstance,
