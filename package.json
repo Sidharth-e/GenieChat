@@ -18,6 +18,7 @@
     "db:setup:neo4j": "tsx --env-file=.env scripts/setup-neo4j.ts",
     "memory:check": "tsx --env-file=.env scripts/check-memory.ts",
     "memory:enrich": "tsx --env-file=.env scripts/enrich-memories.ts",
+    "memory:migrate": "tsx --env-file=.env scripts/migrate-memories.ts",
     "embeddings:check": "tsx --env-file=.env scripts/check-embeddings.ts",
     "knowledge:check": "tsx --env-file=.env scripts/check-knowledge.ts",
     "knowledge:backfill": "tsx --env-file=.env scripts/backfill-chunks.ts",
