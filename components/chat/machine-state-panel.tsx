@@ -147,6 +147,16 @@ export function MachineStatePanel() {
     return { chars, estimatedTokens };
   }, [effectiveSystemPrompt]);
 
+  const currentRoutedModel = useMemo(() => {
+    if (liveRoutedModel) return liveRoutedModel;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant" && messages[i].routedModel) {
+        return messages[i].routedModel;
+      }
+    }
+    return null;
+  }, [liveRoutedModel, messages]);
+
   const tokenUsage = useMemo(() => {
     const cumulative = messages.reduce(
       (acc, m, idx) => {
@@ -481,16 +491,18 @@ export function MachineStatePanel() {
               </p>
             )}
 
-            {(activeModel.id === JEV_ROUTER_MODEL_ID || Boolean(liveRoutedModel)) && (
+            {(activeModel.id === JEV_ROUTER_MODEL_ID || Boolean(currentRoutedModel)) && (
               <div className="flex items-center justify-between rounded-xs border border-primary/20 bg-primary/10 px-2 py-1.5 text-[10px]">
                 <span className="text-primary font-medium flex items-center gap-1">
                   <ArrowRightLeft className="w-3 h-3" />
                   Routed Target
                 </span>
                 <span className="text-foreground font-semibold truncate max-w-[150px]">
-                  {liveRoutedModel
-                    ? formatModelName(liveRoutedModel)
-                    : "Routing…"}
+                  {currentRoutedModel
+                    ? formatModelName(currentRoutedModel)
+                    : machineStatus === "streaming" || machineStatus === "executing_tool"
+                      ? "Routing…"
+                      : "Auto"}
                 </span>
               </div>
             )}

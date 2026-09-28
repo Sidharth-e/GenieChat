@@ -139,7 +139,13 @@ export class ChatService {
 
         for await (const chunk of stream) {
           const rawMetadata = chunk.response_metadata as Record<string, unknown> | undefined;
-          const chunkModel = (rawMetadata?.model || rawMetadata?.model_name || (chunk.additional_kwargs as Record<string, unknown>)?.model) as string | undefined;
+          const modelRouted =
+            (model as unknown as { lastRoutedModel?: string }).lastRoutedModel ||
+            (modelWithTools as unknown as { bound?: { lastRoutedModel?: string } })?.bound?.lastRoutedModel;
+          const chunkModel = (rawMetadata?.model ||
+            rawMetadata?.model_name ||
+            (chunk.additional_kwargs as Record<string, unknown>)?.model ||
+            modelRouted) as string | undefined;
           if (chunkModel && typeof chunkModel === "string" && chunkModel !== resolvedRoutedModel) {
             resolvedRoutedModel = chunkModel;
             yield { type: "model_resolved", routedModel: chunkModel };
@@ -164,7 +170,13 @@ export class ChatService {
 
         if (!resolvedRoutedModel) {
           const finalMetadata = finalChunk.response_metadata as Record<string, unknown> | undefined;
-          const finalModel = (finalMetadata?.model || finalMetadata?.model_name || (finalChunk.additional_kwargs as Record<string, unknown>)?.model) as string | undefined;
+          const modelRouted =
+            (model as unknown as { lastRoutedModel?: string }).lastRoutedModel ||
+            (modelWithTools as unknown as { bound?: { lastRoutedModel?: string } })?.bound?.lastRoutedModel;
+          const finalModel = (finalMetadata?.model ||
+            finalMetadata?.model_name ||
+            (finalChunk.additional_kwargs as Record<string, unknown>)?.model ||
+            modelRouted) as string | undefined;
           if (finalModel && typeof finalModel === "string") {
             resolvedRoutedModel = finalModel;
             yield { type: "model_resolved", routedModel: finalModel };
@@ -304,7 +316,8 @@ export class ChatService {
       try {
         const response = await model.invoke(langChainMessages);
         const respMetadata = (response as AIMessageChunk).response_metadata as Record<string, unknown> | undefined;
-        const respModel = (respMetadata?.model || respMetadata?.model_name) as string | undefined;
+        const modelRouted = (model as unknown as { lastRoutedModel?: string }).lastRoutedModel;
+        const respModel = (respMetadata?.model || respMetadata?.model_name || modelRouted) as string | undefined;
         if (respModel && typeof respModel === "string") {
           yield { type: "model_resolved", routedModel: respModel };
         }

@@ -1,11 +1,12 @@
 "use client";
 
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { Settings2, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMachineStateStore } from "@/lib/stores";
-import { useThreads } from "@/hooks/use-threads-queries";
+import { useMachineStateStore, useChatSettings } from "@/lib/stores";
+import { useThreads, useThreadMessages } from "@/hooks/use-threads-queries";
 import { useAgents } from "@/hooks/use-agents-queries";
 import {
   formatModelName,
@@ -44,6 +45,8 @@ export function Header({ inlineOnMobile = false }: HeaderProps) {
   const { data: agents = [] } = useAgents(undefined, {
     enabled: Boolean(agentId),
   });
+  const { selectedModel } = useChatSettings();
+  const { data: messages = [] } = useThreadMessages(threadId);
 
   const currentThread = threads?.find((t) => t.id === threadId);
   const currentAgent = agents.find((a) => a.id === agentId);
@@ -52,9 +55,23 @@ export function Header({ inlineOnMobile = false }: HeaderProps) {
     currentThread?.title ||
     (currentAgent ? currentAgent.name : "Conversation");
 
+  const threadRoutedModel = useMemo(() => {
+    if (liveRoutedModel) return liveRoutedModel;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant" && messages[i].routedModel) {
+        return messages[i].routedModel;
+      }
+    }
+    return null;
+  }, [liveRoutedModel, messages]);
+
   const isAutoMode =
+    selectedModel === JEV_ROUTER_MODEL_ID ||
     currentThread?.model === JEV_ROUTER_MODEL_ID ||
-    Boolean(liveRoutedModel);
+    Boolean(threadRoutedModel) ||
+    messages.some(
+      (m) => m.model === JEV_ROUTER_MODEL_ID || Boolean(m.routedModel),
+    );
 
   return (
     <motion.div
@@ -98,8 +115,8 @@ export function Header({ inlineOnMobile = false }: HeaderProps) {
             >
               <Box className="h-3 w-3 shrink-0" />
               <span className="truncate max-w-[130px] sm:max-w-[200px]">
-                {liveRoutedModel
-                  ? `Auto → ${formatModelName(liveRoutedModel)}`
+                {threadRoutedModel
+                  ? `Auto → ${formatModelName(threadRoutedModel)}`
                   : "Auto Mode"}
               </span>
               {liveTokens && liveTokens.total > 0 && (

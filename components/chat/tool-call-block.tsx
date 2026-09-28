@@ -515,7 +515,9 @@ function RoutingRow({
             >
               {isStreaming && !targetName
                 ? "Routing request via Jev Router…"
-                : `Routed via Jev Router → Handed off to ${targetName || "model"}`}
+                : targetName
+                  ? `Routed via Jev Router → Handed off to ${targetName}`
+                  : "Routed via Jev Router"}
             </span>
             <ChevronDown
               className={cn(
@@ -536,7 +538,7 @@ function RoutingRow({
                 typesafe/jev-router
               </p>
             </div>
-            {routedModel && (
+            {routedModel ? (
               <div className="rounded-md border border-border/20 bg-secondary/10 p-2 overflow-x-auto">
                 <div className="text-[10px] font-medium text-text-secondary/50 uppercase tracking-wider mb-1">
                   Target Model
@@ -545,7 +547,7 @@ function RoutingRow({
                   {routedModel}
                 </p>
               </div>
-            )}
+            ) : null}
           </div>
         )}
       </div>
@@ -578,7 +580,9 @@ export function ToolCallGroup({
       if (toolCalls.length === 0) {
         return routedModel
           ? `Routed via Jev Router to ${targetName}`
-          : "Routing via Jev Router…";
+          : isStreaming
+            ? "Routing via Jev Router…"
+            : "Routed via Jev Router";
       }
       return `Routed to ${targetName} · ${buildSummaryText(toolCalls, anyStreaming)}`;
     }

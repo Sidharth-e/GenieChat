@@ -75,14 +75,48 @@ export function getModel(
         ...topPOption,
         numPredict: modelConfig.maxOutput,
       }) as BaseChatModel;
-    case "openrouter":
-      return new ChatOpenRouter({
+    case "openrouter": {
+      const openRouterModel = new ChatOpenRouter({
         model: modelConfig.model,
         apiKey: appConfig.openrouter.apiKey,
         ...temperatureOption,
         ...topPOption,
         maxTokens: modelConfig.maxOutput,
-      }) as BaseChatModel;
+      });
+
+      const origCall = openRouterModel.caller.callWithOptions.bind(openRouterModel.caller);
+      openRouterModel.caller.callWithOptions = (async (
+        ...args: Parameters<typeof origCall>
+      ) => {
+        const result = await origCall(...args);
+        if (!(result instanceof Response) || !result.body) {
+          return result;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        const transform = new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            buffer += decoder.decode(chunk, { stream: true });
+            const match = buffer.match(/"model"\s*:\s*"([^"]+)"/);
+            if (match && match[1]) {
+              (openRouterModel as unknown as { lastRoutedModel: string }).lastRoutedModel = match[1];
+            }
+            controller.enqueue(chunk);
+          },
+        });
+
+        const pipedBody = result.body.pipeThrough(transform);
+        return new Response(pipedBody, {
+          status: result.status,
+          statusText: result.statusText,
+          headers: result.headers,
+        });
+      }) as typeof openRouterModel.caller.callWithOptions;
+
+      return openRouterModel as BaseChatModel;
+    }
     default:
       throw new Error(`Unsupported provider: ${modelConfig.provider}`);
   }
