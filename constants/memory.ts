@@ -183,6 +183,130 @@ export const MEMORY_STOPWORDS = new Set([
   "user",
 ]);
 
+/**
+ * Filler an entity extraction must not name: function words, light verbs, and
+ * the generic nouns that name a slot rather than a thing.
+ *
+ * Deliberately *not* merged into `MEMORY_STOPWORDS`, even where the two
+ * overlap. That set also feeds `tokenize`, which feeds `relationScore`, so
+ * adding `are` or `want` to it would silently change edge scoring as well as
+ * entity naming — one edit, two unrelated consequences. Two jobs, two lists.
+ *
+ * Only words of at least `MEMORY_MIN_TOKEN_LENGTH` are listed: `tokenize` has
+ * already dropped anything shorter by the time this is consulted.
+ */
+export const ENTITY_COMMON_WORDS = new Set([
+  // Copulas and auxiliaries.
+  "are",
+  "was",
+  "were",
+  "can",
+  "could",
+  "may",
+  "might",
+  "must",
+  "shall",
+  "should",
+  "would",
+  "doing",
+  "had",
+  "having",
+  // Light verbs: a sentence's shape, not its subject. Grouped by lemma, so a
+  // list that carries `wants` but not `want` is visible as a gap rather than
+  // reading as complete.
+  "get",
+  "gets",
+  "getting",
+  "got",
+  "give",
+  "gives",
+  "gave",
+  "given",
+  "goes",
+  "going",
+  "gone",
+  "went",
+  "know",
+  "knows",
+  "knew",
+  "known",
+  "like",
+  "likes",
+  "liked",
+  "look",
+  "looks",
+  "looked",
+  "make",
+  "makes",
+  "made",
+  "making",
+  "need",
+  "needs",
+  "needed",
+  "say",
+  "says",
+  "said",
+  "see",
+  "sees",
+  "saw",
+  "seen",
+  "take",
+  "takes",
+  "took",
+  "taken",
+  "think",
+  "thinks",
+  "thought",
+  "use",
+  "uses",
+  "used",
+  "using",
+  "want",
+  "wants",
+  "wanted",
+  // Quantifiers, degree, and discourse.
+  "all",
+  "also",
+  "any",
+  "even",
+  "every",
+  "many",
+  "more",
+  "most",
+  "much",
+  "now",
+  "only",
+  "really",
+  "some",
+  "still",
+  "then",
+  "too",
+  "very",
+  "yes",
+  // Generic nouns.
+  "anybody",
+  "anything",
+  "everyone",
+  "everything",
+  "guy",
+  "guys",
+  "kind",
+  "lot",
+  "nobody",
+  "nothing",
+  "one",
+  "people",
+  "person",
+  "somebody",
+  "something",
+  "sort",
+  "stuff",
+  "thing",
+  "things",
+  "way",
+  "ways",
+]);
+
 export function memorySeedLimit(top: number): number {
   return Math.max(top * MEMORY_SEED_MULTIPLIER, MEMORY_SEED_MIN);
 }

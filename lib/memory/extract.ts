@@ -5,6 +5,7 @@
  * reachable.
  */
 import {
+  ENTITY_COMMON_WORDS,
   MEMORY_EDGE_NEIGHBOR_LIMIT,
   MEMORY_EDGE_THRESHOLD,
 } from "@/constants/memory";
@@ -19,6 +20,25 @@ import {
 } from "./text";
 
 const ENTITY_MIN_LENGTH = 2;
+
+/** A run of one or more capitalized tokens — the highest-signal candidates. */
+const PROPER_NOUN_RUN =
+  /\b\p{Lu}[\p{L}\p{N}'’]*(?:\s+\p{Lu}[\p{L}\p{N}'’]*)*/gu;
+
+/**
+ * Whether the text before `index` ends a sentence, so the run at `index` is the
+ * first thing in one.
+ *
+ * Capitalization is only evidence of a proper noun when it is a *choice*. The
+ * first word of a sentence is capitalized whether or not it names anything, so
+ * position has to cancel the signal — otherwise "All the apple products are
+ * cool" names `all` as an entity, which is exactly what it did.
+ */
+function startsSentence(text: string, index: number): boolean {
+  const before = text.slice(0, index).trimEnd();
+  if (!before) return true;
+  return /[.!?\n]$/.test(before);
+}
 
 /**
  * Carried over from `vector-memory-store.ts:605`, term for term. The
@@ -60,7 +80,17 @@ export function entityMergeKey(userId: string, normalizedName: string): string {
   return `${userId}\u0000${normalizedName}`;
 }
 
-/** Capitalized token sequences (proper nouns), normalized and deduplicated. */
+/**
+ * Capitalized token sequences (proper nouns) plus significant unigrams,
+ * normalized and deduplicated.
+ *
+ * Both passes are deliberately conservative, because a node that names nothing
+ * is worse than a node that is missing: entities are what link one memory to
+ * another, so a junk entity competes with the real concept for the same span of
+ * text and stops two memories about the same thing from ever sharing a node.
+ * The bigram pass that used to run here — every adjacent token pair — was the
+ * worst offender, turning one sentence into nine nodes of which one was real.
+ */
 export function extractEntityNames(content: string): string[] {
   const text = (content ?? "").trim();
   if (!text) return [];
@@ -68,20 +98,21 @@ export function extractEntityNames(content: string): string[] {
   const names = new Set<string>();
 
   // Proper-noun runs first: they are the highest-signal candidates.
-  for (const match of text.matchAll(
-    /\b\p{Lu}[\p{L}\p{N}'’]*(?:\s+\p{Lu}[\p{L}\p{N}'’]*)*/gu,
-  )) {
-    const name = normalizeEntityName(match[0]);
+  for (const match of text.matchAll(PROPER_NOUN_RUN)) {
+    // A run opening a sentence loses its first token, not the whole run: in
+    // "All Apple products are cool" the noise is `All`, while `Apple` is the
+    // thing worth keeping. A run that does not open a sentence is untouched.
+    const raw = startsSentence(text, match.index)
+      ? match[0].replace(/^\S+\s*/, "")
+      : match[0];
+    const name = normalizeEntityName(raw);
     if (name.length >= ENTITY_MIN_LENGTH) names.add(name);
   }
 
-  // Then significant unigrams and bigrams that survive the stopword filter.
-  const tokens = tokenize(text).size > 0 ? [...tokenize(text)] : [];
-  for (let index = 0; index < tokens.length; index += 1) {
-    if (tokens[index].length >= ENTITY_MIN_LENGTH) names.add(tokens[index]);
-    if (index + 1 < tokens.length) {
-      names.add(`${tokens[index]} ${tokens[index + 1]}`);
-    }
+  // Then significant unigrams, minus the filler.
+  for (const token of tokenize(text)) {
+    if (ENTITY_COMMON_WORDS.has(token)) continue;
+    names.add(token);
   }
 
   names.delete("");

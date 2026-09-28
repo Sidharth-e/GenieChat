@@ -79,6 +79,44 @@ describe("extractEntityNames", () => {
     const names = extractEntityNames("Acme Acme ACME");
     expect(new Set(names).size).toBe(names.length);
   });
+
+  it("does not invent entities from adjacent word pairs", () => {
+    // The bigram pass turned every neighbouring pair into a node, so one
+    // sentence produced `products are`, `are cool` and the like. Those nodes
+    // compete with the real concept for the same span of text, which is what
+    // stops two memories about the same thing from sharing a node.
+    const names = extractEntityNames("All the apple products are cool");
+    expect(names).not.toContain("products are");
+    expect(names).not.toContain("are cool");
+    expect(names).not.toContain("apple products");
+  });
+
+  it("does not treat a sentence-initial capital as a proper noun", () => {
+    const names = extractEntityNames("All Apple products are cool");
+    expect(names).not.toContain("all apple");
+    expect(names).toContain("apple");
+  });
+
+  it("keeps a multi-word proper noun mid-sentence", () => {
+    // The sentence-initial rule must not reach past the first token: a run that
+    // does not start a sentence is still the highest-signal candidate there is.
+    expect(extractEntityNames("I moved to New York")).toContain("new york");
+  });
+
+  it("yields only the real concept from a filler-heavy sentence", () => {
+    const names = extractEntityNames("All the apple products are cool");
+    expect(names).not.toContain("all");
+    expect(names).not.toContain("are");
+    expect(names).toContain("apple");
+  });
+
+  it("drops a light verb in its base form, not only its inflections", () => {
+    // A filler list that carries `wants` but not `want` is worse than no list:
+    // it reads as complete while the commonest form walks straight through.
+    const names = extractEntityNames("I want to be a rich guys");
+    expect(names).not.toContain("want");
+    expect(names).toContain("rich");
+  });
 });
 
 describe("relationScore", () => {
