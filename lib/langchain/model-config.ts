@@ -14,6 +14,7 @@ export const DEFAULT_MAX_INPUT_CHARS = INPUT_LIMITS.standard;
  * AVAILABLE_MODELS.
  */
 export const DEFAULT_MODEL_ID = "gemini-3-flash-preview";
+export const JEV_ROUTER_MODEL_ID = "openrouter/typesafe-jev-router";
 
 // Available models.
 // Ollama model ids are the tag names pulled on the target server. When pointed
@@ -299,6 +300,20 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     supportsTools: true,
     supportsTemperature: true,
     supportsTopP: true,
+  },
+  {
+    id: JEV_ROUTER_MODEL_ID,
+    name: "Jev Router (Auto)",
+    provider: "openrouter",
+    model: "typesafe/jev-router",
+    description: "Dynamic cache-aware model router that automatically selects the best model and reasoning effort for each request",
+    maxInputChars: INPUT_LIMITS.large,
+    maxOutput: 65536,
+    supportsStreaming: true,
+    supportsTools: true,
+    supportsTemperature: true,
+    supportsTopP: true,
+    supportReasoning: true,
   },
   {
     id: "openrouter/claude-opus-5.5",

@@ -7,6 +7,10 @@ import { AI_NAME } from "@/constants/main";
 import { GoogleIcon, OllamaIcon, OpenRouterIcon } from "../common/custom-icons";
 import { ModelModal } from "./model-modal";
 import { useModels } from "@/hooks/use-models-queries";
+import {
+  AVAILABLE_MODELS,
+  JEV_ROUTER_MODEL_ID,
+} from "@/lib/langchain/model-config";
 
 export interface ModelSelectorProps {
   value: string;
@@ -17,6 +21,8 @@ export interface ModelSelectorProps {
   showModelName?: boolean;
   menuAlignOffset?: number;
   shiftSubmenuLeftOnHome?: boolean;
+  autoMode?: boolean;
+  onAutoModeChange?: (auto: boolean) => void;
 }
 
 const providerIcons: Record<string, React.ReactNode> = {
@@ -38,11 +44,16 @@ export function ModelSelector({
     null,
   );
   const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const { data: models = [] } = useModels();
+  const { data: models = AVAILABLE_MODELS } = useModels();
 
-  const selectedModel = models.find((m) => m.id === value);
+  const isAuto = value === JEV_ROUTER_MODEL_ID;
+
+  const selectedModel =
+    models.find((m) => m.id === value) ||
+    AVAILABLE_MODELS.find((m) => m.id === value);
 
   const handleOpen = () => {
+    if (disabled) return;
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       setOrigin({
@@ -60,13 +71,18 @@ export function ModelSelector({
         type="button"
         onClick={handleOpen}
         disabled={disabled}
+        title={
+          isAuto
+            ? "Auto mode active (Jev Router) - click to change model or disable"
+            : "Select AI Model"
+        }
         className={cn(
           "h-7 flex items-center gap-1.5 rounded-full px-2.5 py-1 cursor-pointer",
-          "text-[11px] font-medium text-tertiary",
-          "border border-tertiary/10 bg-tertiary/5",
-          "hover:bg-tertiary/10 hover:text-foreground",
-          "transition-all duration-200",
+          "text-[11px] font-medium transition-all duration-200",
           "focus:outline-none focus:ring-2 focus:ring-primary/10",
+          isAuto
+            ? "border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15"
+            : "border border-tertiary/10 bg-tertiary/5 text-tertiary hover:bg-tertiary/10 hover:text-foreground",
           disabled && "opacity-50 cursor-not-allowed",
           triggerClassName,
         )}
@@ -74,13 +90,15 @@ export function ModelSelector({
         <div className="flex items-center justify-center">
           {selectedModel ? (
             providerIcons[selectedModel.provider]
+          ) : isAuto ? (
+            <OpenRouterIcon className="h-3.5 w-3.5" />
           ) : (
             <GoogleIcon className="h-3 w-3" />
           )}
         </div>
         {showModelName && (
           <span className="truncate max-w-[130px] hidden sm:inline">
-            {selectedModel?.name || AI_NAME}
+            {isAuto ? "Auto (Jev Router)" : selectedModel?.name || AI_NAME}
           </span>
         )}
         <ChevronDown

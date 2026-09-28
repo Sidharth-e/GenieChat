@@ -17,13 +17,17 @@ import {
   Brain,
   Wrench,
   Zap,
-  Sparkles,
+  Box,
   SlidersHorizontal,
 } from "lucide-react";
 import { GoogleIcon, OllamaIcon, OpenRouterIcon } from "@/components/common/custom-icons";
 import { useModels } from "@/hooks/use-models-queries";
 import { cn } from "@/lib/utils";
 import { ProviderKey } from "@/lib/types";
+import {
+  DEFAULT_MODEL_ID,
+  JEV_ROUTER_MODEL_ID,
+} from "@/lib/langchain/model-config";
 
 export interface ModelModalProps {
   open: boolean;
@@ -137,7 +141,37 @@ export function ModelModal({
     [models],
   );
 
+  const isAutoMode = selectedModelId === JEV_ROUTER_MODEL_ID;
+  const previousModelRef = React.useRef<string>(
+    selectedModelId && selectedModelId !== JEV_ROUTER_MODEL_ID
+      ? selectedModelId
+      : DEFAULT_MODEL_ID,
+  );
+
+  React.useEffect(() => {
+    if (selectedModelId && selectedModelId !== JEV_ROUTER_MODEL_ID) {
+      previousModelRef.current = selectedModelId;
+    }
+  }, [selectedModelId]);
+
+  const handleToggleAutoMode = () => {
+    if (isAutoMode) {
+      const fallback =
+        previousModelRef.current &&
+        previousModelRef.current !== JEV_ROUTER_MODEL_ID
+          ? previousModelRef.current
+          : DEFAULT_MODEL_ID;
+      onSelectModel(fallback);
+    } else {
+      if (selectedModelId && selectedModelId !== JEV_ROUTER_MODEL_ID) {
+        previousModelRef.current = selectedModelId;
+      }
+      onSelectModel(JEV_ROUTER_MODEL_ID);
+    }
+  };
+
   const handleSelect = (modelId: string) => {
+    if (isAutoMode) return;
     onSelectModel(modelId);
     onOpenChange(false);
   };
@@ -183,7 +217,7 @@ export function ModelModal({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-card-border bg-secondary/60">
-                        <Sparkles className="h-5 w-5 text-foreground/80" />
+                        <Box className="h-5 w-5 text-foreground/80" />
                       </div>
                       <div className="space-y-0.5 text-left">
                         <DialogTitle className="text-lg sm:text-xl font-semibold tracking-tight text-foreground">
@@ -327,6 +361,71 @@ export function ModelModal({
                 </DialogHeader>
 
                 <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
+                  <div
+                    className={cn(
+                      "relative mb-4 p-4 rounded-xl border transition-all duration-200",
+                      isAutoMode
+                        ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20 shadow-xs"
+                        : "border-card-border bg-card-bg hover:border-tertiary/20",
+                    )}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={cn(
+                            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                            isAutoMode
+                              ? "border-primary/30 bg-primary/10 text-primary"
+                              : "border-card-border bg-secondary/50 text-tertiary/70",
+                          )}
+                        >
+                          <OpenRouterIcon className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-sm font-semibold text-foreground">
+                              Auto Mode (Jev Router)
+                            </h3>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border border-tertiary/10 bg-tertiary/5 text-tertiary/80">
+                              OpenRouter
+                            </span>
+                            {isAutoMode && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary text-secondary">
+                                <Check className="h-3 w-3" />
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-text-secondary mt-1 max-w-xl leading-relaxed">
+                            Dynamically evaluates each request to select the optimal model, context, and reasoning effort, balancing quality, speed, and cost.
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleToggleAutoMode}
+                        aria-pressed={isAutoMode}
+                        className={cn(
+                          "h-8 px-3.5 rounded-lg text-xs font-medium transition-all duration-200 flex items-center justify-center shrink-0 cursor-pointer",
+                          isAutoMode
+                            ? "bg-primary text-secondary hover:bg-primary/90 shadow-xs"
+                            : "border border-card-border bg-card-bg text-foreground hover:bg-hover-bg",
+                        )}
+                      >
+                        <span>{isAutoMode ? "Disable Auto Mode" : "Enable Auto Mode"}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {isAutoMode && (
+                    <div className="mb-3 px-3 py-2 rounded-lg border border-tertiary/10 bg-tertiary/5 text-xs text-text-secondary flex items-center gap-2">
+                      <span>
+                        Manual model selection is disabled while Auto Mode is active. Turn off Auto Mode above to select an individual model.
+                      </span>
+                    </div>
+                  )}
+
                   {filteredModels.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                       <div className="rounded-full bg-tertiary/5 p-4 mb-3 border border-card-border">
@@ -353,7 +452,12 @@ export function ModelModal({
                       </Button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div
+                      className={cn(
+                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 transition-opacity duration-200",
+                        isAutoMode && "opacity-45 pointer-events-none select-none",
+                      )}
+                    >
                       {filteredModels.map((model) => {
                         const isSelected = model.id === selectedModelId;
                         return (
@@ -376,9 +480,13 @@ export function ModelModal({
                                   </span>
                                 </div>
                                 {isSelected ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary text-background shrink-0">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary text-secondary shrink-0">
                                     <Check className="h-3 w-3" />
-                                    Active
+                                    {isAutoMode ? "Active (Auto)" : "Active"}
+                                  </span>
+                                ) : isAutoMode ? (
+                                  <span className="text-[10px] text-tertiary/40 shrink-0">
+                                    Disabled
                                   </span>
                                 ) : (
                                   <span className="text-[10px] text-tertiary/40 group-hover:text-primary transition-colors shrink-0">
@@ -425,16 +533,14 @@ export function ModelModal({
 
                 <div className="flex items-center justify-between px-5 py-3 border-t border-card-border/60 bg-secondary/30 text-xs text-text-secondary shrink-0">
                   <div>
-                    {selectedModel ? (
-                      <span>
-                        Currently active:{" "}
-                        <strong className="text-foreground font-medium">
-                          {selectedModel.name}
-                        </strong>
-                      </span>
-                    ) : (
-                      <span>Select a model to use for this chat</span>
-                    )}
+                    <span>
+                      Currently active:{" "}
+                      <strong className="text-foreground font-medium">
+                        {isAutoMode
+                          ? "Auto Mode (Jev Router)"
+                          : selectedModel?.name || "None"}
+                      </strong>
+                    </span>
                   </div>
                   <Button
                     type="button"

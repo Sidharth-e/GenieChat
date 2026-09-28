@@ -4,6 +4,7 @@ import {
   AVAILABLE_MODELS,
   DEFAULT_MAX_INPUT_CHARS,
   DEFAULT_MODEL_ID,
+  JEV_ROUTER_MODEL_ID,
 } from "@/lib/langchain/model-config";
 
 describe("getModelMaxInputChars", () => {
@@ -86,5 +87,9 @@ describe("AVAILABLE_MODELS", () => {
     const openrouterModels = AVAILABLE_MODELS.filter((m) => m.provider === "openrouter");
     expect(openrouterModels.length).toBeGreaterThan(0);
     expect(openrouterModels.some((m) => m.id === "openrouter/claude-sonnet-5")).toBe(true);
+    expect(openrouterModels.some((m) => m.id === JEV_ROUTER_MODEL_ID)).toBe(true);
+    const jev = openrouterModels.find((m) => m.id === JEV_ROUTER_MODEL_ID);
+    expect(jev?.model).toBe("typesafe/jev-router");
+    expect(jev?.supportsStreaming).toBe(true);
   });
 });
