@@ -177,6 +177,7 @@ export async function POST(req: NextRequest) {
 
     const timezone = req.headers.get("x-timezone") || "Asia/Kolkata";
     const userContext = {
+      userId: user.id,
       name: user.name,
       email: user.email,
       timezone,

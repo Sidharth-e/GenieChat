@@ -9,7 +9,7 @@ import { createMCPClient } from "./langchain-mcp";
 import { StructuredToolInterface } from "@langchain/core/tools";
 import { getModel } from "./model-factory";
 import { ModelOptions } from "./model-config";
-import defaultToolsMap from "../tool/default-tools";
+import { resolveDefaultTool } from "../tool/default-tools";
 import { replacePromptVariables, UserContext } from "./langchain-utility";
 import {
   convertToLangChainMessages,
@@ -102,7 +102,7 @@ export class AgentService {
         const defaultToolsToLoad = params.allowedTools
           .filter((t) => t.startsWith("default:"))
           .map((t) => t.split(":")[1])
-          .map((name) => defaultToolsMap[name])
+          .map((name) => resolveDefaultTool(name, params.userContext?.userId))
           .filter((t): t is NonNullable<typeof t> => t !== undefined);
 
         if (defaultToolsToLoad.length > 0) {
@@ -135,7 +135,7 @@ export class AgentService {
 
       for (const toolName of alwaysEnabledToolNames) {
         if (tools.some((t) => t.name === toolName)) continue;
-        const resolved = defaultToolsMap[toolName];
+        const resolved = resolveDefaultTool(toolName, params.userContext?.userId);
         if (resolved) {
           logger.info(`Auto-loading always-enabled tool: ${toolName}`);
           tools.push(resolved);

@@ -217,6 +217,7 @@ export async function POST(req: NextRequest) {
             forceWebSearch,
             userId,
             userContext: {
+              userId,
               name: user.name,
               email: user.email,
               timezone,

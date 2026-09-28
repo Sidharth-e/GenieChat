@@ -40,6 +40,11 @@ export interface UserContext {
   email?: string;
   timezone?: string;
   memories?: string[];
+  /**
+   * The authenticated user's id. Carried so per-request tools can be built with
+   * their owner baked in — a tool factory cannot read it from anywhere else.
+   */
+  userId?: string;
 }
 
 /**

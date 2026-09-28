@@ -1,4 +1,5 @@
 import { tool, StructuredTool } from "langchain";
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import * as z from "zod";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
@@ -73,76 +74,72 @@ export const webSearch = tool(
 
 
 
-export const knowledgeBaseSearch = tool(
-  async (input) => {
-    try {
-      const { VectorAgentDocumentStore } =
-        await import("@/lib/azure-ai-search/vector-agent-document-store");
-      const store = new VectorAgentDocumentStore();
-
-      let filter = undefined;
-      if (input.agentId) {
-        filter = `agentId eq '${input.agentId}'`;
+/**
+ * Built per request, not once per module: the tool searches one owner's
+ * knowledge, and the owner comes from the authenticated user, which the model
+ * must not be able to choose. A module-level singleton could not know it.
+ */
+export function createKnowledgeBaseSearchTool(userId: string) {
+  return tool(
+    async (input) => {
+      if (!input.agentId) {
+        return JSON.stringify({
+          error: "agentId is required to search an agent's knowledge base.",
+        });
       }
 
-      const result = await store.searchDocuments(input.query, filter, 5);
+      const { searchKnowledge } = await import("@/lib/knowledge/search");
 
-      if (result.status === "OK") {
-        const docs = result.response;
-        if (!docs || docs.length === 0) {
+      try {
+        const hits = await searchKnowledge({
+          ownerType: "agent",
+          ownerId: input.agentId,
+          query: input.query,
+          top: 5,
+        });
+
+        if (hits.length === 0) {
           return JSON.stringify({
+            results: [],
             message: "No relevant documents found in the knowledge base.",
           });
         }
 
-        const formattedResults = docs.map((d) => ({
-          title: d.document.title,
-          content: d.document.content,
-          score: d.score,
-        }));
-
         return JSON.stringify({
-          results: formattedResults,
+          results: hits.map((hit) => ({
+            content: hit.content,
+            title: hit.title ?? null,
+            sourceId: hit.sourceId ?? null,
+            chunkIndex: hit.chunkIndex,
+            score: hit.score,
+          })),
         });
-      } else {
-        const errorMessage = JSON.stringify(result.errors);
-        // Handle the specific error where agentId doesn't exist in the index yet
-        if (
-          errorMessage.includes("Could not find a property named 'agentId'")
-        ) {
-          return JSON.stringify({
-            error:
-              "Search failed: The knowledge base index is outdated. Please ask the user to re-upload their documents to fix this issue.",
-          });
-        }
-
+      } catch (error) {
+        logger.error(
+          { err: error, userId, agentId: input.agentId },
+          "Knowledge base search failed",
+        );
         return JSON.stringify({
-          error: `Search failed: ${errorMessage}`,
+          error: "Knowledge base search failed. Please try again.",
         });
       }
-    } catch (error) {
-      return JSON.stringify({
-        error: `Failed to search knowledge base: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    }
-  },
-  {
-    name: "knowledge_base_search",
-    description:
-      "Search the User's uploaded documents/knowledge base. Use this when the user asks about their own files, specific policies, uploaded reports, or any context that is unique to them.",
-    schema: z.object({
-      query: z
-        .string()
-        .describe("The search terms to find relevant documents."),
-      agentId: z
-        .string()
-        .optional()
-        .describe(
-          "The specific Agent ID if known/applicable, to filter results.",
-        ),
-    }),
-  },
-);
+    },
+    {
+      name: "knowledge_base_search",
+      description:
+        "Search this agent's uploaded knowledge base documents for information relevant to a query. Use this when the user asks about content that may be in the agent's documents.",
+      schema: z.object({
+        query: z
+          .string()
+          .describe("The search query to find relevant documents"),
+        agentId: z
+          .string()
+          .optional()
+          .describe("The ID of the agent whose knowledge base to search"),
+      }),
+    },
+  );
+}
 
 export const createUseSkillTool = (
   skills: { name: string; description: string; instructions: string }[],
@@ -178,14 +175,24 @@ export const createUseSkillTool = (
   );
 };
 
-export const defaultTools = [
-  webSearch,
-  knowledgeBaseSearch,
-];
+export const defaultTools = [webSearch];
 
 const defaultToolsMap: Record<string, StructuredTool> = {
   web_search: webSearch,
-  knowledge_base_search: knowledgeBaseSearch,
 };
+
+/**
+ * The single place a `default:`-prefixed tool name becomes a tool. Two of them
+ * need the caller's identity, so the name alone is not enough.
+ */
+export function resolveDefaultTool(
+  name: string,
+  userId?: string,
+): StructuredToolInterface | undefined {
+  if (name === "knowledge_base_search") {
+    return userId ? createKnowledgeBaseSearchTool(userId) : undefined;
+  }
+  return defaultToolsMap[name];
+}
 
 export default defaultToolsMap;

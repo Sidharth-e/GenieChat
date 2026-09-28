@@ -279,6 +279,7 @@ export async function POST(req: NextRequest) {
               topP: effectiveTopP,
             },
             userContext: {
+              userId: user.id,
               name: user.name,
               email: user.email,
               timezone: req.headers.get("x-timezone") || "Asia/Kolkata",

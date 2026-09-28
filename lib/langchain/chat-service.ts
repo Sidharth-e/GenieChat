@@ -94,10 +94,14 @@ export class ChatService {
       );
     }
 
+    // `knowledge_base_search` has left `defaultTools` for a per-request factory,
+    // so it is no longer a `defaultToolsMap` key and the duplicate-name check
+    // above can no longer catch a custom tool that shadows it. This set is what
+    // keeps the name reserved, and it stays until custom tools can be
+    // owner-scoped too.
     const agentOnlyTools = new Set(["knowledge_base_search"]);
-    const chatTools = defaultTools.filter((t) => !agentOnlyTools.has(t.name));
     const chatCustomTools = customToolsFiltered.filter((t) => !agentOnlyTools.has(t.name));
-    const allTools = [...chatTools, ...chatCustomTools];
+    const allTools = [...defaultTools, ...chatCustomTools];
 
     // Not every model supports tool binding (e.g. deepseek-r1 has supportsTools: false).
     const modelWithTools = model.bindTools ? model.bindTools(allTools) : model;

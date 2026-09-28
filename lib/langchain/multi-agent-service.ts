@@ -14,7 +14,7 @@ import { Message, MCPServerConfig } from "../types";
 import { createMCPClient } from "./langchain-mcp";
 import { getModel } from "./model-factory";
 import { ModelOptions } from "./model-config";
-import defaultToolsMap from "../tool/default-tools";
+import { resolveDefaultTool } from "../tool/default-tools";
 import { replacePromptVariables, UserContext } from "./langchain-utility";
 import {
     convertToLangChainMessages,
@@ -227,7 +227,7 @@ export class MultiAgentService {
         allowed: string[] | undefined,
         allMcpTools: StructuredToolInterface[],
         customToolsLookup?: Map<string, StructuredToolInterface>,
-        messages?: Message[],
+        userId?: string,
     ) {
         let resolved: StructuredToolInterface[] = [];
         if (allowed) {
@@ -247,7 +247,7 @@ export class MultiAgentService {
             const defaults = allowed
                 .filter(t => t.startsWith('default:'))
                 .map(t => t.split(':')[1])
-                .map(name => defaultToolsMap[name])
+                .map(name => resolveDefaultTool(name, userId))
                 .filter(
                     (t): t is NonNullable<typeof t> => t !== undefined,
                 );
@@ -274,7 +274,7 @@ export class MultiAgentService {
 
         for (const toolName of alwaysEnabledToolNames) {
             if (resolved.some(t => t.name === toolName)) continue;
-            const staticTool = defaultToolsMap[toolName];
+            const staticTool = resolveDefaultTool(toolName, userId);
             if (staticTool) {
                 resolved.push(staticTool);
                 continue;
@@ -337,7 +337,7 @@ export class MultiAgentService {
                     sa.allowedTools,
                     allMcpTools,
                     params.customToolsLookup,
-                    params.messages,
+                    params.userContext?.userId,
                 );
                 const subModel = getModel(sa.modelId || params.modelId, {
                     temperature: sa.temperature ?? params.modelOptions?.temperature,

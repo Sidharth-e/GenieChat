@@ -261,6 +261,7 @@ export async function POST(req: NextRequest) {
         topP: top_p ?? agent.topP,
       },
       userContext: {
+        userId: apiKey.userId,
         name: apiKey.userName,
         email: apiKey.userEmail,
       },
