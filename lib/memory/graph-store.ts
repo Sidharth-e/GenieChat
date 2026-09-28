@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ManagedTransaction } from "neo4j-driver";
 import {
   MEMORY_EDGE_CANDIDATE_LIMIT,
+  MEMORY_EDGE_NEIGHBOR_LIMIT,
   MEMORY_TRAVERSABLE_TYPES,
   memorySeedLimit,
 } from "@/constants/memory";
@@ -12,11 +13,16 @@ import { getNeo4jDriver, isNeo4jConfigured } from "@/lib/neo4j/client";
 import { buildDeterministicEdges, extractEntityNames } from "./extract";
 import {
   EDGE_CANDIDATE_SQL,
+  ENTITY_ABOUT_SQL,
   ENTITY_GC_SQL,
   EXPAND_SQL,
   MEMORY_DELETE_SQL,
   SEED_SQL,
 } from "./cypher";
+import { enrichMemory } from "./enrich";
+import { writeEnrichment } from "./enrichment-write";
+import type { Enrichment } from "./enrichment-schema";
+import type { ExtractionNeighbour } from "./llm-extraction";
 import { rankRecall, type RecallCandidate } from "./recall";
 import { normalizeQueryForRetrieval } from "./text";
 import { buildMemoryUpdateSet, normalizeMemoryCategory } from "./update";
@@ -72,6 +78,14 @@ interface PreparedEdge {
 interface PreparedGraph {
   entities: PreparedEntity[];
   edges: PreparedEdge[];
+  /**
+   * The bounded front of the same candidate window the edges were scored from,
+   * handed to the enrichment pass so it is not a second read. Bounded by
+   * `MEMORY_EDGE_NEIGHBOR_LIMIT` rather than the whole window: the window is
+   * 200 memories, and a prompt carrying 200 of them would swamp the one being
+   * enriched and cost more per write than the write is worth.
+   */
+  neighbours: ExtractionNeighbour[];
 }
 
 /** Never throws on an outage: a memory without a vector is still a memory. */
@@ -161,6 +175,15 @@ export class MemoryGraphStore {
       await session.close();
     }
 
+    // Detached on purpose: the memory is already saved and enrichment only adds
+    // edges, so a chat turn must not wait on a model to store a preference. A
+    // failure leaves `enrichedAt` null, which is the state `pnpm memory:enrich`
+    // sweeps up. `enrichMemory` resolves rather than rejecting; the catch is
+    // there so that a bug inside it cannot become an unhandled rejection.
+    void enrichMemory(this, id, memory.userId, content, prepared.neighbours).catch(
+      (error) => logger.error({ err: error, id }, "Background enrichment failed"),
+    );
+
     return {
       ...memory,
       // Echoed as the store wrote it, not as the caller passed it: a dropped
@@ -192,24 +215,15 @@ export class MemoryGraphStore {
       // because an empty name would MERGE one node shared by every user, which
       // is unrecoverable.
       if (!entity.normalizedName) continue;
-      await tx.run(
-        `MATCH (m:Memory {id: $id, userId: $userId})
-         MERGE (e:Entity {userId: $userId, normalizedName: $normalizedName})
-           ON CREATE SET e.id = $entityId,
-                         e.name = $name,
-                         e.createdAt = $now,
-                         e.embedding = $embedding
-         MERGE (m)-[:ABOUT]->(e)`,
-        {
-          id: memory.id,
-          userId: memory.userId,
-          normalizedName: entity.normalizedName,
-          entityId: randomUUID(),
-          name: entity.name,
-          now,
-          embedding: entity.embedding,
-        },
-      );
+      await tx.run(ENTITY_ABOUT_SQL, {
+        id: memory.id,
+        userId: memory.userId,
+        normalizedName: entity.normalizedName,
+        entityId: randomUUID(),
+        name: entity.name,
+        now,
+        embedding: entity.embedding,
+      });
     }
 
     if (prepared.edges.length === 0) return;
@@ -253,14 +267,19 @@ export class MemoryGraphStore {
         }),
       );
 
+      const candidates = records.map((record) => ({
+        id: record.get("id") as string,
+        content: (record.get("content") as string) ?? "",
+      }));
       const edges = buildDeterministicEdges(
         { id: memory.id, content: memory.content },
-        records.map((record) => ({
-          id: record.get("id") as string,
-          content: (record.get("content") as string) ?? "",
-        })),
+        candidates,
       );
-      return { entities, edges };
+      return {
+        entities,
+        edges,
+        neighbours: candidates.slice(0, MEMORY_EDGE_NEIGHBOR_LIMIT),
+      };
     } finally {
       await session.close();
     }
@@ -364,6 +383,11 @@ export class MemoryGraphStore {
     // lexical arm (§8). Keeping the previous vector would be worse than having
     // none, because it would describe text the memory no longer holds.
     if (contentChanged) properties.embedding = embedding;
+    // The LLM's edges were judged against the old content, and its RELATES_TO
+    // edges share a type with the deterministic ones this write re-derives —
+    // so they go with them. Clearing the marker is what re-enqueues the memory:
+    // "enriched" is a claim about a specific text, and this is no longer it.
+    if (contentChanged) properties.enrichedAt = null;
 
     const session = driver.session();
     try {
@@ -401,6 +425,50 @@ export class MemoryGraphStore {
 
         await this.garbageCollectOrphanEntities(tx, userId);
         return true;
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
+   * Writes one validated extraction: resolved entities and their `ABOUT` edges,
+   * entity relations, the model's own memory→memory edges, then the
+   * `enrichedAt` marker. The orchestration lives in `enrichment-write.ts` — it
+   * is driver-free, so `scripts/check-memory.ts` runs the same code against the
+   * same statements rather than a copy of them.
+   */
+  async applyEnrichment(
+    memoryId: string,
+    userId: string,
+    enrichment: Enrichment,
+  ): Promise<void> {
+    const driver = await this.requireDriver();
+
+    // Before the transaction opens, for the reason `PreparedEntity` gives: one
+    // HTTP round trip per entity is a long time to hold write locks. The
+    // *normalized* name is embedded, matching what the deterministic pass puts
+    // in the entity index — two writers leaving incomparable vectors for the
+    // same concept would defeat resolution step 2.
+    const entityEmbeddings = new Map<string, number[] | null>();
+    for (const entity of enrichment.entities) {
+      if (entityEmbeddings.has(entity.normalizedName)) continue;
+      entityEmbeddings.set(
+        entity.normalizedName,
+        await embedOrNull(entity.normalizedName, "enrichment entity"),
+      );
+    }
+
+    const session = driver.session();
+    try {
+      await session.executeWrite(async (tx) => {
+        await writeEnrichment(
+          async (sql, params) => {
+            const result = await tx.run(sql, params);
+            return result.records.map((record) => record.toObject());
+          },
+          { memoryId, userId, enrichment, entityEmbeddings },
+        );
       });
     } finally {
       await session.close();

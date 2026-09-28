@@ -10,8 +10,10 @@
  * being worth having.
  */
 import {
+  MEMORY_LLM_EDGE_TYPES,
   MEMORY_RECALL_HOPS,
   MEMORY_VECTOR_INDEX_NAMES,
+  type MemoryLlmEdgeType,
 } from "@/constants/memory";
 
 /**
@@ -107,4 +109,121 @@ export const ENTITY_GC_SQL = `
   MATCH (e:Entity {userId: $userId})
   WHERE NOT (e)<-[:ABOUT]-(:Memory)
   DETACH DELETE e
+`;
+
+/**
+ * Both entity writers MERGE on `(userId, normalizedName)` and link with ABOUT —
+ * the deterministic pass under the name it extracted, the enrichment pass under
+ * the name it *resolved* to. One statement, because they would otherwise be the
+ * same statement written twice, and the check script can only cover what lives
+ * here.
+ */
+export const ENTITY_ABOUT_SQL = `
+  MATCH (m:Memory {id: $id, userId: $userId})
+  MERGE (e:Entity {userId: $userId, normalizedName: $normalizedName})
+    ON CREATE SET e.id = $entityId,
+                  e.name = $name,
+                  e.createdAt = $now,
+                  e.embedding = $embedding
+  MERGE (m)-[:ABOUT]->(e)
+`;
+
+/** Resolution step 1: the exact `(userId, normalizedName)` constraint match. */
+export const ENTITY_EXACT_SQL = `
+  MATCH (e:Entity {userId: $userId, normalizedName: $normalizedName})
+  RETURN e.id AS id
+`;
+
+/**
+ * Resolution step 2: the nearest existing entity of this user, when it is close
+ * enough to be the same thing. In-index filtered for the reason SEED_SQL is —
+ * a post-filter would score every tenant's entities against each other — and
+ * `LIMIT 1` because only the nearest is ever used; the threshold is checked
+ * outside, so a nearest that is *not* close enough correctly resolves to
+ * nothing and the caller creates the entity instead.
+ */
+export const ENTITY_NEAREST_SQL = `
+  MATCH (e:Entity)
+    SEARCH e IN (
+      VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.entity}
+      FOR $vector
+      WHERE e.userId = $userId
+      LIMIT 1
+    ) SCORE AS score
+  WHERE score >= $threshold
+  RETURN e.normalizedName AS normalizedName, score
+`;
+
+/**
+ * Entity-to-entity relations are one generic `:RELATION` carrying its type as a
+ * property, not three relationship types. That is what lets the type stay a
+ * parameter: the memory→memory types in `buildMemoryEdgeSql` cannot, because
+ * `EXPAND_SQL` filters on `type(r)` and so they must *be* the type.
+ */
+export const RELATION_SQL = `
+  UNWIND $relations AS rel
+  MATCH (a:Entity {userId: $userId, normalizedName: rel.from})
+  MATCH (b:Entity {userId: $userId, normalizedName: rel.to})
+  MERGE (a)-[r:RELATION]->(b)
+    ON CREATE SET r.type = rel.type, r.createdAt = $now
+`;
+
+/**
+ * The model's own memory→memory edges, one statement per permitted type —
+ * the type has to be the relationship type, and Cypher cannot parameterise
+ * one, so it is interpolated behind a runtime check.
+ *
+ * The `MATCH` on the target is doing three jobs at once: it drops an edge whose
+ * target id does not exist, drops one belonging to another user, and drops one
+ * the model invented. A dangling `MERGE` would create a second `:Memory` node
+ * with that id and hang an edge on it.
+ */
+export function buildMemoryEdgeSql(type: MemoryLlmEdgeType): string {
+  if (!MEMORY_LLM_EDGE_TYPES.includes(type)) {
+    throw new Error(
+      `"${type}" is not a permitted memory edge type; permitted: ${MEMORY_LLM_EDGE_TYPES.join(", ")}`,
+    );
+  }
+  return `
+    MATCH (m:Memory {id: $id, userId: $userId})
+    UNWIND $edges AS edge
+    MATCH (other:Memory {id: edge.targetId, userId: $userId})
+    MERGE (m)-[r:${type}]->(other)
+      ON CREATE SET r.reason = edge.reason, r.createdAt = $now
+  `;
+}
+
+/**
+ * The marker that makes enrichment a one-shot per memory, and the predicate the
+ * sweep reads. Set even when the extraction was empty: "asked and there was
+ * nothing" is a different fact from "never asked", and only the second should
+ * keep costing a model call on every sweep.
+ */
+export const MEMORY_ENRICHED_AT_SQL = `
+  MATCH (m:Memory {id: $id, userId: $userId})
+  SET m.enrichedAt = $now
+`;
+
+/**
+ * The sweep's selection: every memory the model has not seen, plus every memory
+ * written without a vector because the embedding provider was down (§8). One
+ * command, two recovery paths.
+ */
+export const ENRICH_PENDING_SQL = `
+  MATCH (m:Memory)
+  WHERE m.enrichedAt IS NULL OR m.embedding IS NULL
+  RETURN m.id AS id, m.userId AS userId, m.content AS content,
+         m.embedding IS NULL AS vectorless
+  LIMIT toInteger($limit)
+`;
+
+/**
+ * The other half of the sweep's recovery. `embedding IS NULL` selects a memory
+ * written while the provider was down, and selecting it is only worth doing if
+ * something then clears the predicate — otherwise every run re-enriches the
+ * same memories, at a model call each.
+ */
+export const MEMORY_EMBEDDING_SQL = `
+  MATCH (m:Memory {id: $id, userId: $userId})
+  SET m.embedding = $embedding
 `;

@@ -1,4 +1,4 @@
-import neo4j from "neo4j-driver";
+import neo4j, { type ManagedTransaction } from "neo4j-driver";
 import { EMBEDDING_DIMENSIONS } from "@/constants/embeddings";
 import {
   MEMORY_EDGE_CANDIDATE_LIMIT,
@@ -8,11 +8,14 @@ import {
 } from "@/constants/memory";
 import {
   EDGE_CANDIDATE_SQL,
+  ENRICH_PENDING_SQL,
   ENTITY_GC_SQL,
   EXPAND_SQL,
   MEMORY_DELETE_SQL,
   SEED_SQL,
 } from "@/lib/memory/cypher";
+import { writeEnrichment } from "@/lib/memory/enrichment-write";
+import type { Enrichment } from "@/lib/memory/enrichment-schema";
 
 /**
  * Exercises the memory graph's recall and delete paths against a live Neo4j.
@@ -86,7 +89,7 @@ async function clearScratch(session: ReturnType<typeof driver.session>): Promise
 }
 
 /**
- * Pre-flight, not one of the six checks: the live indexes must agree with
+ * Pre-flight, not one of the eight checks: the live indexes must agree with
  * `EMBEDDING_DIMENSIONS` before any vector query can mean anything.
  *
  * Without it a drifted index surfaces as a raw dimensionality error thrown out
@@ -124,6 +127,18 @@ async function assertIndexContract(
     );
   }
   return ok;
+}
+
+/**
+ * The `StatementRunner` shape `writeEnrichment` expects, bound to a transaction.
+ * `toObject()` keys are the statement's own aliases, which is what
+ * `resolveEntityName` reads (`id`, `normalizedName`).
+ */
+function runner(tx: ManagedTransaction) {
+  return async (sql: string, params: Record<string, unknown>) => {
+    const result = await tx.run(sql, params);
+    return result.records.map((record) => record.toObject());
+  };
 }
 
 async function runChecks(
@@ -339,6 +354,126 @@ async function runChecks(
     "EDGE_CANDIDATE_SQL returns the bounded recent slice, newest first, excluding the memory itself",
     boundedIds.join(",") === "check_a_recent2,check_a_recent1" && productionBoundOk,
     `bounded=[${boundedIds.join(", ")}] atLimit${MEMORY_EDGE_CANDIDATE_LIMIT}=${productionBoundDetail}`,
+  );
+
+  // ---- 8. the enrichment write path, and the sweep's selection ----
+  // Deterministic on purpose. `writeEnrichment` is driver-free, so this really
+  // does execute the store's own write path — but the model call in front of it
+  // needs a live provider, and a check that needs one goes red for reasons that
+  // have nothing to do with this schema (and costs a token per run). The model
+  // boundary is covered by tests/lib/memory/llm-extraction.test.ts with a faked
+  // transport; what only a live database can answer is whether these statements
+  // run at all.
+  await session.run(
+    `CREATE (m:Memory {
+       id:'check_a_enrich', userId:$a, content:'Acme replaced Globex',
+       category:'fact', createdAt:'2026-04-01T00:00:00.000Z',
+       updatedAt:'2026-04-01T00:00:00.000Z'
+     })
+     CREATE (target:Memory {
+       id:'check_a_target', userId:$a, content:'Globex is our vendor',
+       category:'fact', createdAt:'2026-04-01T00:00:00.000Z',
+       updatedAt:'2026-04-01T00:00:00.000Z'
+     })
+     CREATE (empty:Memory {
+       id:'check_a_empty', userId:$a, content:'Nothing to extract',
+       category:'other', createdAt:'2026-04-01T00:00:00.000Z',
+       updatedAt:'2026-04-01T00:00:00.000Z', embedding:$embedding
+     })
+     CREATE (foreign:Memory {
+       id:'check_b_target', userId:$b, content:'Globex is our vendor',
+       category:'fact', createdAt:'2026-04-01T00:00:00.000Z',
+       updatedAt:'2026-04-01T00:00:00.000Z'
+     })`,
+    { a: USER_A, b: USER_B, embedding: weaker },
+  );
+
+  const extraction: Enrichment = {
+    entities: [
+      { name: "Acme", normalizedName: "acme", type: "organization" },
+      { name: "Globex", normalizedName: "globex", type: "organization" },
+    ],
+    relations: [{ from: "acme", to: "globex", type: "replaced" }],
+    memoryEdges: [
+      // The second one names another user's memory. It is the case the
+      // `userId` in the target MATCH exists to refuse, and the case nothing
+      // else in this script covers.
+      { targetId: "check_a_target", type: "SUPERSEDES", reason: "same vendor" },
+      { targetId: "check_b_target", type: "SUPERSEDES", reason: "another user" },
+    ],
+  };
+
+  await session.executeWrite(async (tx) => {
+    await writeEnrichment(runner(tx), {
+      memoryId: "check_a_enrich",
+      userId: USER_A,
+      enrichment: extraction,
+      // No vectors: resolution then exact-matches, which is the branch a
+      // provider outage leaves the store in.
+      entityEmbeddings: new Map(),
+    });
+    await writeEnrichment(runner(tx), {
+      memoryId: "check_a_empty",
+      userId: USER_A,
+      enrichment: { entities: [], relations: [], memoryEdges: [] },
+      entityEmbeddings: new Map(),
+    });
+  });
+
+  const enriched = await session.run(
+    `MATCH (m:Memory)
+     OPTIONAL MATCH (m)-[:ABOUT]->(e:Entity)
+     OPTIONAL MATCH (m)-[r:SUPERSEDES]->(other:Memory)
+     RETURN m.id AS id, m.enrichedAt AS enrichedAt,
+            collect(DISTINCT e.normalizedName) AS entities,
+            collect(DISTINCT other.id) AS superseded
+     ORDER BY id`,
+  );
+  const rows = new Map(
+    enriched.records.map((record) => [String(record.get("id")), record]),
+  );
+  const main = rows.get("check_a_enrich");
+  const empty = rows.get("check_a_empty");
+
+  const relation = await session.run(
+    `MATCH (a:Entity {userId:$a, normalizedName:'acme'})-[r:RELATION]->(b:Entity {userId:$a, normalizedName:'globex'})
+     RETURN r.type AS type, count(r) AS n`,
+    { a: USER_A },
+  );
+
+  // The sweep's two predicates, told apart by the two scratch memories above:
+  // `check_a_enrich` is enriched and has no vector, so the `embedding IS NULL`
+  // arm must still select it; `check_a_empty` is enriched *and* embedded, so
+  // neither arm may. The empty extraction is the case that would otherwise
+  // re-enqueue a memory forever, because it writes no edges.
+  // Above the whole scratch corpus, not just the two rows under test. The
+  // statement has no user filter — it is a global sweep, and that is correct —
+  // so a limit below the scratch count truncates the very rows being asserted
+  // on, and check 2's 500 memories have no `enrichedAt` at all, which counts as
+  // null.
+  const pending = await session.run(ENRICH_PENDING_SQL, { limit: 1000 });
+  const pendingIds = pending.records.map((record) => String(record.get("id")));
+
+  const entities = (main?.get("entities") as string[]) ?? [];
+  const superseded = (main?.get("superseded") as string[]) ?? [];
+  report(
+    "writeEnrichment writes entities, a RELATION, a same-user memory edge, and the marker",
+    main?.get("enrichedAt") !== null &&
+      main?.get("enrichedAt") !== undefined &&
+      entities.includes("acme") &&
+      entities.includes("globex") &&
+      Number(relation.records[0]?.get("n")) === 1 &&
+      relation.records[0]?.get("type") === "replaced" &&
+      superseded.includes("check_a_target") &&
+      !superseded.includes("check_b_target") &&
+      empty?.get("enrichedAt") !== null &&
+      empty?.get("enrichedAt") !== undefined &&
+      pendingIds.includes("check_a_enrich") &&
+      !pendingIds.includes("check_a_empty"),
+    `enrichedAt=${main?.get("enrichedAt")} entities=[${entities.join(", ")}] ` +
+      `relation=${relation.records[0]?.get("type")} superseded=[${superseded.join(", ")}] ` +
+      `emptyStamped=${empty?.get("enrichedAt") !== null} ` +
+      `pending=[${pendingIds.filter((id) => id.startsWith("check_a_")).join(", ")}]`,
   );
 }
 
