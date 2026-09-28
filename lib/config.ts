@@ -52,6 +52,16 @@ export const config = {
     memoryIndexName: "memory-index",
   },
 
+  // Knowledge RAG storage. `url` is undefined when POSTGRES_URL is unset, which
+  // is what `isPostgresConfigured()` gates on — an unconfigured Postgres
+  // degrades to "knowledge search returns nothing" rather than blocking boot.
+  postgres: {
+    url: env.POSTGRES_URL,
+    poolMax: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+  },
+
   docling: {
     baseUrl: env.DOCLING_SERVE_URL,
     apiKey: env.DOCLING_SERVE_API_KEY,

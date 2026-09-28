@@ -28,6 +28,7 @@ function withBuildPlaceholders(
     CRON_SECRET: "build-placeholder-cron-secret-123456789",
     SECRET_ENCRYPTION_KEY: "build-placeholder-encryption-key-123456",
     REDIS_URL: "redis://build-placeholder:6379",
+    POSTGRES_URL: "postgresql://placeholder:placeholder@localhost:5432/placeholder",
   };
 
   for (const [key, fallback] of Object.entries(buildPlaceholders)) {
@@ -159,6 +160,19 @@ const envSchema = z
       .transform((value) => (value?.trim() ? value.trim() : undefined))
       .pipe(z.string().url().optional()),
 
+    // PostgreSQL + pgvector (knowledge RAG). Optional at build time; production
+    // requires it via `superRefine` below, on REDIS_URL's precedent — without it
+    // knowledge search silently returns nothing.
+    //
+    // Blank normalises to `undefined` before URL validation, so `POSTGRES_URL=`
+    // means "not configured" rather than a boot error, the same convention the
+    // other optional vars follow.
+    POSTGRES_URL: z
+      .string()
+      .optional()
+      .transform((value) => (value?.trim() ? value.trim() : undefined))
+      .pipe(z.string().url().optional()),
+
     // Security
     CRON_SECRET: z.string().optional(),
     SECRET_ENCRYPTION_KEY: z.string().optional(),
@@ -229,6 +243,15 @@ const envSchema = z
         path: ["REDIS_URL"],
         message:
           "REDIS_URL is required in production. Without it rate limiting fails open.",
+      });
+    }
+
+    if (!values.POSTGRES_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["POSTGRES_URL"],
+        message:
+          "POSTGRES_URL is required in production. Without it knowledge search returns nothing.",
       });
     }
   });

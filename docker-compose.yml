@@ -1,12 +1,14 @@
-# Local development services: Redis, Garage for S3-compatible object storage,
-# and docling-serve for document parsing.
+# Local development services: Redis, PostgreSQL + pgvector for knowledge RAG,
+# Garage for S3-compatible object storage, and docling-serve for document
+# parsing.
 #
 #   docker compose up -d      # start
 #   docker compose ps         # health
 #   docker compose down       # stop (keeps the volumes)
 #   docker compose down -v    # stop and wipe cached state
 #
-# Point the app at them with REDIS_URL=redis://localhost:6379 and
+# Point the app at them with REDIS_URL=redis://localhost:6379,
+# POSTGRES_URL=postgresql://geniechat:geniechat@localhost:5433/geniechat and
 # S3_ENDPOINT=http://localhost:3900. S3_REGION must stay `garage` to match
 # `s3_region` in garage.toml, or every signed request fails validation.
 #
@@ -36,6 +38,42 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: geniechat-postgres
+    # Loopback only, like redis and docling: the browser never talks to
+    # Postgres, so it does not get Garage's all-interfaces binding.
+    #
+    # Host 5433, not 5432, for the same reason .env.example gives Mongo 27018: a
+    # developer's own Postgres conventionally runs on 5432, and a template
+    # defaulting to it invites `db:setup:pg` to provision an unrelated instance.
+    ports:
+      # Host 5433 -> container 5432. The image listens on 5432, so publishing
+      # "5433:5433" would map to a port nothing is listening on and every
+      # connection would hang until the pool timed out.
+      - "127.0.0.1:5433:5432"
+    environment:
+      # Compose interpolation variables read from the host environment or .env
+      # — overridable without editing this file, and deliberately absent from
+      # lib/env.ts because the app never reads them (it reads the assembled
+      # POSTGRES_URL instead). The docling service follows the same pattern.
+      POSTGRES_USER: ${POSTGRES_USER:-geniechat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-geniechat}
+      POSTGRES_DB: ${POSTGRES_DB:-geniechat}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-geniechat} -d ${POSTGRES_DB:-geniechat}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   garage:
@@ -372,5 +410,6 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:
   garage-data:
   garage-meta:
