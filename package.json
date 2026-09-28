@@ -16,6 +16,7 @@
     "db:setup": "tsx scripts/setup-mongodb.ts",
     "db:setup:pg": "tsx --env-file=.env scripts/setup-postgres.ts",
     "db:setup:neo4j": "tsx --env-file=.env scripts/setup-neo4j.ts",
+    "memory:check": "tsx --env-file=.env scripts/check-memory.ts",
     "embeddings:check": "tsx --env-file=.env scripts/check-embeddings.ts",
     "knowledge:check": "tsx --env-file=.env scripts/check-knowledge.ts",
     "knowledge:backfill": "tsx --env-file=.env scripts/backfill-chunks.ts",

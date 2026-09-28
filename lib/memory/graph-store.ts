@@ -1,13 +1,26 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { ManagedTransaction } from "neo4j-driver";
-import { MEMORY_EDGE_CANDIDATE_LIMIT } from "@/constants/memory";
+import {
+  MEMORY_EDGE_CANDIDATE_LIMIT,
+  MEMORY_TRAVERSABLE_TYPES,
+  memorySeedLimit,
+} from "@/constants/memory";
 import { generateEmbedding } from "@/lib/embeddings";
 import { logger } from "@/lib/logger";
 import { getNeo4jDriver, isNeo4jConfigured } from "@/lib/neo4j/client";
 import { buildDeterministicEdges, extractEntityNames } from "./extract";
-import { buildMemoryUpdateSet } from "./update";
-import type { Memory } from "./types";
+import {
+  EDGE_CANDIDATE_SQL,
+  ENTITY_GC_SQL,
+  EXPAND_SQL,
+  MEMORY_DELETE_SQL,
+  SEED_SQL,
+} from "./cypher";
+import { rankRecall, type RecallCandidate } from "./recall";
+import { normalizeQueryForRetrieval } from "./text";
+import { buildMemoryUpdateSet, normalizeMemoryCategory } from "./update";
+import type { GraphRAGMemorySearchResult, Memory, MemoryCategory, MemoryMode } from "./types";
 
 interface MemoryNode {
   id: string;
@@ -71,6 +84,26 @@ async function embedOrNull(text: string, context: string): Promise<number[] | nu
   }
 }
 
+/** A recall candidate carrying the fields `rankRecall` does not rank on. */
+interface RecallRow extends RecallCandidate {
+  category?: MemoryCategory;
+  userName: string;
+  userEmail: string;
+}
+
+/** The columns both recall queries return, read the same way. */
+function rowToRecallFields(record: Record<string, unknown>) {
+  return {
+    id: String(record.id ?? ""),
+    content: String(record.content ?? ""),
+    category: normalizeMemoryCategory(record.category),
+    userName: String(record.userName ?? ""),
+    userEmail: String(record.userEmail ?? ""),
+    createdAt: String(record.createdAt ?? ""),
+    updatedAt: String(record.updatedAt ?? ""),
+  };
+}
+
 export class MemoryGraphStore {
   private async requireDriver() {
     if (!isNeo4jConfigured()) {
@@ -111,7 +144,10 @@ export class MemoryGraphStore {
             id,
             userId: memory.userId,
             content,
-            category: memory.category,
+            // The one constraint on a writable field: an unrecognised category
+            // would render as `- [nonsense] ...` in every prompt that retrieves
+            // this memory.
+            category: normalizeMemoryCategory(memory.category) ?? null,
             createdAt: now,
             updatedAt: now,
             userName: memory.userName ?? null,
@@ -125,7 +161,16 @@ export class MemoryGraphStore {
       await session.close();
     }
 
-    return { ...memory, id, createdAt: now, updatedAt: now, enrichedAt: null };
+    return {
+      ...memory,
+      // Echoed as the store wrote it, not as the caller passed it: a dropped
+      // category must not come back claiming it was stored.
+      category: normalizeMemoryCategory(memory.category),
+      id,
+      createdAt: now,
+      updatedAt: now,
+      enrichedAt: null,
+    };
   }
 
   /**
@@ -198,16 +243,14 @@ export class MemoryGraphStore {
     const session = driver.session();
     try {
       const { records } = await session.executeRead((tx) =>
-        tx.run(
-          // Ordered, so the candidate window is a stable recent slice rather
-          // than an arbitrary one — see MEMORY_EDGE_CANDIDATE_LIMIT.
-          `MATCH (other:Memory {userId: $userId})
-           WHERE other.id <> $id
-           RETURN other.id AS id, other.content AS content
-           ORDER BY other.createdAt DESC
-           LIMIT $limit`,
-          { userId: memory.userId, id: memory.id, limit: MEMORY_EDGE_CANDIDATE_LIMIT },
-        ),
+        // Ordered, so the candidate window is a stable recent slice rather
+        // than an arbitrary one — see MEMORY_EDGE_CANDIDATE_LIMIT. The statement
+        // lives in cypher.ts so scripts/check-memory.ts executes the same one.
+        tx.run(EDGE_CANDIDATE_SQL, {
+          userId: memory.userId,
+          id: memory.id,
+          limit: MEMORY_EDGE_CANDIDATE_LIMIT,
+        }),
       );
 
       const edges = buildDeterministicEdges(
@@ -249,12 +292,7 @@ export class MemoryGraphStore {
     tx: ManagedTransaction,
     userId: string,
   ): Promise<void> {
-    await tx.run(
-      `MATCH (e:Entity {userId: $userId})
-       WHERE NOT (e)<-[:ABOUT]-(:Memory)
-       DETACH DELETE e`,
-      { userId },
-    );
+    await tx.run(ENTITY_GC_SQL, { userId });
   }
 
   async getMemories(userId: string): Promise<Memory[]> {
@@ -358,15 +396,129 @@ export class MemoryGraphStore {
     const session = driver.session();
     try {
       return await session.executeWrite(async (tx) => {
-        const result = await tx.run(
-          `MATCH (m:Memory {id: $id, userId: $userId}) DETACH DELETE m`,
-          { id: memoryId, userId },
-        );
+        const result = await tx.run(MEMORY_DELETE_SQL, { id: memoryId, userId });
         if (result.summary.counters.updates().nodesDeleted === 0) return false;
 
         await this.garbageCollectOrphanEntities(tx, userId);
         return true;
       });
+    } finally {
+      await session.close();
+    }
+  }
+
+  async searchRelevantMemories(
+    userId: string,
+    query: string,
+    top = 5,
+  ): Promise<Memory[]> {
+    const result = await this.searchRelevantMemoriesWithGraph(userId, query, top);
+    return result.memories;
+  }
+
+  async searchRelevantMemoriesWithGraph(
+    userId: string,
+    query: string,
+    top = 5,
+  ): Promise<GraphRAGMemorySearchResult> {
+    const normalized = normalizeQueryForRetrieval(query);
+    const empty = (mode: MemoryMode): GraphRAGMemorySearchResult => ({
+      memories: [],
+      metadata: {
+        mode,
+        semanticSeedCount: 0,
+        lexicalSeedCount: 0,
+        graphExpandedCount: 0,
+        totalCandidates: 0,
+      },
+    });
+
+    if (!normalized) return empty("graph");
+
+    const driver = await this.requireDriver();
+    const seedLimit = memorySeedLimit(top);
+
+    // A query too long to embed leaves the vector arm empty; there is no
+    // lexical fallback in the graph, so the result is empty rather than wrong.
+    let queryVector: number[] | null = null;
+    try {
+      queryVector = await generateEmbedding(normalized);
+    } catch (error) {
+      logger.error({ err: error, userId }, "Query embedding failed; no vector seeds");
+    }
+    if (!queryVector) return empty("vector");
+
+    const session = driver.session();
+    try {
+      const seeds = await session.executeRead(async (tx) => {
+        const { records } = await tx.run(SEED_SQL, {
+          queryVector,
+          userId,
+          k: seedLimit,
+        });
+        return records.map((record) => ({
+          ...rowToRecallFields(record.toObject()),
+          vectorScore: Number(record.get("vectorScore")),
+          hops: 0,
+          pathWeight: 1,
+        }));
+      });
+
+      if (seeds.length === 0) return empty("graph");
+
+      const expanded = await session.executeRead(async (tx) => {
+        const { records } = await tx.run(EXPAND_SQL, {
+          seedIds: seeds.map((seed) => seed.id),
+          userId,
+          allowedTypes: MEMORY_TRAVERSABLE_TYPES,
+          expansionLimit: seedLimit * 2,
+        });
+        return records.map((record) => ({
+          ...rowToRecallFields(record.toObject()),
+          vectorScore: 0,
+          hops: Number(record.get("hops")),
+          pathWeight: Number(record.get("pathWeight")),
+        }));
+      });
+
+      // A node reached by more than one path keeps its best hop count.
+      const byId = new Map<string, RecallRow>();
+      for (const candidate of [...seeds, ...expanded]) {
+        const existing = byId.get(candidate.id);
+        if (!existing || candidate.hops < existing.hops) byId.set(candidate.id, candidate);
+      }
+
+      const ranked = rankRecall([...byId.values()], { top });
+      logger.info(
+        { userId, seedCount: seeds.length, expandedCount: expanded.length, returned: ranked.length },
+        "Graph memory recall complete",
+      );
+
+      return {
+        memories: ranked.map((candidate) => ({
+          id: candidate.id,
+          userId,
+          userName: candidate.userName,
+          userEmail: candidate.userEmail,
+          content: candidate.content,
+          category: candidate.category,
+          createdAt: candidate.createdAt,
+          updatedAt: candidate.updatedAt,
+          enrichedAt: null,
+        })),
+        metadata: {
+          mode: "graph",
+          semanticSeedCount: seeds.length,
+          lexicalSeedCount: 0,
+          graphExpandedCount: expanded.length,
+          totalCandidates: byId.size,
+        },
+      };
+    } catch (error) {
+      // Never slice, never fabricate: an error means no memories, not the
+      // first `top` rows of the corpus.
+      logger.error({ err: error, userId }, "Graph memory recall failed");
+      return empty("vector");
     } finally {
       await session.close();
     }

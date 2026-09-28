@@ -33,19 +33,22 @@ export interface RecallCandidate {
   pathWeight: number;
 }
 
-export type RankedMemory = RecallCandidate & { score: number };
-
 const DEFAULT_TOP = 5;
 
 /**
  * The blend that replaces :772's five-way fusion. Those five scores existed
  * because the graph was a heuristic over a flat corpus; with real edges, the
  * seed similarity and the graph path are the two things worth weighting.
+ *
+ * Generic in its candidate type so a caller that carries display fields the
+ * ranking does not use — the store's `category`, `userName`, `userEmail` —
+ * gets them back typed rather than having to look them up again by id. The
+ * ranking reads only `RecallCandidate`'s members either way.
  */
-export function rankRecall(
-  candidates: RecallCandidate[],
+export function rankRecall<T extends RecallCandidate>(
+  candidates: T[],
   options: { top?: number } = {},
-): RankedMemory[] {
+): (T & { score: number })[] {
   const top = options.top ?? DEFAULT_TOP;
   if (candidates.length === 0 || top <= 0) return [];
 
