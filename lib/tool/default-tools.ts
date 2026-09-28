@@ -176,10 +176,54 @@ export const createUseSkillTool = (
   );
 };
 
-export const defaultTools = [webSearch];
+export const codeSandbox = tool(
+  async (input) => {
+    const { executeInContainer } = await import(
+      "./openrouter-container-client"
+    );
+    const result = await executeInContainer({
+      code: input.code,
+      language: input.language,
+      sessionId: input.session_id,
+    });
+
+    return JSON.stringify({
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exit_code: result.exitCode,
+      container_id: result.containerId,
+      files: result.files,
+      error: result.error,
+    });
+  },
+  {
+    name: "code_sandbox",
+    description:
+      "Execute Python code or bash commands inside a stateful, sandboxed Linux container. Use this to perform data analysis, run scripts, execute math/computations, and inspect files.",
+    schema: z.object({
+      code: z
+        .string()
+        .describe("The Python code or bash commands to execute in the sandbox"),
+      language: z
+        .enum(["python", "bash"])
+        .default("python")
+        .describe("Language: 'python' (default) or 'bash'"),
+      session_id: z
+        .string()
+        .optional()
+        .describe(
+          "Optional session or thread identifier to preserve files and state across turns",
+        ),
+    }),
+  },
+);
+
+export const defaultTools = [webSearch, codeSandbox];
 
 const defaultToolsMap: Record<string, StructuredTool> = {
   web_search: webSearch,
+  code_sandbox: codeSandbox,
+  code_interpreter: codeSandbox,
 };
 
 /**

@@ -28,4 +28,8 @@ export const DEFAULT_TOOLS_METADATA: ToolMetadata[] = [
         description: "Dynamically activate an agent skill to receive its full instructions. Auto-registered when an agent has skills configured.",
         alwaysEnabled: true,
     },
+    {
+        name: "code_sandbox",
+        description: "Execute Python code or bash commands inside a stateful, sandboxed Linux container for computation, data analysis, and file operations.",
+    },
 ];
