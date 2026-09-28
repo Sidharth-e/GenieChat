@@ -22,6 +22,7 @@ interface MachineStateState {
   machineStatus: MachineStatus;
   liveToolName: string | null;
   liveTokens: LiveTokens | null;
+  liveRoutedModel: string | null;
   liveAuditLogs: LiveAuditLog[];
   activeMessages: Message[];
   activeThreadId: string | null;
@@ -30,6 +31,7 @@ interface MachineStateState {
   toggle: () => void;
   setMachineStatus: (status: MachineStatus, toolName?: string | null) => void;
   setLiveTokens: (tokens: LiveTokens | null) => void;
+  setLiveRoutedModel: (model: string | null) => void;
   setActiveMessages: (messages: Message[]) => void;
   setActiveThreadId: (threadId: string | null) => void;
   addAuditLog: (log: Omit<LiveAuditLog, "id" | "time"> & { time?: string }) => void;
@@ -47,6 +49,7 @@ export const useMachineStateStore = create<MachineStateState>((set) => ({
   machineStatus: "idle",
   liveToolName: null,
   liveTokens: null,
+  liveRoutedModel: null,
   liveAuditLogs: [],
   activeMessages: [],
   activeThreadId: null,
@@ -56,6 +59,7 @@ export const useMachineStateStore = create<MachineStateState>((set) => ({
   setMachineStatus: (status, toolName = null) =>
     set({ machineStatus: status, liveToolName: toolName }),
   setLiveTokens: (tokens) => set({ liveTokens: tokens }),
+  setLiveRoutedModel: (model) => set({ liveRoutedModel: model }),
   setActiveMessages: (messages) =>
     set((s) => (s.activeMessages === messages ? s : { activeMessages: messages })),
   setActiveThreadId: (threadId) => set({ activeThreadId: threadId }),
@@ -78,6 +82,7 @@ export const useMachineStateStore = create<MachineStateState>((set) => ({
       machineStatus: "idle",
       liveToolName: null,
       liveTokens: null,
+      liveRoutedModel: null,
       liveAuditLogs: [],
       activeMessages: [],
       activeThreadId: null,

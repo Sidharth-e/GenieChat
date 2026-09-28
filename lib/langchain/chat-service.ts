@@ -47,7 +47,8 @@ export class ChatService {
         completionTokens: number;
         totalTokens: number;
       }
-    | { type: "citations"; citations: string[] },
+    | { type: "citations"; citations: string[] }
+    | { type: "model_resolved"; routedModel: string },
     void,
     unknown
   > {
@@ -129,20 +130,27 @@ export class ChatService {
     langChainMessages.unshift(new SystemMessage(systemPrompt));
 
     try {
+      let resolvedRoutedModel: string | undefined;
+
       for (;;) {
         const stream = await modelWithTools.stream(langChainMessages);
         let finalChunk: AIMessageChunk | null = null;
         let emittedContent = false;
 
         for await (const chunk of stream) {
-          // Accumulate the chunk to construct the full message
+          const rawMetadata = chunk.response_metadata as Record<string, unknown> | undefined;
+          const chunkModel = (rawMetadata?.model || rawMetadata?.model_name || (chunk.additional_kwargs as Record<string, unknown>)?.model) as string | undefined;
+          if (chunkModel && typeof chunkModel === "string" && chunkModel !== resolvedRoutedModel) {
+            resolvedRoutedModel = chunkModel;
+            yield { type: "model_resolved", routedModel: chunkModel };
+          }
+
           if (!finalChunk) {
             finalChunk = chunk;
           } else {
             finalChunk = finalChunk.concat(chunk);
           }
 
-          // Yield content to the UI as it streams
           const content = extractTextFromContent(chunk.content);
           if (content) {
             emittedContent = true;
@@ -152,6 +160,15 @@ export class ChatService {
 
         if (!finalChunk) {
           break;
+        }
+
+        if (!resolvedRoutedModel) {
+          const finalMetadata = finalChunk.response_metadata as Record<string, unknown> | undefined;
+          const finalModel = (finalMetadata?.model || finalMetadata?.model_name || (finalChunk.additional_kwargs as Record<string, unknown>)?.model) as string | undefined;
+          if (finalModel && typeof finalModel === "string") {
+            resolvedRoutedModel = finalModel;
+            yield { type: "model_resolved", routedModel: finalModel };
+          }
         }
 
         if (!emittedContent) {
@@ -286,6 +303,11 @@ export class ChatService {
       // Fallback to non-streaming invoke if streaming fails
       try {
         const response = await model.invoke(langChainMessages);
+        const respMetadata = (response as AIMessageChunk).response_metadata as Record<string, unknown> | undefined;
+        const respModel = (respMetadata?.model || respMetadata?.model_name) as string | undefined;
+        if (respModel && typeof respModel === "string") {
+          yield { type: "model_resolved", routedModel: respModel };
+        }
         const content = extractTextFromContent(response.content);
         if (content) {
           yield { type: "token", content };

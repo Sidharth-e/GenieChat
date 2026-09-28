@@ -283,6 +283,7 @@ export function useChat(options: UseChatOptions = {}) {
       setError(null);
       useMachineStateStore.getState().setMachineStatus("streaming");
       useMachineStateStore.getState().setLiveTokens(null);
+      useMachineStateStore.getState().setLiveRoutedModel(null);
       useMachineStateStore.getState().addAuditLog({
         action: "User prompt submitted",
         detail: messageContent.slice(0, 80),
@@ -506,6 +507,21 @@ export function useChat(options: UseChatOptions = {}) {
                     ...message,
                     citations: data.citations,
                   }));
+                  break;
+
+                case "model_resolved":
+                  if (data.routedModel) {
+                    useMachineStateStore.getState().setLiveRoutedModel(data.routedModel);
+                    useMachineStateStore.getState().addAuditLog({
+                      action: "Model routed",
+                      detail: `Routed to ${data.routedModel}`,
+                      type: "model",
+                    });
+                    updateAssistantMessage((message) => ({
+                      ...message,
+                      routedModel: data.routedModel,
+                    }));
+                  }
                   break;
 
                 case "title":

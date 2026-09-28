@@ -35,6 +35,7 @@ import type { LucideIcon } from "lucide-react";
 import { MessageContent } from "@/components/common/message-content";
 import { useCanvasStore } from "@/lib/stores/canvas-store";
 import { useParams } from "next/navigation";
+import { formatModelName } from "@/lib/langchain/model-config";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,8 +45,10 @@ interface ToolCallBlockProps {
 }
 
 interface ToolCallGroupProps {
-  toolCalls: ToolCall[];
+  toolCalls?: ToolCall[];
   isStreaming?: boolean;
+  routedModel?: string;
+  isAutoRouter?: boolean;
 }
 
 interface ParsedImageResult {
@@ -467,18 +470,120 @@ function ArtifactPreviewCard({ artifact }: { artifact: ArtifactPreviewInfo }) {
   );
 }
 
+function RoutingRow({
+  routedModel,
+  isStreaming,
+  showBottomLine,
+}: {
+  routedModel?: string;
+  isStreaming?: boolean;
+  showBottomLine: boolean;
+}) {
+  const [detailOpen, setDetailOpen] = useState(false);
+  const targetName = routedModel ? formatModelName(routedModel) : undefined;
+
+  return (
+    <div className="flex">
+      <div className="flex flex-col items-center w-7 shrink-0">
+        <div className="w-0.5 h-[10px] rounded-full bg-white/10" />
+        <div className="h-5 w-5 rounded-md flex items-center justify-center shrink-0 z-10 bg-primary/10 border border-primary/20">
+          <ArrowRightLeft
+            className={cn(
+              "h-3 w-3 text-primary",
+              isStreaming && "animate-pulse",
+            )}
+          />
+        </div>
+        {showBottomLine ? (
+          <div className="w-0.5 flex-1 rounded-full bg-white/10 min-h-[12px]" />
+        ) : (
+          <div className="h-2" />
+        )}
+      </div>
+
+      <div className="flex-1 pb-2.5 pl-2.5 min-w-0">
+        <button
+          className="w-full text-left"
+          onClick={() => setDetailOpen((o) => !o)}
+        >
+          <div className="flex items-center gap-1.5 py-0.5 min-h-[28px]">
+            <span
+              className={cn(
+                "text-sm leading-snug",
+                isStreaming ? "text-text-secondary" : "text-foreground/80",
+              )}
+            >
+              {isStreaming && !targetName
+                ? "Routing request via Jev Router…"
+                : `Routed via Jev Router → Handed off to ${targetName || "model"}`}
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-3 w-3 text-text-secondary/50 shrink-0 transition-transform duration-150",
+                detailOpen && "rotate-180",
+              )}
+            />
+          </div>
+        </button>
+
+        {detailOpen && (
+          <div className="mb-2 space-y-1.5">
+            <div className="rounded-md border border-border/20 bg-secondary/10 p-2 overflow-x-auto">
+              <div className="text-[10px] font-medium text-text-secondary/50 uppercase tracking-wider mb-1">
+                Router
+              </div>
+              <p className="text-xs text-foreground/70 font-mono">
+                typesafe/jev-router
+              </p>
+            </div>
+            {routedModel && (
+              <div className="rounded-md border border-border/20 bg-secondary/10 p-2 overflow-x-auto">
+                <div className="text-[10px] font-medium text-text-secondary/50 uppercase tracking-wider mb-1">
+                  Target Model
+                </div>
+                <p className="text-xs text-primary font-mono font-medium">
+                  {routedModel}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── ToolCallGroup ─────────────────────────────────────────────────────────────
 
-export function ToolCallGroup({ toolCalls, isStreaming }: ToolCallGroupProps) {
+export function ToolCallGroup({
+  toolCalls = [],
+  isStreaming,
+  routedModel,
+  isAutoRouter,
+}: ToolCallGroupProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const anyStreaming = !!isStreaming && toolCalls.some((tc) => !tc.result);
-  const allDone = !anyStreaming && toolCalls.every((tc) => !!tc.result);
+  const allDone =
+    !anyStreaming &&
+    (toolCalls.length === 0 || toolCalls.every((tc) => !!tc.result));
 
-  const summaryText = useMemo(
-    () => buildSummaryText(toolCalls, anyStreaming),
-    [toolCalls, anyStreaming],
-  );
+  const summaryText = useMemo(() => {
+    if (isAutoRouter) {
+      const targetName = routedModel
+        ? formatModelName(routedModel)
+        : isStreaming
+          ? "Routing…"
+          : "Auto Mode";
+      if (toolCalls.length === 0) {
+        return routedModel
+          ? `Routed via Jev Router to ${targetName}`
+          : "Routing via Jev Router…";
+      }
+      return `Routed to ${targetName} · ${buildSummaryText(toolCalls, anyStreaming)}`;
+    }
+    return buildSummaryText(toolCalls, anyStreaming);
+  }, [isAutoRouter, routedModel, isStreaming, toolCalls, anyStreaming]);
 
   const artifactPreviews = useMemo(() => {
     return toolCalls
@@ -492,7 +597,6 @@ export function ToolCallGroup({ toolCalls, isStreaming }: ToolCallGroupProps) {
 
   return (
     <div className="my-1.5">
-      {/* Collapsed header */}
       <button
         onClick={() => setIsOpen((o) => !o)}
         className="flex items-center gap-1 text-sm text-text-secondary hover:text-foreground transition-colors duration-150"
@@ -505,9 +609,16 @@ export function ToolCallGroup({ toolCalls, isStreaming }: ToolCallGroupProps) {
         )}
       </button>
 
-      {/* Expanded rows */}
       {isOpen && (
         <div className="mt-2 ml-1">
+          {isAutoRouter && (
+            <RoutingRow
+              routedModel={routedModel}
+              isStreaming={isStreaming && !routedModel}
+              showBottomLine={regularCalls.length > 0 || allDone}
+            />
+          )}
+
           {regularCalls.map((tc, i) => {
             const isLast = i === regularCalls.length - 1;
             const showBottomLine = !isLast || allDone;

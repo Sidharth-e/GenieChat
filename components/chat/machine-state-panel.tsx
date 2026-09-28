@@ -14,13 +14,18 @@ import {
   FileText,
   Clock,
   Sparkles,
+  ArrowRightLeft,
 } from "lucide-react";
 import { useMachineStateStore, useChatSettings, useDraftStore } from "@/lib/stores";
 import { useThreadMessages } from "@/hooks/use-threads-queries";
 import { useAgents } from "@/hooks/use-agents-queries";
 import { useModels } from "@/hooks/use-models-queries";
 import { defaultSystemPrompt } from "@/constants/prompt";
-import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
+import {
+  AVAILABLE_MODELS,
+  JEV_ROUTER_MODEL_ID,
+  formatModelName,
+} from "@/lib/langchain/model-config";
 import { ModelConfig } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +62,7 @@ export function MachineStatePanel() {
     machineStatus,
     liveToolName,
     liveTokens,
+    liveRoutedModel,
     liveAuditLogs,
     activeMessages,
     activeThreadId,
@@ -331,10 +337,13 @@ export function MachineStatePanel() {
           ? `${msg.tokens.prompt + msg.tokens.completion} tokens (${msg.tokens.prompt} in / ${msg.tokens.completion} out)`
           : undefined;
 
+        const routedInfo = msg.routedModel
+          ? ` → ${formatModelName(msg.routedModel)}`
+          : "";
         history.push({
           id: `asst-${msg.id}`,
           time: timeStr,
-          action: `Generated response (${msg.model || activeModel.name})`,
+          action: `Generated response (${msg.model || activeModel.name}${routedInfo})`,
           detail: tokenText,
           type: "model",
         });
@@ -470,6 +479,20 @@ export function MachineStatePanel() {
               <p className="text-tertiary/50 text-[10px] line-clamp-2 leading-relaxed">
                 {activeModel.description}
               </p>
+            )}
+
+            {(activeModel.id === JEV_ROUTER_MODEL_ID || Boolean(liveRoutedModel)) && (
+              <div className="flex items-center justify-between rounded-xs border border-primary/20 bg-primary/10 px-2 py-1.5 text-[10px]">
+                <span className="text-primary font-medium flex items-center gap-1">
+                  <ArrowRightLeft className="w-3 h-3" />
+                  Routed Target
+                </span>
+                <span className="text-foreground font-semibold truncate max-w-[150px]">
+                  {liveRoutedModel
+                    ? formatModelName(liveRoutedModel)
+                    : "Routing…"}
+                </span>
+              </div>
             )}
 
             <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[9px] text-tertiary/50">

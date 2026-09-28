@@ -50,6 +50,7 @@ function seedVersionsFromMessage(message: Message & Partial<Pick<MessageVersion,
       versionId: message.versionId || generateId(),
       content: message.content,
       model: message.model,
+      routedModel: message.routedModel,
       agentId: message.agentId,
       agentName: message.agentName,
       toolCalls: message.toolCalls,
@@ -65,11 +66,11 @@ function seedVersionsFromMessage(message: Message & Partial<Pick<MessageVersion,
   ];
 }
 
-  function applyActiveVersion(
+function applyActiveVersion(
   message: Message,
   versions: Message["versions"],
   activeVersionIndex: number,
-  ): Message {
+): Message {
   const clampedIndex = Math.min(
     Math.max(activeVersionIndex, 0),
     Math.max(versions.length - 1, 0),
@@ -80,6 +81,7 @@ function seedVersionsFromMessage(message: Message & Partial<Pick<MessageVersion,
     ...message,
     content: activeVersion.content,
     model: activeVersion.model,
+    routedModel: activeVersion.routedModel,
     agentId: activeVersion.agentId,
     agentName: activeVersion.agentName,
     toolCalls: activeVersion.toolCalls,
@@ -91,18 +93,19 @@ function seedVersionsFromMessage(message: Message & Partial<Pick<MessageVersion,
     versions,
     activeVersionIndex: clampedIndex,
   };
-  }
+}
 
-  function appendVersionToMessage(
+function appendVersionToMessage(
   message: Message,
   version: MessageVersionInput,
-  ): Message {
+): Message {
   const versions = seedVersionsFromMessage(message);
   const now = new Date().toISOString();
   const nextVersion: MessageVersion = {
     versionId: version.versionId || generateId(),
     content: version.content,
     model: version.model,
+    routedModel: version.routedModel,
     agentId: version.agentId,
     agentName: version.agentName,
     toolCalls: version.toolCalls,
@@ -114,7 +117,8 @@ function seedVersionsFromMessage(message: Message & Partial<Pick<MessageVersion,
     pairedUserVersionId: version.pairedUserVersionId,
     pairedAssistantVersionId: version.pairedAssistantVersionId,
     createdAt: version.createdAt || now,
-  };  const nextVersions = [...versions, nextVersion];
+  };
+  const nextVersions = [...versions, nextVersion];
   return applyActiveVersion(message, nextVersions, nextVersions.length - 1);
 }
 

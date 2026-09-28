@@ -44,6 +44,7 @@ function seedVersionsFromMessage(message: MessageCreateInput & { createdAt?: str
             versionId: message.versionId || generateId(),
             content: message.content,
             model: message.model,
+            routedModel: message.routedModel,
             agentId: message.agentId,
             agentName: message.agentName,
             toolCalls: message.toolCalls,
@@ -59,56 +60,59 @@ function seedVersionsFromMessage(message: MessageCreateInput & { createdAt?: str
     ];
 }
 
-            function applyActiveVersion(
-            message: Message,
-            versions: Message["versions"],
-            activeVersionIndex: number
-            ): Message {
-            const clampedIndex = Math.min(
-            Math.max(activeVersionIndex, 0),
-            Math.max(versions.length - 1, 0)
-            );
-            const activeVersion = versions[clampedIndex];
+function applyActiveVersion(
+    message: Message,
+    versions: Message["versions"],
+    activeVersionIndex: number
+): Message {
+    const clampedIndex = Math.min(
+        Math.max(activeVersionIndex, 0),
+        Math.max(versions.length - 1, 0)
+    );
+    const activeVersion = versions[clampedIndex];
 
-            return {
-            ...message,
-            content: activeVersion.content,
-            model: activeVersion.model,
-            agentId: activeVersion.agentId,
-            agentName: activeVersion.agentName,
-            toolCalls: activeVersion.toolCalls,
-            documents: activeVersion.documents,
-            images: activeVersion.images,
-            tokens: activeVersion.tokens,
-            citations: activeVersion.citations,
-            researchReport: activeVersion.researchReport,
-            versions,
-            activeVersionIndex: clampedIndex,
-            };
-            }
+    return {
+        ...message,
+        content: activeVersion.content,
+        model: activeVersion.model,
+        routedModel: activeVersion.routedModel,
+        agentId: activeVersion.agentId,
+        agentName: activeVersion.agentName,
+        toolCalls: activeVersion.toolCalls,
+        documents: activeVersion.documents,
+        images: activeVersion.images,
+        tokens: activeVersion.tokens,
+        citations: activeVersion.citations,
+        researchReport: activeVersion.researchReport,
+        versions,
+        activeVersionIndex: clampedIndex,
+    };
+}
 
-            function appendVersionToMessage(
-            message: Message,
-            version: MessageVersionInput
-            ): Message {
-            const versions = seedVersionsFromMessage(message);
-            const now = new Date().toISOString();
-            const nextVersion: MessageVersion = {
-            versionId: version.versionId || generateId(),
-            content: version.content,
-            model: version.model,
-            agentId: version.agentId,
-            agentName: version.agentName,
-            toolCalls: version.toolCalls,
-            documents: version.documents,
-            images: version.images,
-            tokens: version.tokens,
-            citations: version.citations,
-            researchReport: version.researchReport,
-            pairedUserVersionId: version.pairedUserVersionId,
-            pairedAssistantVersionId: version.pairedAssistantVersionId,
-            createdAt: version.createdAt || now,
-            };    const nextVersions = [...versions, nextVersion];
+function appendVersionToMessage(
+    message: Message,
+    version: MessageVersionInput
+): Message {
+    const versions = seedVersionsFromMessage(message);
+    const now = new Date().toISOString();
+    const nextVersion: MessageVersion = {
+        versionId: version.versionId || generateId(),
+        content: version.content,
+        model: version.model,
+        routedModel: version.routedModel,
+        agentId: version.agentId,
+        agentName: version.agentName,
+        toolCalls: version.toolCalls,
+        documents: version.documents,
+        images: version.images,
+        tokens: version.tokens,
+        citations: version.citations,
+        researchReport: version.researchReport,
+        pairedUserVersionId: version.pairedUserVersionId,
+        pairedAssistantVersionId: version.pairedAssistantVersionId,
+        createdAt: version.createdAt || now,
+    };
+    const nextVersions = [...versions, nextVersion];
     return applyActiveVersion(message, nextVersions, nextVersions.length - 1);
 }
 

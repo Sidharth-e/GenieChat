@@ -2,11 +2,15 @@
 
 import { motion } from "framer-motion";
 import { usePathname } from "next/navigation";
-import { Settings2 } from "lucide-react";
+import { Settings2, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMachineStateStore } from "@/lib/stores";
 import { useThreads } from "@/hooks/use-threads-queries";
 import { useAgents } from "@/hooks/use-agents-queries";
+import {
+  formatModelName,
+  JEV_ROUTER_MODEL_ID,
+} from "@/lib/langchain/model-config";
 
 interface HeaderProps {
   inlineOnMobile?: boolean;
@@ -14,8 +18,12 @@ interface HeaderProps {
 
 export function Header({ inlineOnMobile = false }: HeaderProps) {
   const pathname = usePathname();
-  const { isOpen: isMachineStateOpen, toggle: toggleMachineState } =
-    useMachineStateStore();
+  const {
+    isOpen: isMachineStateOpen,
+    toggle: toggleMachineState,
+    liveRoutedModel,
+    liveTokens,
+  } = useMachineStateStore();
 
   const chatMatch = pathname?.match(/^\/chat\/([^/]+)/);
   const agentChatMatch = pathname?.match(/^\/agent-chat\/([^/]+)(?:\/([^/]+))?/);
@@ -43,6 +51,10 @@ export function Header({ inlineOnMobile = false }: HeaderProps) {
   const threadTitle =
     currentThread?.title ||
     (currentAgent ? currentAgent.name : "Conversation");
+
+  const isAutoMode =
+    currentThread?.model === JEV_ROUTER_MODEL_ID ||
+    Boolean(liveRoutedModel);
 
   return (
     <motion.div
@@ -73,6 +85,31 @@ export function Header({ inlineOnMobile = false }: HeaderProps) {
             visible: { transition: { staggerChildren: 0.05 } },
           }}
         >
+          {isAutoMode && (
+            <motion.button
+              variants={{
+                hidden: { opacity: 0, y: -4 },
+                visible: { opacity: 1, y: 0 },
+              }}
+              transition={{ duration: 0.2 }}
+              onClick={() => toggleMachineState()}
+              className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/15 transition-colors cursor-pointer"
+              title="System Telemetry"
+            >
+              <Box className="h-3 w-3 shrink-0" />
+              <span className="truncate max-w-[130px] sm:max-w-[200px]">
+                {liveRoutedModel
+                  ? `Auto → ${formatModelName(liveRoutedModel)}`
+                  : "Auto Mode"}
+              </span>
+              {liveTokens && liveTokens.total > 0 && (
+                <span className="text-[10px] opacity-75 font-mono">
+                  {liveTokens.total}t
+                </span>
+              )}
+            </motion.button>
+          )}
+
           <motion.button
             variants={{
               hidden: { opacity: 0, y: -4 },

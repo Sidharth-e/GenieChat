@@ -37,6 +37,7 @@ type UnifiedStreamEvent =
       totalTokens: number;
     }
   | { type: "citations"; citations: string[] }
+  | { type: "model_resolved"; routedModel: string }
   | { type: "error"; error: string };
 
 async function* streamAssistantEvents(params: {
@@ -81,6 +82,8 @@ async function* streamAssistantEvents(params: {
       };
     } else if (event.type === "citations") {
       yield { type: "citations", citations: event.citations };
+    } else if (event.type === "model_resolved") {
+      yield { type: "model_resolved", routedModel: event.routedModel };
     }
   }
 }
@@ -151,7 +154,7 @@ export async function POST(req: NextRequest) {
         })()
       : Promise.resolve([]);
 
-    let customToolsForAI: ReturnType<typeof convertCustomToolsToLangChain> = [];
+    const customToolsForAI: ReturnType<typeof convertCustomToolsToLangChain> = [];
 
     if (memoryEnabled) {
       customToolsForAI.push(
@@ -179,6 +182,7 @@ export async function POST(req: NextRequest) {
             totalTokens: 0,
           };
           let citations: string[] = [];
+          let resolvedRoutedModel: string | undefined;
 
           if (isNewThread) {
             writeEvent({ type: "thread", threadId: currentThreadId });
@@ -276,6 +280,12 @@ export async function POST(req: NextRequest) {
               } else if (event.type === "citations") {
                 citations = event.citations;
                 writeEvent({ type: "citations", citations: event.citations });
+              } else if (event.type === "model_resolved") {
+                resolvedRoutedModel = event.routedModel;
+                writeEvent({
+                  type: "model_resolved",
+                  routedModel: event.routedModel,
+                });
               } else if (event.type === "error") {
                 throw new Error(event.error);
               }
@@ -304,6 +314,7 @@ export async function POST(req: NextRequest) {
             versionId: pairedAssistantVersionId,
             content: fullResponse,
             model,
+            routedModel: resolvedRoutedModel,
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             tokens:
               tokenUsage.totalTokens > 0

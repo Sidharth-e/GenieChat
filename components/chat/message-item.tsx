@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Box, ArrowRight } from "lucide-react";
 import { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AttachedDocuments, AttachedImages } from "./message-attachments";
@@ -11,7 +11,11 @@ import { MessageActions } from "@/components/common/message-actions";
 import { DeepResearchReportCard } from "./deep-research-report-card";
 import { ChatLoadingIndicator } from "./chat-loading-indicator";
 import { ArenaComparisonView } from "./arena-comparison-view";
-import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
+import {
+  AVAILABLE_MODELS,
+  JEV_ROUTER_MODEL_ID,
+  formatModelName,
+} from "@/lib/langchain/model-config";
 
 const AGENT_BADGE_COLORS = [
   "border-blue-500 bg-blue-500",
@@ -104,6 +108,7 @@ function MessageItemComponent({
         versionId: `legacy-${message.id}`,
         content: message.content,
         model: message.model,
+        routedModel: message.routedModel,
         toolCalls: message.toolCalls,
         documents: message.documents,
         images: message.images,
@@ -156,6 +161,7 @@ function MessageItemComponent({
           ...selectedVersion,
           content: message.content,
           model: selectedVersion.model ?? message.model,
+          routedModel: selectedVersion.routedModel ?? message.routedModel,
           toolCalls: selectedVersion.toolCalls ?? message.toolCalls,
           documents: selectedVersion.documents ?? message.documents,
           images: selectedVersion.images ?? message.images,
@@ -170,6 +176,7 @@ function MessageItemComponent({
       ...message,
       content: resolvedVersion.content,
       model: resolvedVersion.model,
+      routedModel: resolvedVersion.routedModel,
       toolCalls: resolvedVersion.toolCalls,
       documents: resolvedVersion.documents,
       images: resolvedVersion.images,
@@ -275,6 +282,27 @@ function MessageItemComponent({
                 {name}
               </span>
               {(() => {
+                if (displayMessage.model === JEV_ROUTER_MODEL_ID || displayMessage.routedModel) {
+                  return (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[0.6875rem] font-medium text-primary">
+                      <Box className="h-3 w-3 shrink-0" />
+                      <span>Auto</span>
+                      {displayMessage.routedModel ? (
+                        <>
+                          <ArrowRight className="h-2.5 w-2.5 shrink-0 opacity-70" />
+                          <span className="font-semibold">
+                            {formatModelName(displayMessage.routedModel)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="opacity-70">
+                          {isStreaming ? "Routing…" : "Mode"}
+                        </span>
+                      )}
+                    </span>
+                  );
+                }
+
                 const modelLabel = isArenaVoted && displayMessage.arenaMetadata?.winnerId
                   ? (AVAILABLE_MODELS.find((m) => m.id === displayMessage.arenaMetadata!.winnerId)?.name
                     || displayMessage.arenaMetadata.winnerId)
@@ -299,12 +327,18 @@ function MessageItemComponent({
           />
 
           {!isUser &&
-            displayMessage.toolCalls &&
-            displayMessage.toolCalls.length > 0 && (
+            ((displayMessage.toolCalls && displayMessage.toolCalls.length > 0) ||
+              displayMessage.model === JEV_ROUTER_MODEL_ID ||
+              Boolean(displayMessage.routedModel)) && (
               <div className="mt-1">
                 <ToolCallGroup
-                  toolCalls={displayMessage.toolCalls}
+                  toolCalls={displayMessage.toolCalls || []}
                   isStreaming={isStreaming}
+                  routedModel={displayMessage.routedModel}
+                  isAutoRouter={
+                    displayMessage.model === JEV_ROUTER_MODEL_ID ||
+                    Boolean(displayMessage.routedModel)
+                  }
                 />
               </div>
             )}

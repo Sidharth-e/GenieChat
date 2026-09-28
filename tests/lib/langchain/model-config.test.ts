@@ -5,6 +5,7 @@ import {
   DEFAULT_MAX_INPUT_CHARS,
   DEFAULT_MODEL_ID,
   JEV_ROUTER_MODEL_ID,
+  formatModelName,
 } from "@/lib/langchain/model-config";
 
 describe("getModelMaxInputChars", () => {
@@ -91,5 +92,19 @@ describe("AVAILABLE_MODELS", () => {
     const jev = openrouterModels.find((m) => m.id === JEV_ROUTER_MODEL_ID);
     expect(jev?.model).toBe("typesafe/jev-router");
     expect(jev?.supportsStreaming).toBe(true);
+  });
+});
+
+describe("formatModelName", () => {
+  it("formats known model IDs from AVAILABLE_MODELS", () => {
+    expect(formatModelName(JEV_ROUTER_MODEL_ID)).toBe("Jev Router (Auto)");
+    expect(formatModelName("gemini-3.8-flash")).toBe("Gemini 3.8 Flash");
+  });
+
+  it("formats unknown or downstream model paths gracefully", () => {
+    expect(formatModelName("anthropic/claude-3.5-sonnet")).toBe("Claude 3.5 Sonnet");
+    expect(formatModelName("openai/gpt-4o")).toBe("Gpt 4o");
+    expect(formatModelName("")).toBe("");
+    expect(formatModelName(undefined)).toBe("");
   });
 });

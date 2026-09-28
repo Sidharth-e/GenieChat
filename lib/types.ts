@@ -84,6 +84,7 @@ export interface MessageVersion {
   versionId: string;
   content: string;
   model?: string;
+  routedModel?: string;
   agentId?: string;
   agentName?: string;
   toolCalls?: ToolCall[];
@@ -121,6 +122,7 @@ export interface Message {
   // Active version content (denormalized for fast reads)
   content: string;
   model?: string;
+  routedModel?: string;
   toolCalls?: ToolCall[];
   documents?: DocumentReference[];
   images?: ImageReference[];

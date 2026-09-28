@@ -645,3 +645,19 @@ export function getModelMaxInputChars(modelId: string): number {
     )?.maxInputChars ?? DEFAULT_MAX_INPUT_CHARS
   );
 }
+
+export function formatModelName(modelId?: string): string {
+  if (!modelId) return "";
+  const found = AVAILABLE_MODELS.find(
+    (m) => m.id === modelId || m.model === modelId,
+  );
+  if (found) return found.name;
+
+  const parts = modelId.split("/");
+  const rawName = parts[parts.length - 1] || modelId;
+  return rawName
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
