@@ -57,6 +57,16 @@ export async function convertDocument(
   return convertViaDocling(buffer, fileName);
 }
 
+function countPdfPages(buffer: Buffer): number {
+  try {
+    const str = buffer.toString("binary");
+    const matches = str.match(/\/Type\s*\/Page\b/g);
+    return matches ? matches.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function convertViaDocling(
   buffer: Buffer,
   fileName: string,
@@ -141,7 +151,16 @@ async function convertViaDocling(
       );
     }
 
-    return mapConversionResponse(await response.json(), fileName);
+    const mapped = mapConversionResponse(await response.json(), fileName);
+    if (mapped.status === "ERROR" && fileName.toLowerCase().endsWith(".pdf")) {
+      const pageCount = countPdfPages(buffer);
+      if (pageCount > 100) {
+        return errorResult(
+          `Document has ${pageCount} pages, which exceeds the maximum supported limit (100 pages). Please upload a smaller document.`,
+        );
+      }
+    }
+    return mapped;
   } catch (error) {
     const message =
       error instanceof Error && error.name === "AbortError"

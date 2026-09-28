@@ -102,16 +102,30 @@ export async function POST(request: NextRequest) {
         // it finds in `agent.documents`.
         ragFormData.append("documentId", documentId);
 
+        let indexFailed = false;
+        let indexErrorMessage = "Failed to index document for knowledge base";
+
         try {
             const { CrackDocument } = await import("@/lib/knowledge/documents");
             const indexResult = await CrackDocument(ragFormData);
             if (indexResult.status === "OK") {
                 logger.info(`[AgentFiles] Successfully indexed document for agent ${agentId}`);
             } else {
+                indexFailed = true;
+                indexErrorMessage = indexResult.errors?.[0]?.message || indexErrorMessage;
                 logger.error({ err: indexResult.errors }, `[AgentFiles] Failed to index document for agent ${agentId}`);
             }
         } catch (err) {
-            logger.error({ err: err }, "[AgentFiles] Error indexing document");
+            indexFailed = true;
+            indexErrorMessage = err instanceof Error ? err.message : indexErrorMessage;
+            logger.error({ err }, "[AgentFiles] Error indexing document");
+        }
+
+        if (indexFailed) {
+            await deleteObject(uploadResult.response).catch((delErr) => {
+                logger.error({ err: delErr }, "[AgentFiles] Failed to clean up object after indexing failure");
+            });
+            return api.error(indexErrorMessage, 422);
         }
 
         const existingDocuments = agent.documents || [];
@@ -183,19 +197,30 @@ export async function DELETE(request: NextRequest) {
         // `DeleteChatDocument` clears both stores, and it finds them because the
         // upload indexed under this same `documentId`.
         //
-        // Deliberately before the agent's document list is pruned: if this
-        // fails, the file stays listed and the user can retry, and the retry is
+        // Deliberately before the agent's document list is pruned: a genuine
+        // failure leaves the file listed so the user can retry, and the retry is
         // safe because the object delete above tolerates an already-missing
-        // object.
+        // object. What must NOT retain the file is the absence of a document row
+        // -- the shape an upload has when docling could not parse it, since the
+        // file is attached either way. The object is already gone by this point,
+        // so retaining it there would strand the entry with nothing left to
+        // clear and fail every retry the same way.
         try {
             const { DeleteChatDocument } = await import("@/lib/knowledge/documents");
+            const { decideAgentDocumentDelete } = await import("@/lib/knowledge/types");
             const forgotten = await DeleteChatDocument("", documentId);
-            if (forgotten.status !== "OK") {
+            if (decideAgentDocumentDelete(forgotten.status) === "retain") {
                 logger.error(
-                    { err: forgotten.errors },
+                    { forgotten },
                     `[AgentFiles] Failed to delete the document and chunks for ${documentId}`,
                 );
                 return api.serverError("Failed to delete document");
+            }
+            if (forgotten.status === "NOT_FOUND") {
+                logger.info(
+                    { documentId },
+                    "[AgentFiles] No document row to clear; the file was attached without being indexed",
+                );
             }
         } catch (err) {
             logger.error({ err }, `[AgentFiles] Error deleting document ${documentId}`);

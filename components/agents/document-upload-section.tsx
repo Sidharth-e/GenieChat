@@ -2,7 +2,7 @@
 
 import { logger } from "@/lib/logger";
 import { useEffect, useRef, useState } from "react";
-import { FileText, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
+import { AlertCircle, FileText, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AgentDocument } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -492,12 +492,13 @@ export function DocumentUploadSection({
 
       {/* Error Message */}
       {uploadError && (
-        <div className="flex items-center gap-2 text-sm text-red-500 bg-red-500/10 p-2 rounded-lg">
-          <X className="h-4 w-4 shrink-0" />
-          <span>{uploadError}</span>
+        <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 p-2.5 rounded-lg">
+          <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+          <span className="flex-1 text-xs sm:text-sm font-medium leading-tight">{uploadError}</span>
           <button
+            type="button"
             onClick={() => setUploadError(null)}
-            className="ml-auto hover:text-red-400"
+            className="ml-auto p-1 rounded hover:bg-destructive/15 text-destructive/80 hover:text-destructive transition-colors"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -517,22 +518,29 @@ export function DocumentUploadSection({
                 <p className="text-sm font-medium text-tertiary truncate">
                   {doc.fileName}
                 </p>
-                <p className="text-xs text-tertiary/40">
-                  {formatFileSize(doc.fileSize)}
+                <div className="text-xs text-tertiary/40 flex items-center gap-1.5 flex-wrap">
+                  <span>{formatFileSize(doc.fileSize)}</span>
                   {doc.id.startsWith("pending-") && (
-                    <span className="ml-2 text-yellow-500">
+                    <span className="text-amber-500 font-medium">
                       (will upload on save)
                     </span>
                   )}
-                </p>
+                  {doc.status === "failed" && (
+                    <span className="inline-flex items-center gap-1 text-destructive font-medium">
+                      <AlertCircle className="h-3 w-3" />
+                      {doc.error || "Indexing failed"}
+                    </span>
+                  )}
+                </div>
               </div>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(doc.id);
                 }}
                 disabled={deletingId === doc.id}
-                className="p-1.5 rounded-md text-tertiary/40 hover:text-red-500 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                className="p-1.5 rounded-md text-tertiary/40 hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
               >
                 {deletingId === doc.id ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

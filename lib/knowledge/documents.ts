@@ -295,13 +295,25 @@ export const DeleteChatDocument = async (
       };
     }
 
+    // Propagated rather than flattened to ERROR, because the two mean different
+    // things to the caller: a missing row says there was nothing to clear, while
+    // ERROR says the clear failed. The agent file delete treats the first as the
+    // success it is (`decideAgentDocumentDelete`); turning it into an ERROR here
+    // is what made a file that was stored but never indexed impossible to remove.
+    if (chatDocument.status === "NOT_FOUND") {
+      return {
+        status: "NOT_FOUND",
+        errors: [
+          {
+            message: `Chat document not found: ${documentID}`,
+          },
+        ],
+      };
+    }
+
     return {
       status: "ERROR",
-      errors: [
-        {
-          message: `Chat document not found`,
-        },
-      ]
+      errors: chatDocument.errors,
     };
   } catch (error) {
     return {

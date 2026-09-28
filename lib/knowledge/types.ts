@@ -1,4 +1,5 @@
 import type { KnowledgeOwnerType } from "@/constants/knowledge";
+import type { ServerActionResponse } from "@/lib/types";
 
 export type { KnowledgeOwnerType };
 
@@ -68,4 +69,23 @@ export interface ChatCitationModel {
   createdAt: Date;
   type: string;
   content: KnowledgeHit;
+}
+
+/**
+ * What an agent's file entry should do once `DeleteChatDocument` has run for it.
+ *
+ * `NOT_FOUND` counts as success, and that is the whole point of this function:
+ * the upload route attaches a file to the agent whether or not its text could be
+ * parsed and indexed, so "listed, with no `documents` row" is a state the upload
+ * path creates deliberately. The stored object is deleted *before* this runs, so
+ * treating that state as a failure leaves the entry listed with nothing left to
+ * clear -- every retry fails the same way and the file can never be removed.
+ *
+ * Only `ERROR` -- the document store or the chunk delete genuinely failing --
+ * retains the entry, which is what keeps the retry meaningful.
+ */
+export function decideAgentDocumentDelete(
+  outcome: ServerActionResponse<boolean>["status"],
+): "prune" | "retain" {
+  return outcome === "ERROR" ? "retain" : "prune";
 }

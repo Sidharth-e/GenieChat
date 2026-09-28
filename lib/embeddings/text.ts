@@ -86,7 +86,19 @@ export function parseContextLengthError(
       getErrorMessage(error),
     );
   if (!match) return null;
-  return { limit: Number(match[1]), requested: Number(match[2]) };
+
+  // A count too large for a double parses to `Infinity`, and returning that
+  // would be worse than returning nothing: the caller turns the pair into a
+  // shrink ratio, `Infinity / Infinity` is `NaN`, and a `NaN` ratio makes
+  // `shrinkTextForRetry` slice the text to `""` -- which would then be embedded
+  // and stored as the vector for non-empty content. No provider reports such a
+  // number, but the cost of being wrong is a silently wrong vector, so the
+  // guard stays.
+  const limit = Number(match[1]);
+  const requested = Number(match[2]);
+  if (!Number.isFinite(limit) || !Number.isFinite(requested)) return null;
+
+  return { limit, requested };
 }
 
 /**

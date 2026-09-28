@@ -100,6 +100,19 @@ describe("parseContextLengthError", () => {
   it("returns null for an unrelated error", () => {
     expect(parseContextLengthError(new Error("boom"))).toBeNull();
   });
+
+  // A count too large for a double parses to Infinity. Infinity/Infinity is NaN,
+  // and a NaN ratio makes `shrinkTextForRetry` return `""` -- which would be
+  // embedded and stored as the vector for non-empty content. Unreachable against
+  // a real provider, but it is the silently-wrong-vector class the width policy
+  // exists to prevent, so the guard that used to be here is restored.
+  it("returns null when a count overflows to Infinity", () => {
+    const huge = "9".repeat(400);
+    const error = new Error(
+      `This model's maximum context length is ${huge} tokens. However, you requested ${huge} tokens`,
+    );
+    expect(parseContextLengthError(error)).toBeNull();
+  });
 });
 
 describe("isContextLengthError", () => {

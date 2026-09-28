@@ -191,6 +191,8 @@ export interface AgentDocument {
   /** `s3://bucket/key`. Stored; carries no authority. */
   ref: string;
   uploadedAt: string;
+  status?: "indexed" | "failed" | "pending";
+  error?: string;
 }
 
 // Chat Attachment type (for files uploaded during chat input)

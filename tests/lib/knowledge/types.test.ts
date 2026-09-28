@@ -3,10 +3,11 @@ import {
   CHAT_CITATION_ATTRIBUTE,
   KNOWLEDGE_OWNER_TYPES,
 } from "@/constants/knowledge";
-import type {
-  ChatCitationModel,
-  KnowledgeChunkInput,
-  KnowledgeHit,
+import {
+  decideAgentDocumentDelete,
+  type ChatCitationModel,
+  type KnowledgeChunkInput,
+  type KnowledgeHit,
 } from "@/lib/knowledge/types";
 
 describe("knowledge types", () => {
@@ -67,5 +68,23 @@ describe("knowledge types", () => {
       },
     };
     expect(citation.content.id).toBe("chunk-1");
+  });
+});
+
+describe("decideAgentDocumentDelete", () => {
+  it("prunes the agent's entry once the document and its chunks were cleared", () => {
+    expect(decideAgentDocumentDelete("OK")).toBe("prune");
+  });
+
+  // The regression this pins: the stored object is deleted before this runs, so
+  // retaining the entry leaves a file that can never be removed -- every retry
+  // fails the same way. "No document row" is a state the upload path creates on
+  // purpose, by attaching a file it could not parse.
+  it("prunes when there was no document row to clear", () => {
+    expect(decideAgentDocumentDelete("NOT_FOUND")).toBe("prune");
+  });
+
+  it("retains the entry on a real failure, so the retry can succeed", () => {
+    expect(decideAgentDocumentDelete("ERROR")).toBe("retain");
   });
 });
