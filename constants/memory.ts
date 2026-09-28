@@ -67,6 +67,22 @@ export const MEMORY_CATEGORIES: Set<MemoryCategory> = new Set([
 /** Carried over from the retired `vector-memory-store.ts`, unchanged. */
 export const MEMORY_EDGE_THRESHOLD = 0.2;
 export const MEMORY_EDGE_NEIGHBOR_LIMIT = 12;
+
+/**
+ * How many existing memories a write scores a new one against when deriving
+ * `RELATES_TO`. `MEMORY_EDGE_NEIGHBOR_LIMIT` bounds the edges *kept*; this
+ * bounds the candidates considered, and exists because scoring against the whole
+ * corpus per write is O(n) — the cost §7.2 claims the deterministic layer does
+ * not have.
+ *
+ * The neighbour read orders by `createdAt DESC` before applying this limit. A
+ * bare `LIMIT` over an unordered `MATCH` would take an arbitrary sample, which
+ * is the same defect as D1 wearing different clothes: whether two related
+ * memories get linked would depend on the order the store happened to return
+ * them in.
+ */
+export const MEMORY_EDGE_CANDIDATE_LIMIT = 200;
+
 export const MEMORY_SEED_MULTIPLIER = 3;
 export const MEMORY_MIN_TOKEN_LENGTH = 3;
 export const MEMORY_MAX_CONCEPT_FEATURES = 24;
