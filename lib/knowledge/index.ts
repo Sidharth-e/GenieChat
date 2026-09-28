@@ -10,6 +10,7 @@ import { generateEmbedding } from "@/lib/embeddings";
 import { getPostgresClient } from "@/lib/postgres/client";
 import { toVectorLiteral } from "@/lib/postgres/vector";
 import { logger } from "@/lib/logger";
+import { embedChunkRows } from "./embed";
 import type { IndexChunksParams, KnowledgeOwnerType } from "./types";
 
 /**
@@ -29,13 +30,28 @@ import type { IndexChunksParams, KnowledgeOwnerType } from "./types";
  *
  * Zero chunks is a valid input and still clears what the same scope covered: an
  * empty document must leave nothing behind, not leave the previous version.
+ *
+ * Embedding happens before the transaction opens, not inside it: the delete
+ * below holds row locks on this owner, and a long document would hold them
+ * across one HTTP round trip per chunk. See `embedChunkRows`.
  */
 export async function indexChunks(params: IndexChunksParams): Promise<number> {
   const { ownerType, ownerId, userId, sourceId, title, contents } = params;
   const shouldEmbed = params.embed ?? true;
   const pool = await getPostgresClient();
-  const client = await pool.connect();
 
+  const { rows, failures } = await embedChunkRows(
+    contents,
+    shouldEmbed ? generateEmbedding : undefined,
+  );
+  for (const failure of failures) {
+    logger.error(
+      { err: failure.error, ownerType, ownerId, chunkIndex: failure.chunkIndex },
+      "Failed to embed chunk; storing it without a vector",
+    );
+  }
+
+  const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query(DELETE_CHUNKS_FOR_OWNER_SQL, [
@@ -44,24 +60,7 @@ export async function indexChunks(params: IndexChunksParams): Promise<number> {
       sourceId ?? null,
     ]);
 
-    let inserted = 0;
-    for (let index = 0; index < contents.length; index += 1) {
-      const content = contents[index].trim();
-      if (!content) continue;
-
-      let embedding: number[] | null = null;
-      if (shouldEmbed) {
-        try {
-          embedding = await generateEmbedding(content);
-        } catch (error) {
-          // A knowledge base that is searchable lexically beats a failed upload.
-          logger.error(
-            { err: error, ownerType, ownerId, chunkIndex: index },
-            "Failed to embed chunk; storing it without a vector",
-          );
-        }
-      }
-
+    for (const row of rows) {
       await client.query(INSERT_CHUNK_SQL, [
         randomUUID(),
         ownerType,
@@ -69,19 +68,18 @@ export async function indexChunks(params: IndexChunksParams): Promise<number> {
         userId,
         sourceId ?? null,
         title ?? null,
-        index,
-        content,
-        embedding ? toVectorLiteral(embedding) : null,
+        row.chunkIndex,
+        row.content,
+        row.embedding ? toVectorLiteral(row.embedding) : null,
       ]);
-      inserted += 1;
     }
 
     await client.query("COMMIT");
     logger.info(
-      { ownerType, ownerId, inserted, cleared: true },
+      { ownerType, ownerId, inserted: rows.length, cleared: true },
       "Indexed knowledge chunks",
     );
-    return inserted;
+    return rows.length;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

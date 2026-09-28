@@ -1,8 +1,8 @@
 import "server-only";
 import { OllamaEmbeddings } from "@langchain/ollama";
-import { EMBEDDING_DIMENSIONS } from "@/constants/embeddings";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
+import { assertEmbeddingDimensions } from "./dimensions";
 import {
   estimateTokenCount,
   getErrorMessage,
@@ -12,6 +12,14 @@ import {
   shrinkTextForRetry,
   truncateByEstimatedTokenBudget,
 } from "./text";
+
+// Re-exported rather than redefined here: this layer is `"server-only"`, and the
+// assertion and its error type are pure, so they live where they can be tested.
+export {
+  EmbeddingDimensionError,
+  assertEmbeddingDimensions,
+  isEmbeddingDimensionError,
+} from "./dimensions";
 
 function getEmbeddingsInstance(): OllamaEmbeddings {
   const model = config.ollama.embeddingModel;
@@ -41,18 +49,6 @@ function getEmbeddingsInstance(): OllamaEmbeddings {
     truncate: true,
     maxRetries: 3,
   });
-}
-
-export function assertEmbeddingDimensions(
-  embedding: number[],
-  context: string,
-): void {
-  if (embedding.length !== EMBEDDING_DIMENSIONS) {
-    throw new Error(
-      `${context}: embedding width ${embedding.length} does not match the index contract (${EMBEDDING_DIMENSIONS}). ` +
-        `Check OLLAMA_EMBEDDING_MODEL against EMBEDDING_DIMENSIONS.`,
-    );
-  }
 }
 
 export async function generateEmbedding(text: string): Promise<number[]> {
