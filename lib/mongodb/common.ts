@@ -22,7 +22,7 @@ import {
 } from "../types";
 import { Role } from "../rbac/types";
 import type { ArtifactType } from "../artifacts/types";
-import type { DocumentSearchResponse } from "../azure-ai-search/models";
+import type { KnowledgeHit } from "../knowledge/types";
 
 /** A stored document: the app-level shape plus Mongo's mandatory `_id`. */
 export type WithMongoId<T> = T & { _id: string };
@@ -244,7 +244,7 @@ export interface LogDocument {
 
 /**
  * The `CHAT_DOCUMENT` documents in the `documents` collection, ported from
- * `ChatDocumentModel` in `lib/azure-ai-search/models.ts`.
+ * `ChatDocumentModel` in `lib/knowledge/types.ts`.
  */
 export interface ChatDocument {
   id: string;
@@ -266,7 +266,7 @@ export interface ChatDocument {
 
 /**
  * The `CHAT_CITATION` documents in the `history` collection, ported from
- * `ChatCitationModel` in `lib/azure-ai-search/models.ts`. The `history`
+ * `ChatCitationModel` in `lib/knowledge/types.ts`. The `history`
  * collection is mixed-type (`message` / `CHAT_CITATION` / `ai_usage`) and each
  * shape has its own accessor — see `client.ts`.
  */
@@ -278,5 +278,5 @@ export interface ChatCitationDocument {
   createdAt: Date;
   /** `CHAT_CITATION`. Left as `string` to match `ChatCitationModel`. */
   type: string;
-  content: DocumentSearchResponse;
+  content: KnowledgeHit;
 }

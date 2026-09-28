@@ -10,7 +10,7 @@ import {
 import {
   CHAT_CITATION_ATTRIBUTE,
   CHAT_DOCUMENT_ATTRIBUTE,
-} from "@/lib/azure-ai-search/models";
+} from "@/constants/knowledge";
 
 // The type discriminators are imported from the model layer rather than spelled
 // out as string literals here. That module is pure constants and types with no
@@ -18,7 +18,7 @@ import {
 
 /**
  * The `CHAT_DOCUMENT` documents in the `documents` collection -- what
- * `lib/azure-ai-search/rag-services.ts` used to query, upsert and delete
+ * `lib/knowledge/documents.ts` used to query, upsert and delete
  * through the Cosmos `documents` container directly.
  */
 export class ChatDocumentStore {

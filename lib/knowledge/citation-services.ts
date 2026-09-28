@@ -1,9 +1,10 @@
-
+import "server-only";
 import { getSessionUser } from "@/lib/auth/get-session-user";
-import { ServerActionResponse } from "@/lib/types";
 import { ChatCitationStore } from "@/lib/mongodb/document-store";
 import { generateId } from "@/lib/utils";
-import { DocumentSearchResponse, CHAT_CITATION_ATTRIBUTE, ChatCitationModel } from "./models";
+import type { ServerActionResponse } from "@/lib/types";
+import { CHAT_CITATION_ATTRIBUTE } from "@/constants/knowledge";
+import type { ChatCitationModel, KnowledgeHit } from "./types";
 
 export const CreateCitation = async (
     model: ChatCitationModel
@@ -27,7 +28,7 @@ export const CreateCitation = async (
 // Create citations for the documents with a user as optional parameter
 // when calling this method from the extension, you must provide the user as the REST API does not have access to the user
 export const CreateCitations = async (
-    models: DocumentSearchResponse[],
+    models: KnowledgeHit[],
     userId?: string
 ): Promise<Array<ServerActionResponse<ChatCitationModel>>> => {
     const items: Array<Promise<ServerActionResponse<ChatCitationModel>>> = [];
@@ -45,7 +46,11 @@ export const CreateCitations = async (
             createdAt: new Date(),
             type: CHAT_CITATION_ATTRIBUTE,
             userId: currentUserId,
-            chatThreadId: model.document.chatThreadId || "",
+            // The Azure hit carried the thread id in its `document.metadata`;
+            // `KnowledgeHit` does not, and a hit cannot know which thread asked
+            // for it. Callers that need a citation tied to its thread must pass
+            // it in rather than reading it off the hit.
+            chatThreadId: "",
         });
 
         items.push(res);
@@ -83,22 +88,4 @@ export const FindCitationByID = async (
             errors: [{ message: `${error}` }],
         };
     }
-};
-
-export const FormatCitations = (citation: DocumentSearchResponse[]) => {
-    const withoutEmbedding: DocumentSearchResponse[] = [];
-    citation.forEach((d) => {
-        withoutEmbedding.push({
-            score: d.score,
-            document: {
-                metadata: d.document.metadata || d.document.title,
-                pageContent: d.document.pageContent || d.document.content || d.document.chunk,
-                chatThreadId: d.document.chatThreadId,
-                filename: d.document.filename || d.document.filepath,
-                // Ensure other required fields are present if defined in interface
-            },
-        });
-    });
-
-    return withoutEmbedding;
 };

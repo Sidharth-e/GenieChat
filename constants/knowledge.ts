@@ -4,6 +4,10 @@ export type KnowledgeOwnerType = (typeof KNOWLEDGE_OWNER_TYPES)[number];
 
 export const KNOWLEDGE_TABLE = "knowledge_chunks";
 
+/** Type discriminators for the mixed-type `documents` and `history` collections. */
+export const CHAT_DOCUMENT_ATTRIBUTE = "CHAT_DOCUMENT";
+export const CHAT_CITATION_ATTRIBUTE = "CHAT_CITATION";
+
 export const KNOWLEDGE_INDEX_NAMES = {
   owner: "knowledge_chunks_owner_idx",
   user: "knowledge_chunks_user_idx",
@@ -25,6 +29,63 @@ export const RRF_K = 60;
  */
 export const HNSW_M = 16;
 export const HNSW_EF_CONSTRUCTION = 64;
+
+/**
+ * The writer's replace statement, shared with scripts/check-knowledge.ts so the
+ * check exercises the real statement rather than a copy. `$3` is the source
+ * scope: NULL clears the whole owner, a value clears only that document's
+ * chunks — which is what keeps a thread's other documents searchable when one
+ * of them is re-uploaded.
+ */
+export const DELETE_CHUNKS_FOR_OWNER_SQL = `DELETE FROM ${KNOWLEDGE_TABLE}
+       WHERE owner_type = $1 AND owner_id = $2
+         AND ($3::text IS NULL OR source_id = $3)`;
+
+/** The same replace, addressed by the document being deleted rather than by owner. */
+export const DELETE_CHUNKS_FOR_SOURCE_SQL = `DELETE FROM ${KNOWLEDGE_TABLE}
+     WHERE owner_type = $1 AND owner_id = $2 AND source_id = $3`;
+
+/**
+ * One statement, two rankings. The vector branch and the lexical branch are
+ * computed independently and LEFT JOINed back to the rows, so a chunk found by
+ * either arm survives; fusion happens in `combineRrf`, which only needs ranks.
+ *
+ * `websearch_to_tsquery` rather than `to_tsquery`: the query text comes from a
+ * user, and `to_tsquery` raises a syntax error on `(`, `&`, `|` or `!`.
+ *
+ * `AND $1::vector IS NOT NULL` is load-bearing, not defensive. When the query
+ * embedding fails, $1 is NULL; without this predicate the vector CTE still
+ * matches every row with a non-null embedding, and `ROW_NUMBER()` numbers them
+ * in an arbitrary order and is never NULL — so the arm would hand back
+ * plausible-looking ranks for arbitrary chunks and pollute the fusion. With it,
+ * a failed embedding leaves the arm empty and the lexical half carries the
+ * query alone.
+ *
+ * Lives here rather than in the module that runs it so the infrastructure check
+ * can exercise this exact statement without importing a `server-only` module.
+ */
+export const KNOWLEDGE_SEARCH_SQL = `
+  WITH vector_hits AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $1::vector) AS vrank
+    FROM ${KNOWLEDGE_TABLE}
+    WHERE owner_type = $2 AND owner_id = $3 AND embedding IS NOT NULL
+      AND $1::vector IS NOT NULL
+    ORDER BY embedding <=> $1::vector
+    LIMIT $4
+  ),
+  lexical_hits AS (
+    SELECT c.id,
+           ROW_NUMBER() OVER (ORDER BY ts_rank_cd(c.content_tsv, q) DESC) AS lrank
+    FROM ${KNOWLEDGE_TABLE} c, websearch_to_tsquery('english', $5) q
+    WHERE c.owner_type = $2 AND c.owner_id = $3 AND c.content_tsv @@ q
+    LIMIT $4
+  )
+  SELECT c.id, c.content, c.title, c.source_id, c.chunk_index, v.vrank, l.lrank
+  FROM ${KNOWLEDGE_TABLE} c
+  LEFT JOIN vector_hits v ON v.id = c.id
+  LEFT JOIN lexical_hits l ON l.id = c.id
+  WHERE v.id IS NOT NULL OR l.id IS NOT NULL
+`;
 
 /**
  * The DDL, as an ordered list of idempotent statements. Pure so it can be unit

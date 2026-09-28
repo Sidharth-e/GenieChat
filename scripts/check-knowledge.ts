@@ -1,5 +1,7 @@
 import { Pool } from "pg";
 import {
+  DELETE_CHUNKS_FOR_OWNER_SQL,
+  DELETE_CHUNKS_FOR_SOURCE_SQL,
   KNOWLEDGE_SEARCH_SQL,
   KNOWLEDGE_TABLE,
   RRF_K,
@@ -64,13 +66,34 @@ async function insert(
   id: string,
   content: string,
   embedding: string | null,
+  sourceId: string | null = "doc-check",
 ): Promise<void> {
   await pool.query(
     `INSERT INTO ${KNOWLEDGE_TABLE}
        (id, owner_type, owner_id, user_id, source_id, title, chunk_index, content, embedding)
-     VALUES ($1, $2, $3, 'u-check', 'doc-check', 'check.pdf', 0, $4, $5::vector)`,
-    [id, OWNER_TYPE, OWNER_ID, content, embedding],
+     VALUES ($1, $2, $3, 'u-check', $4, 'check.pdf', 0, $5, $6::vector)`,
+    [id, OWNER_TYPE, OWNER_ID, sourceId, content, embedding],
   );
+}
+
+/** The writer's replace sequence: delete by source scope, then insert. */
+async function replaceDocument(
+  pool: Pool,
+  sourceId: string,
+  rows: Array<{ id: string; content: string }>,
+): Promise<void> {
+  await pool.query(DELETE_CHUNKS_FOR_OWNER_SQL, [OWNER_TYPE, OWNER_ID, sourceId]);
+  for (const row of rows) {
+    await insert(pool, row.id, row.content, null, sourceId);
+  }
+}
+
+async function countRows(pool: Pool): Promise<number> {
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS n FROM ${KNOWLEDGE_TABLE} WHERE owner_id = $1`,
+    [OWNER_ID],
+  );
+  return rows[0].n;
 }
 
 async function main(): Promise<void> {
@@ -138,47 +161,75 @@ async function main(): Promise<void> {
     );
 
     // 5. Re-running the writer's replace sequence must not double the rows.
-    const beforeCount = await pool.query(
-      `SELECT count(*)::int AS n FROM ${KNOWLEDGE_TABLE} WHERE owner_id = $1`,
-      [OWNER_ID],
-    );
-    const replaceSequence = async () => {
-      await pool.query(
-        `DELETE FROM ${KNOWLEDGE_TABLE} WHERE owner_type = $1 AND owner_id = $2`,
-        [OWNER_TYPE, OWNER_ID],
-      );
-      await insert(pool, "A", "pension alpha", axis(0));
-    };
-    await replaceSequence();
-    await replaceSequence();
-    const afterReplace = await pool.query(
-      `SELECT count(*)::int AS n FROM ${KNOWLEDGE_TABLE} WHERE owner_id = $1`,
-      [OWNER_ID],
-    );
+    await pool.query(DELETE_CHUNKS_FOR_OWNER_SQL, [OWNER_TYPE, OWNER_ID, null]);
+    await replaceDocument(pool, "doc-a", [
+      { id: "A", content: "pension alpha" },
+      { id: "A2", content: "pension second chunk" },
+    ]);
+    const afterFirst = await countRows(pool);
+    await replaceDocument(pool, "doc-a", [
+      { id: "A", content: "pension alpha" },
+      { id: "A2", content: "pension second chunk" },
+    ]);
+    const afterSecond = await countRows(pool);
     report(
       "replace sequence does not double rows",
-      afterReplace.rows[0].n === 1 && beforeCount.rows[0].n > 1,
-      `${beforeCount.rows[0].n} rows -> ${afterReplace.rows[0].n} after two replace runs`,
+      afterFirst === 2 && afterSecond === 2,
+      `${afterFirst} rows -> ${afterSecond} after two replace runs of the same document`,
     );
 
-    // 6. The owner-scoped delete removes everything for that owner.
-    await insert(pool, "B2", "pension beta", null);
-    await insert(pool, "C2", "zebra", axis(1));
-    const deleted = await pool.query(
-      `DELETE FROM ${KNOWLEDGE_TABLE} WHERE owner_type = $1 AND owner_id = $2`,
-      [OWNER_TYPE, OWNER_ID],
+    // 6. Re-indexing one document must leave a sibling document's chunks alone.
+    //    Without the `source_id` scope the writer would clear the whole owner,
+    //    and a thread's earlier uploads would silently stop being retrievable.
+    await replaceDocument(pool, "doc-b", [{ id: "B2", content: "pension beta" }]);
+    await replaceDocument(pool, "doc-a", [{ id: "A", content: "pension alpha" }]);
+    const survivors = await pool.query<{ source_id: string | null }>(
+      `SELECT source_id FROM ${KNOWLEDGE_TABLE} WHERE owner_id = $1 ORDER BY id`,
+      [OWNER_ID],
     );
-    const remaining = await pool.query(
-      `SELECT count(*)::int AS n FROM ${KNOWLEDGE_TABLE} WHERE owner_id = $1`,
+    const sources = survivors.rows.map((r) => r.source_id);
+    report(
+      "replacing one document leaves its sibling intact",
+      sources.includes("doc-b") && sources.includes("doc-a"),
+      `sources after re-indexing doc-a: ${sources.join(",") || "(none)"}`,
+    );
+
+    // 7. The owner-scoped delete removes everything for that owner.
+    await insert(pool, "B3", "pension beta", null, "doc-b");
+    await insert(pool, "C3", "zebra", axis(1), "doc-c");
+    const deleted = await pool.query(DELETE_CHUNKS_FOR_OWNER_SQL, [
+      OWNER_TYPE,
+      OWNER_ID,
+      null,
+    ]);
+    report(
+      "owner-scoped delete clears every row",
+      (deleted.rowCount ?? 0) > 0 && (await countRows(pool)) === 0,
+      `deleted ${deleted.rowCount}, ${await countRows(pool)} remain`,
+    );
+
+    // 8. The source-scoped delete must leave the owner's other documents.
+    await insert(pool, "D1", "pension delta", null, "doc-d");
+    await insert(pool, "D2", "pension delta two", null, "doc-d");
+    await insert(pool, "E1", "pension epsilon", null, "doc-e");
+    const scoped = await pool.query(DELETE_CHUNKS_FOR_SOURCE_SQL, [
+      OWNER_TYPE,
+      OWNER_ID,
+      "doc-d",
+    ]);
+    const remaining = await pool.query<{ id: string }>(
+      `SELECT id FROM ${KNOWLEDGE_TABLE} WHERE owner_id = $1`,
       [OWNER_ID],
     );
     report(
-      "owner-scoped delete clears every row",
-      (deleted.rowCount ?? 0) > 0 && remaining.rows[0].n === 0,
-      `deleted ${deleted.rowCount}, ${remaining.rows[0].n} remain`,
+      "source-scoped delete spares the owner's other documents",
+      (scoped.rowCount ?? 0) === 2 &&
+        remaining.rows.length === 1 &&
+        remaining.rows[0].id === "E1",
+      `deleted ${scoped.rowCount} of doc-d's rows; ${remaining.rows.length} row(s) remain: ${remaining.rows.map((r) => r.id).join(",") || "(none)"}`,
     );
 
-    // 7. A punctuation-only chunk must insert and yield an empty tsvector.
+    // 9. A punctuation-only chunk must insert and yield an empty tsvector.
     await insert(pool, "P", "!!! ??? *** ...", null);
     const punctuation = await pool.query(
       `SELECT content_tsv = ''::tsvector AS empty FROM ${KNOWLEDGE_TABLE} WHERE id = 'P'`,
@@ -189,29 +240,22 @@ async function main(): Promise<void> {
       `content_tsv empty = ${punctuation.rows[0]?.empty}`,
     );
 
-    // 8. Indexing zero chunks is a valid clear, not an error.
+    // 10. Indexing zero chunks is a valid clear, not an error.
     await insert(pool, "Z", "leftover", null);
     const chunks = chunkDocumentWithOverlap("");
     const zeroChunks = chunks.length === 0;
     if (zeroChunks) {
-      await pool.query(
-        `DELETE FROM ${KNOWLEDGE_TABLE} WHERE owner_type = $1 AND owner_id = $2`,
-        [OWNER_TYPE, OWNER_ID],
-      );
+      await pool.query(DELETE_CHUNKS_FOR_OWNER_SQL, [OWNER_TYPE, OWNER_ID, null]);
     }
-    const afterZero = await pool.query(
-      `SELECT count(*)::int AS n FROM ${KNOWLEDGE_TABLE} WHERE owner_id = $1`,
-      [OWNER_ID],
-    );
     report(
       "zero chunks clears the owner without throwing",
-      zeroChunks && afterZero.rows[0].n === 0,
-      `chunkDocumentWithOverlap("") -> ${chunks.length} chunks, ${afterZero.rows[0].n} rows remain`,
+      zeroChunks && (await countRows(pool)) === 0,
+      `chunkDocumentWithOverlap("") -> ${chunks.length} chunks, ${await countRows(pool)} rows remain`,
     );
 
-    // 9. A failed query embedding must empty the vector arm. Without the
-    //    `$1::vector IS NOT NULL` guard the arm returns every embedded row with
-    //    a plausible ROW_NUMBER, and this returns rows instead of none.
+    // 11. A failed query embedding must empty the vector arm. Without the
+    //     `$1::vector IS NOT NULL` guard the arm returns every embedded row with
+    //     a plausible ROW_NUMBER, and this returns rows instead of none.
     await insert(pool, "A", "pension alpha", axis(0));
     const degraded = await search(pool, null, "zzzznomatch");
     report(

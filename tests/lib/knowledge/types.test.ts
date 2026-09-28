@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { KNOWLEDGE_OWNER_TYPES } from "@/constants/knowledge";
+import {
+  CHAT_CITATION_ATTRIBUTE,
+  KNOWLEDGE_OWNER_TYPES,
+} from "@/constants/knowledge";
 import type {
+  ChatCitationModel,
   KnowledgeChunkInput,
   KnowledgeHit,
 } from "@/lib/knowledge/types";
@@ -46,5 +50,22 @@ describe("knowledge types", () => {
       score: 0.5,
     };
     expect(hit.score).toBe(0.5);
+  });
+
+  it("holds a single KnowledgeHit as a citation's content", () => {
+    const citation: ChatCitationModel = {
+      id: "citation-1",
+      userId: "user-1",
+      chatThreadId: "thread-1",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      type: CHAT_CITATION_ATTRIBUTE,
+      content: {
+        id: "chunk-1",
+        content: "hello",
+        chunkIndex: 0,
+        score: 0.3,
+      },
+    };
+    expect(citation.content.id).toBe("chunk-1");
   });
 });

@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
         ragFormData.append("agentId", agentId);
 
         try {
-            const { CrackDocument } = await import("@/lib/azure-ai-search/rag-services");
+            const { CrackDocument } = await import("@/lib/knowledge/documents");
             const indexResult = await CrackDocument(ragFormData);
             if (indexResult.status === "OK") {
                 logger.info(`[AgentFiles] Successfully indexed document for agent ${agentId}`);

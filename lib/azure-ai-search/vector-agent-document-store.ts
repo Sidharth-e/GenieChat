@@ -8,7 +8,7 @@ import {
   AzureAISearchIndexClientInstance,
   AzureAISearchInstance,
 } from "./client";
-import { generateEmbedding, generateEmbeddings } from "./embeddings";
+import { generateEmbedding, generateEmbeddings } from "@/lib/embeddings";
 import { config } from "@/lib/config";
 import { EMBEDDING_VECTOR_DIMENSIONS } from "@/lib/memory/vector-memory-config";
 
