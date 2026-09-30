@@ -49,7 +49,7 @@ export function SourcesSection({ citations, className }: SourcesSectionProps) {
                 className={cn(
                     "group flex items-center gap-1.5 px-2.5 h-7 rounded-md", // Fixed height h-7 (28px)
                     "bg-background border border-border/60",
-                    "hover:bg-accent/50 hover:border-accent/50",
+                    "hover:bg-hover-bg/50 hover:border-border",
                     "transition-all duration-200 ease-in-out",
                     "max-w-[160px] no-underline" // Ensure no-underline in case of prose
                 )}
@@ -106,7 +106,7 @@ export function SourcesSection({ citations, className }: SourcesSectionProps) {
                             "flex items-center gap-1 px-2 h-7 rounded-md",
                             "bg-background border border-border/60",
                             "text-[10px] font-medium text-muted-foreground/70 hover:text-foreground",
-                            "hover:bg-accent/50 transition-all"
+                            "hover:bg-hover-bg/50 transition-all"
                         )}
                     >
                         +{hiddenSources.length} more
@@ -132,7 +132,7 @@ export function SourcesSection({ citations, className }: SourcesSectionProps) {
                                 "flex items-center gap-1 px-2 h-7 rounded-md",
                                 "bg-background border border-border/60",
                                 "text-[10px] font-medium text-muted-foreground/70 hover:text-foreground",
-                                "hover:bg-accent/50 transition-all"
+                                "hover:bg-hover-bg/50 transition-all"
                             )}
                         >
                             Show less

@@ -3,8 +3,17 @@
 import * as React from "react";
 import { AlertCircle, FileBox } from "lucide-react";
 import { useArtifacts, useDeleteArtifact } from "@/hooks/use-artifacts-queries";
-import { ArtifactType } from "@/lib/artifacts/types";
 import { ArtifactCard } from "@/components/artifacts/artifact-card";
+import {
+  ArtifactListRow,
+  LIST_THUMB_WIDTH,
+  LIST_ACTIVITY_WIDTH,
+  LIST_ACTIONS_WIDTH,
+} from "@/components/artifacts/artifact-list-row";
+import {
+  ArtifactsViewToggle,
+  ArtifactsView,
+} from "@/components/artifacts/artifacts-view-toggle";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 import { ContentLayout } from "@/components/common/content-layout";
 import { cn } from "@/lib/utils";
@@ -22,7 +31,10 @@ const TYPE_FILTERS: { value: string; label: string }[] = [
 export function ArtifactsContent() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState("");
-  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<string | null>(null);
+  const [view, setView] = React.useState<ArtifactsView>("grid");
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<
+    string | null
+  >(null);
 
   const {
     data: artifacts = [],
@@ -36,25 +48,41 @@ export function ArtifactsContent() {
     setShowDeleteConfirm(null);
   };
 
+  const requestDelete = (id: string) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowDeleteConfirm(id);
+  };
+
   return (
     <ContentLayout
+      headerLayout="inline"
+      navigationBordered={false}
+      // Full-bleed: the Library reads as a wall of tiles running from the rail
+      // to the right edge, so it opts out of the centred `max-w-6xl` column the
+      // other list pages use. `cn` is tailwind-merge, so these win.
+      className="max-w-none pt-6 md:pt-8"
       title="Artifacts"
-      description="Browse all generated images, charts, diagrams, and files from your conversations"
       searchPlaceholder="Search artifacts..."
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
+      actionButton={<ArtifactsViewToggle view={view} onChange={setView} />}
       navigation={
-        <div className="flex gap-1 overflow-x-auto pb-2">
+        <div
+          role="group"
+          aria-label="Filter artifacts by type"
+          className="flex gap-1 overflow-x-auto pb-1"
+        >
           {TYPE_FILTERS.map((filter) => (
             <button
               key={filter.value}
               type="button"
+              aria-pressed={typeFilter === filter.value}
               onClick={() => setTypeFilter(filter.value)}
               className={cn(
-                "shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                "shrink-0 rounded-full px-3.5 py-1.5 text-sm transition-colors",
                 typeFilter === filter.value
-                  ? "bg-primary text-primary-foreground"
-                  : "text-text-secondary hover:bg-hover-bg",
+                  ? "bg-primary font-medium text-primary-foreground"
+                  : "text-text-secondary hover:bg-hover-bg hover:text-foreground",
               )}
             >
               {filter.label}
@@ -64,17 +92,13 @@ export function ArtifactsContent() {
       }
     >
       {isLoading && artifacts.length === 0 ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div
-              key={i}
-              className="overflow-hidden rounded-lg border border-card-border bg-card-bg animate-pulse"
-            >
-              <div className="h-36 w-full bg-hover-bg" />
-              <div className="p-3.5">
-                <div className="mb-2 h-4 w-2/3 rounded bg-hover-bg" />
-                <div className="mb-1.5 h-3 w-full rounded bg-hover-bg" />
-                <div className="mt-3 h-3 w-1/3 rounded bg-hover-bg" />
+        <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <div key={i} className="animate-pulse">
+              <div className="aspect-[4/3] w-full rounded-lg border border-card-border bg-hover-bg" />
+              <div className="mt-2.5 space-y-1.5">
+                <div className="h-4 w-2/3 rounded bg-hover-bg" />
+                <div className="h-3 w-1/3 rounded bg-hover-bg" />
               </div>
             </div>
           ))}
@@ -98,17 +122,40 @@ export function ArtifactsContent() {
               : "Generated images, charts, diagrams, and files will appear here."}
           </p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      ) : view === "grid" ? (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {artifacts.map((artifact, i) => (
             <ArtifactCard
               key={artifact.id}
               artifact={artifact}
               index={i}
-              onDelete={(e) => {
-                e.stopPropagation();
-                setShowDeleteConfirm(artifact.id);
-              }}
+              onDelete={requestDelete(artifact.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div>
+          {/* Column names, sharing the row's geometry so the two stay aligned. */}
+          <div className="flex items-center gap-3 border-b border-card-border px-3 pb-2 text-xs text-text-secondary">
+            <span className={cn("shrink-0", LIST_THUMB_WIDTH)} aria-hidden />
+            <span className="flex-1">Name</span>
+            <span
+              className={cn(
+                "hidden shrink-0 text-right sm:block",
+                LIST_ACTIVITY_WIDTH,
+              )}
+            >
+              Last activity
+            </span>
+            <span className={cn("shrink-0", LIST_ACTIONS_WIDTH)} aria-hidden />
+          </div>
+
+          {artifacts.map((artifact, i) => (
+            <ArtifactListRow
+              key={artifact.id}
+              artifact={artifact}
+              index={i}
+              onDelete={requestDelete(artifact.id)}
             />
           ))}
         </div>

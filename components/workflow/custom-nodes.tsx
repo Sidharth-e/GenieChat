@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 import { Bot, Play, LogOut, GripVertical, X } from "lucide-react";
 import { cn } from "@/lib/utils";

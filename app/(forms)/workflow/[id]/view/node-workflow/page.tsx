@@ -1,7 +1,7 @@
 "use client";
 
 import { logger } from "@/lib/logger";
-import { useEffect, useState, use, useRef } from "react";
+import { useEffect, useState, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Agent, RichWorkflow } from "@/lib/types";
 import { WorkflowEditor } from "@/components/workflow/workflow-editor";

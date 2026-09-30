@@ -180,7 +180,7 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
             {isCreating ? (
               <button
                 onClick={handleCancel}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-hover-bg hover:text-foreground"
                 aria-label="Back"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -201,7 +201,7 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
                     : "Quick Actions"}
                 </h2>
                 {!isCreating && (
-                  <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                  <span className="rounded-md bg-hover-bg px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
                     {quickActions.length}
                   </span>
                 )}
@@ -217,7 +217,7 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
               {!isCreating && (
                 <button
                   onClick={() => setIsCreating(true)}
-                  className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm shadow-primary/20 transition-all hover:bg-primary/90 active:scale-[0.97]"
+                  className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-all hover:bg-primary/90 active:scale-[0.97]"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   New
@@ -225,7 +225,7 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
               )}
               <button
                 onClick={onClose}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-hover-bg hover:text-foreground"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />
@@ -288,7 +288,7 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
                         <div className="flex items-center justify-between">
                           <p className="text-[11px] text-muted-foreground/50">
                             Use{" "}
-                            <code className="rounded bg-accent px-1 py-0.5 font-mono text-[10px]">
+                            <code className="rounded bg-hover-bg px-1 py-0.5 font-mono text-[10px]">
                               {"{topic}"}
                             </code>{" "}
                             for dynamic placeholders
@@ -351,7 +351,7 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
                                   key={p.id}
                                   type="button"
                                   onClick={() => handleSelectPrompt(p)}
-                                  className="group/item flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-accent/50"
+                                  className="group/item flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-hover-bg/50"
                                 >
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-[13px] font-medium text-foreground">
@@ -407,7 +407,7 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
                               "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
                               medium === "chat"
                                 ? "bg-primary/15 text-primary"
-                                : "bg-accent text-muted-foreground",
+                                : "bg-hover-bg text-muted-foreground",
                             )}
                           >
                             <MessageSquare className="h-3.5 w-3.5" />
@@ -443,7 +443,7 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
                               "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
                               medium === "agent"
                                 ? "bg-primary/15 text-primary"
-                                : "bg-accent text-muted-foreground",
+                                : "bg-hover-bg text-muted-foreground",
                             )}
                           >
                             <Bot className="h-3.5 w-3.5" />
@@ -496,14 +496,14 @@ export function QuickActionsModal({ isOpen, onClose }: QuickActionsModalProps) {
                 <div className="flex shrink-0 items-center justify-end gap-2 border-t border-input-border/40 px-5 py-3.5">
                   <button
                     onClick={handleCancel}
-                    className="rounded-xl border border-input-border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    className="rounded-xl border border-input-border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-hover-bg hover:text-foreground"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleCreate}
                     disabled={!isFormValid}
-                    className="rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-primary/20 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35"
+                    className="rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35"
                   >
                     {editingId ? "Save Changes" : "Create Action"}
                   </button>
@@ -641,7 +641,7 @@ function ActionCard({
           <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
             <button
               onClick={onEdit}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-hover-bg hover:text-foreground"
               aria-label={`Edit ${action.name}`}
               title="Edit"
             >
@@ -673,7 +673,7 @@ function ActionCard({
               "flex h-7 w-7 items-center justify-center rounded-lg transition-all active:scale-90",
               action.pinned
                 ? "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25"
-                : "text-muted-foreground/40 hover:bg-accent hover:text-muted-foreground",
+                : "text-muted-foreground/40 hover:bg-hover-bg hover:text-muted-foreground",
             )}
             aria-label={action.pinned ? "Unpin from home" : "Pin to home"}
             title={action.pinned ? "Unpin from home" : "Pin to home"}

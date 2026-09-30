@@ -686,7 +686,7 @@ function WorkflowEditorBody({
               className={cn(
                 "pointer-events-auto px-6 h-11 rounded-xl font-medium transition-all gap-2",
                 isDirty
-                  ? "bg-primary text-white shadow-lg shadow-primary/20 hover:scale-105"
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-105"
                   : "bg-tertiary/10 text-tertiary/50",
                 "disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none",
               )}

@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef } from "react";
 import {
-  ChevronDown,
   Loader2,
   Info,
   Zap,
@@ -335,10 +334,10 @@ export function MCPForm({
           <Button
             onClick={handleSave}
             disabled={!name || !serverUrl || isSaving}
-            className="h-9 px-5 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg shadow-sm active:scale-[0.98] transition-all disabled:opacity-40 disabled:scale-100"
+            className="h-9 px-5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg shadow-sm active:scale-[0.98] transition-all disabled:opacity-40 disabled:scale-100"
           >
             {isSaving ? (
-              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin text-white" />
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin text-primary-foreground" />
             ) : null}
             {isSaving
               ? "Saving..."
@@ -390,7 +389,7 @@ export function MCPForm({
                       className={cn(
                         "relative z-10 flex items-center justify-center h-6 w-6 rounded-full border-2 transition-all duration-300 shrink-0",
                         isActive
-                          ? "border-primary bg-primary text-white scale-110"
+                          ? "border-primary bg-primary text-primary-foreground scale-110"
                           : isPast
                             ? "border-primary/40 bg-primary/10 text-primary"
                             : "border-input-border bg-background text-foreground/30",

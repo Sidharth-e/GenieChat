@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { warmDarkTheme, warmLightTheme } from "@/constants/theme";
 import { MermaidStreamingSkeleton } from "@/components/chat/mermaid";

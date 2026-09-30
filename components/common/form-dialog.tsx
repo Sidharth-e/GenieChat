@@ -36,7 +36,7 @@ export function FormDialog({
   submitDisabled = false,
   submitLabel = "Save",
   cancelLabel = "Cancel",
-  submitClassName = "px-4 h-9 bg-primary text-white hover:bg-primary/90",
+  submitClassName = "px-4 h-9 bg-primary text-primary-foreground hover:bg-primary/90",
   cancelClassName = "px-4 h-9 text-tertiary hover:text-tertiary hover:bg-tertiary/10",
   footerClassName,
   bodyClassName = "space-y-5",

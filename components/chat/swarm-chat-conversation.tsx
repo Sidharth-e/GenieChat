@@ -14,30 +14,10 @@ import {
 } from "@/lib/stores";
 import { useAuthStore } from "@/lib/auth";
 import { useAgents as useAllAgents } from "@/hooks/use-agents-queries";
-import { Bot, Network, Zap } from "lucide-react";
+import { Network, Zap } from "lucide-react";
 
 interface SwarmChatConversationProps {
   threadId: string;
-}
-
-const AGENT_BADGE_COLORS = [
-  "bg-blue-500",
-  "bg-emerald-500",
-  "bg-purple-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-cyan-500",
-  "bg-indigo-500",
-  "bg-teal-500",
-];
-
-function getAgentColor(agentId?: string): string {
-  if (!agentId) return "bg-primary";
-  let hash = 0;
-  for (let i = 0; i < agentId.length; i++) {
-    hash = (hash * 31 + agentId.charCodeAt(i)) | 0;
-  }
-  return AGENT_BADGE_COLORS[Math.abs(hash) % AGENT_BADGE_COLORS.length];
 }
 
 export function SwarmChatConversation({ threadId }: SwarmChatConversationProps) {

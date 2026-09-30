@@ -143,7 +143,7 @@ function LoginForm() {
                 <button
                   onClick={handleGitHubSignIn}
                   disabled={isLoading}
-                  className="mt-5 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="mt-5 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <span className="flex items-center justify-center gap-2.5">
                     <svg

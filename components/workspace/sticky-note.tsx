@@ -72,7 +72,7 @@ export function StickyNote({
         >
             {/* Pin Indicator */}
             {note.isPinned && (
-                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-lg">
+                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
                     <Pin className="h-3 w-3" />
                 </div>
             )}
