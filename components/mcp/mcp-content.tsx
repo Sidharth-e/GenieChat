@@ -210,7 +210,9 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
         onClose={() => setIsToolsDialogOpen(false)}
         server={selectedServer}
         tools={selectedServer ? getToolsForServer(selectedServer.id) : []}
-        isLoadingTools={isLoadingTools}
+        isLoadingTools={
+          selectedServer ? !!loadingServerTools[selectedServer.id] : false
+        }
         toolsError={toolsError}
         onRefresh={fetchTools}
         onToggle={(server) => handleToggle(server)}

@@ -114,12 +114,12 @@ export function ServerToolsDialog({
                                 <p className="text-sm text-text-secondary">
                                     Enable the server to fetch available tools.
                                 </p>
-                            ) : isLoadingTools ? (
+                            ) : isLoadingTools && tools.length === 0 ? (
                                 <div className="flex items-center justify-center py-8">
                                     <Loader2 className="h-6 w-6 animate-spin text-text-secondary" />
                                     <span className="ml-2 text-sm text-text-secondary">Loading tools...</span>
                                 </div>
-                            ) : toolsError ? (
+                            ) : toolsError && tools.length === 0 ? (
                                 <div className="rounded-lg bg-red-50 p-3 dark:bg-red-500/10">
                                     <p className="text-sm text-red-600 dark:text-red-400">{toolsError}</p>
                                 </div>
