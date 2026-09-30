@@ -8,7 +8,7 @@ import { useMCPStore } from "@/lib/stores";
 import { useAgents } from "@/hooks/use-agents-queries";
 import { MCPServerConfig } from "@/lib/types";
 import { ServerCard } from "@/components/mcp/server-card";
-import { ServerToolsDialog } from "@/components/mcp/server-tools-dialog";
+import { MCPToolsDialog } from "@/components/mcp/mcp-tools-dialog";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 
 import { ContentLayout } from "@/components/common/content-layout";
@@ -28,7 +28,6 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
     deleteServer,
     toggleServer,
     fetchServers,
-    isLoadingTools,
     toolsError,
     fetchTools,
     getToolsForServer,
@@ -204,8 +203,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
         </>
       )}
 
-      {/* In-Depth Tools View Modal */}
-      <ServerToolsDialog
+      <MCPToolsDialog
         isOpen={isToolsDialogOpen}
         onClose={() => setIsToolsDialogOpen(false)}
         server={selectedServer}
