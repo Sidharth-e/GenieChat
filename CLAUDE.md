@@ -50,7 +50,7 @@ Package manager is **pnpm** (v11.1.2, `node-linker=hoisted`). Node >= 20 require
 - `app/login/` — login page
 - `app/preview/`, `app/share/` — standalone views
 
-Prompts are the exception to the page-per-entity rule: they have no route of their own. The chat input's `PromptLibraryModal` (`components/chat/prompt-library-modal.tsx`) is the only surface — its right pane is the preview of the selected prompt or, when you press New Prompt or Edit, an editor (`components/prompts/prompt-editor.tsx`). One modal, so there is no second page and no nested overlay.
+Prompts are the exception to the page-per-entity rule: they have no route of their own. The chat input's `PromptLibraryModal` (`components/chat/prompt-library-modal.tsx`) is the only surface, and it has two modes. The library — header, tabs, card grid, and a right pane previewing the selected prompt — and, when you press New Prompt or Edit, the editor (`components/prompts/prompt-editor.tsx`), which takes over the whole modal: the library blocks are guarded by `!editorState` rather than nested in a branch, so the editor is a sibling and the list keeps its indentation and its state. The editor's own header carries back (to the list) and close (the library), the AI Assist button (the shared `PromptDialog`, parameterised for prompt copy rather than agent instructions), and Cancel/Save in the footer. One modal, so there is no second page, no nested overlay, and no second header to keep in sync.
 
 ### Server-Side Core (`lib/`)
 

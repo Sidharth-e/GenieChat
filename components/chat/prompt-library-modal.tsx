@@ -185,7 +185,9 @@ export function PromptLibraryModal({
     try {
       if (editorState.mode === "create") {
         const created = await createPromptMutation.mutateAsync(data);
-        // Clear the filters so the new prompt is actually visible behind the pane.
+        // The editor covers the list, so returning to it under the current
+        // filters could land on "No prompts found" — clear them so the prompt
+        // just created is actually there to be selected.
         setActiveTab("discover");
         setSearchQuery("");
         setSelectedPromptId(created.id);
@@ -276,8 +278,8 @@ export function PromptLibraryModal({
         setPromptToDelete(null);
         return;
       }
-      // Escape unwinds one layer at a time — closing the library from inside the
-      // editor would silently discard whatever was typed.
+      // Escape unwinds one layer at a time — closing the whole library from
+      // inside the editor would silently discard whatever was typed.
       if (editorState) {
         setEditorState(null);
         setEditorError(null);
@@ -304,7 +306,7 @@ export function PromptLibraryModal({
     { key: "custom", label: "Custom" },
   ];
 
-  const isPaneOpen = !!selectedPrompt || !!editorState;
+  const isPaneOpen = !!selectedPrompt;
   const isSavingPrompt =
     createPromptMutation.isPending || updatePromptMutation.isPending;
 
@@ -350,6 +352,25 @@ export function PromptLibraryModal({
                 transition={{ duration: 0.15 }}
                 className="flex flex-col h-full min-h-0"
               >
+                {editorState && (
+                  <PromptEditor
+                    key={
+                      editorState.mode === "edit"
+                        ? `${editorState.prompt.id}:${editorState.prompt.updatedAt}`
+                        : "new"
+                    }
+                    initialData={
+                      editorState.mode === "edit" ? editorState.prompt : null
+                    }
+                    onSave={handleSavePrompt}
+                    onCancel={handleCancelEditor}
+                    onClose={() => onOpenChange(false)}
+                    isSaving={isSavingPrompt}
+                    error={editorError}
+                  />
+                )}
+
+                {!editorState && (
                 <DialogHeader className="p-5 mb-0">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
@@ -385,7 +406,9 @@ export function PromptLibraryModal({
                     </div>
                   </div>
                 </DialogHeader>
+                )}
 
+                {!editorState && (
                 <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
                   <div
                     className={cn(
@@ -537,24 +560,7 @@ export function PromptLibraryModal({
                         : "pointer-events-none max-h-0 border-t-0 opacity-0 sm:w-0 sm:max-h-none sm:border-t-0 sm:opacity-0",
                     )}
                   >
-                    {editorState ? (
-                      <PromptEditor
-                        key={
-                          editorState.mode === "edit"
-                            ? `${editorState.prompt.id}:${editorState.prompt.updatedAt}`
-                            : "new"
-                        }
-                        initialData={
-                          editorState.mode === "edit"
-                            ? editorState.prompt
-                            : null
-                        }
-                        onSave={handleSavePrompt}
-                        onCancel={handleCancelEditor}
-                        isSaving={isSavingPrompt}
-                        error={editorError}
-                      />
-                    ) : selectedPrompt ? (
+                    {selectedPrompt ? (
                       <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 pb-6">
                         <div className="flex items-center justify-between">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
@@ -663,6 +669,7 @@ export function PromptLibraryModal({
                     )}
                   </div>
                 </div>
+                )}
 
                 {!editorState && (
                   <div className="flex items-center justify-end gap-2 bg-modal-bg px-5 py-3">

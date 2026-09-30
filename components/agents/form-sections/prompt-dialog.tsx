@@ -18,6 +18,10 @@ interface PromptDialogProps {
     setQuery: (value: string) => void;
     isGenerating: boolean;
     onGenerate: () => void;
+    /** All three default to the agent-instructions copy. */
+    title?: string;
+    description?: string;
+    placeholder?: string;
 }
 
 export function PromptDialog({
@@ -27,21 +31,22 @@ export function PromptDialog({
     setQuery,
     isGenerating,
     onGenerate,
+    title = "Tailor System Prompt",
+    description = "Describe what you want the agent to do, or how you want to improve the current instructions.",
+    placeholder = "e.g. 'Make the agent more concise', 'Create a prompt for a python coding expert', or 'Fix the tone to be more professional'",
 }: PromptDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>Tailor System Prompt</DialogTitle>
-                    <DialogDescription>
-                        Describe what you want the agent to do, or how you want to improve the current instructions.
-                    </DialogDescription>
+                    <DialogTitle>{title}</DialogTitle>
+                    <DialogDescription>{description}</DialogDescription>
                 </DialogHeader>
                 <div className="py-4 space-y-4">
                     <textarea
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder="e.g. 'Make the agent more concise', 'Create a prompt for a python coding expert', or 'Fix the tone to be more professional'"
+                        placeholder={placeholder}
                         className="w-full rounded-xl border border-input-border bg-input-bg px-4 py-3 text-sm focus:border-primary focus:ring-2 focus:ring-primary/5 outline-none transition-all text-foreground min-h-[120px] resize-none"
                     />
                 </div>
