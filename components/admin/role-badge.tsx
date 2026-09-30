@@ -4,7 +4,14 @@ import { Role } from "@/lib/rbac/types";
 import { cn } from "@/lib/utils";
 import { Shield, ShieldCheck, User, Eye } from "lucide-react";
 
-const ROLE_CONFIG: Record<Role, { label: string; icon: typeof Shield; className: string }> = {
+/**
+ * The label, glyph and colour for each role, kept in one place so the badge and
+ * the role filter strip cannot drift apart.
+ */
+export const ROLE_META: Record<
+  Role,
+  { label: string; icon: typeof Shield; className: string }
+> = {
   admin: {
     label: "Admin",
     icon: ShieldCheck,
@@ -33,7 +40,7 @@ interface RoleBadgeProps {
 }
 
 export function RoleBadge({ role, className }: RoleBadgeProps) {
-  const config = ROLE_CONFIG[role] ?? ROLE_CONFIG.member;
+  const config = ROLE_META[role] ?? ROLE_META.member;
   const Icon = config.icon;
 
   return (

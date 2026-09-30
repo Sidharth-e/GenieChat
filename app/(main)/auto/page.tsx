@@ -143,6 +143,9 @@ export default function AutoPage() {
   return (
     <div className="h-full w-full overflow-y-auto">
       <ContentLayout
+        // A form, not a list: it keeps the centred column so the task field
+        // does not stretch the full width of a wide monitor.
+        width="bounded"
         title="Auto"
         description="Send tasks to Auto — browser automation, web search, desktop control, and file operations powered by multi-agent orchestration."
       >

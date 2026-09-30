@@ -16,9 +16,9 @@ import { DeleteConfirmationModal } from "@/components/common/delete-confirmation
 import { MemoryForm } from "@/components/memories/memory-form";
 import { MemoryGraph } from "@/components/memories/memory-graph";
 import { AnimatePresence } from "framer-motion";
-import { cn } from "@/lib/utils";
 
 import { ContentLayout } from "@/components/common/content-layout";
+import { ContentFilterPills } from "@/components/common/content-filter-pills";
 
 interface MemoriesContentProps {
   initialMemories?: Memory[];
@@ -88,25 +88,16 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       navigation={
-        <div className="flex gap-4">
-          {VIEWS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={view === id}
-              onClick={() => setView(id)}
-              className={cn(
-                "-mb-px flex items-center gap-1.5 border-b-2 px-1 pb-2 text-sm transition-colors",
-                view === id
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-text-secondary hover:text-foreground",
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </button>
-          ))}
-        </div>
+        <ContentFilterPills
+          ariaLabel="Choose a memory view"
+          options={VIEWS.map(({ id, label, icon }) => ({
+            value: id,
+            label,
+            icon,
+          }))}
+          value={view}
+          onChange={setView}
+        />
       }
       actionButton={
         <div className="flex flex-col gap-2 sm:flex-row">

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Plus, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useMCPStore } from "@/lib/stores";
 import { useAgents } from "@/hooks/use-agents-queries";
 import { MCPServerConfig } from "@/lib/types";
@@ -107,12 +108,12 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       actionButton={
-        <button
+        <Button
           onClick={handleCreateNew}
-          className="bg-primary text-background px-4 py-2 text-sm font-medium rounded-sm hover:opacity-80 transition-opacity flex items-center gap-2 cursor-pointer h-10"
+          className="h-10 rounded-md px-4 shadow-none hover:scale-100"
         >
-          <Plus className="w-4 h-4" /> Add Connector
-        </button>
+          <Plus className="h-4 w-4" /> Add Connector
+        </Button>
       }
     >
       {isLoading && displayServers.length === 0 ? (

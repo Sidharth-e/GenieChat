@@ -16,6 +16,7 @@ import {
 } from "@/components/artifacts/artifacts-view-toggle";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 import { ContentLayout } from "@/components/common/content-layout";
+import { ContentFilterPills } from "@/components/common/content-filter-pills";
 import { cn } from "@/lib/utils";
 
 const TYPE_FILTERS: { value: string; label: string }[] = [
@@ -55,40 +56,18 @@ export function ArtifactsContent() {
 
   return (
     <ContentLayout
-      headerLayout="inline"
-      navigationBordered={false}
-      // Full-bleed: the Library reads as a wall of tiles running from the rail
-      // to the right edge, so it opts out of the centred `max-w-6xl` column the
-      // other list pages use. `cn` is tailwind-merge, so these win.
-      className="max-w-none pt-6 md:pt-8"
       title="Artifacts"
       searchPlaceholder="Search artifacts..."
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       actionButton={<ArtifactsViewToggle view={view} onChange={setView} />}
       navigation={
-        <div
-          role="group"
-          aria-label="Filter artifacts by type"
-          className="flex gap-1 overflow-x-auto pb-1"
-        >
-          {TYPE_FILTERS.map((filter) => (
-            <button
-              key={filter.value}
-              type="button"
-              aria-pressed={typeFilter === filter.value}
-              onClick={() => setTypeFilter(filter.value)}
-              className={cn(
-                "shrink-0 rounded-full px-3.5 py-1.5 text-sm transition-colors",
-                typeFilter === filter.value
-                  ? "bg-primary font-medium text-primary-foreground"
-                  : "text-text-secondary hover:bg-hover-bg hover:text-foreground",
-              )}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
+        <ContentFilterPills
+          ariaLabel="Filter artifacts by type"
+          options={TYPE_FILTERS}
+          value={typeFilter}
+          onChange={setTypeFilter}
+        />
       }
     >
       {isLoading && artifacts.length === 0 ? (

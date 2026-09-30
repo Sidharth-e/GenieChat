@@ -20,8 +20,8 @@ import { useApiKeys } from "@/hooks/use-api-keys-queries";
 import { useWorkflows } from "@/hooks/use-workflows-queries";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Agent } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import { AgentCard } from "@/components/agents/agent-card";
+import { ContentFilterPills } from "@/components/common/content-filter-pills";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 import {
   BackgroundUploadJob,
@@ -156,33 +156,24 @@ export function AgentsContent({ initialAgents }: AgentsContentProps) {
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       actionButton={
-        <button
+        <Button
           onClick={handleCreateNew}
-          className="bg-primary text-background px-4 py-2 text-sm font-medium rounded-sm hover:opacity-80 transition-opacity flex items-center gap-2 cursor-pointer h-10"
+          className="h-10 rounded-md px-4 shadow-none hover:scale-100"
         >
-          <Plus className="w-4 h-4" /> Create Agent
-        </button>
+          <Plus className="h-4 w-4" /> Create Agent
+        </Button>
       }
       navigation={
-        <div className="w-full overflow-x-auto hide-scrollbar">
-          <div className="flex min-w-max items-center gap-6 whitespace-nowrap py-1">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  "font-mono text-[10px] uppercase tracking-widest pb-2 transition-colors cursor-pointer",
-                  activeTab === tab.key
-                    ? "text-foreground border-b border-foreground"
-                    : "text-tertiary/40 hover:text-foreground",
-                )}
-              >
-                {tab.label}
-                {typeof tab.count === "number" ? ` (${tab.count})` : ""}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ContentFilterPills
+          ariaLabel="Filter agents by status"
+          options={tabs.map((tab) => ({
+            value: tab.key,
+            label: tab.label,
+            count: tab.count,
+          }))}
+          value={activeTab}
+          onChange={setActiveTab}
+        />
       }
     >
       {/* Background Upload/Indexing Status */}

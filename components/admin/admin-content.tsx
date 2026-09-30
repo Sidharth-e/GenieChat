@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
 import { ContentLayout } from "@/components/common/content-layout";
+import { ContentFilterPills } from "@/components/common/content-filter-pills";
 import { UserTable } from "./user-table";
 import { useAdminUsers } from "@/hooks/use-admin-queries";
 import { useAuthStore } from "@/lib/auth";
 import { ROLES, Role } from "@/lib/rbac/types";
-import { RoleBadge } from "./role-badge";
+import { ROLE_META } from "./role-badge";
 
 export function AdminContent() {
   const user = useAuthStore((s) => s.user);
@@ -54,43 +55,20 @@ export function AdminContent() {
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       navigation={
-        <div className="flex gap-1 pb-2 overflow-x-auto">
-          <button
-            onClick={() => setRoleFilter("all")}
-            className={`shrink-0 border-b-2 pb-2 px-3 text-sm font-semibold transition-colors ${
-              roleFilter === "all"
-                ? "border-primary text-primary"
-                : "border-transparent text-text-secondary hover:text-foreground"
-            }`}
-          >
-            All Users
-            {users && (
-              <span className="ml-1.5 text-xs font-normal text-text-secondary">
-                {users.length}
-              </span>
-            )}
-          </button>
-          {ROLES.map((role) => (
-            <button
-              key={role}
-              onClick={() => setRoleFilter(role)}
-              className={`shrink-0 border-b-2 pb-2 px-3 text-sm font-semibold transition-colors ${
-                roleFilter === role
-                  ? "border-primary text-primary"
-                  : "border-transparent text-text-secondary hover:text-foreground"
-              }`}
-            >
-              <span className="flex items-center gap-1.5">
-                <RoleBadge role={role} className="py-0 px-0 bg-transparent" />
-                {roleCounts?.[role] !== undefined && (
-                  <span className="text-xs font-normal text-text-secondary">
-                    {roleCounts[role]}
-                  </span>
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
+        <ContentFilterPills
+          ariaLabel="Filter users by role"
+          options={[
+            { value: "all" as const, label: "All Users", count: users?.length },
+            ...ROLES.map((role) => ({
+              value: role,
+              label: ROLE_META[role].label,
+              icon: ROLE_META[role].icon,
+              count: roleCounts?.[role],
+            })),
+          ]}
+          value={roleFilter}
+          onChange={setRoleFilter}
+        />
       }
     >
       {isLoading && (

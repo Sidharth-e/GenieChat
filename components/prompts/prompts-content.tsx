@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { motion, LayoutGroup } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Plus, AlertCircle } from "lucide-react";
@@ -17,6 +16,7 @@ import { DeleteConfirmationModal } from "@/components/common/delete-confirmation
 import { ShareModal } from "@/components/share/share-modal";
 
 import { ContentLayout } from "@/components/common/content-layout";
+import { ContentFilterPills } from "@/components/common/content-filter-pills";
 
 interface PromptsContentProps {
   initialPrompts?: Prompt[];
@@ -137,33 +137,16 @@ export function PromptsContent({ initialPrompts }: PromptsContentProps) {
         </Button>
       }
       navigation={
-        <div className="overflow-x-auto hide-scrollbar">
-          <LayoutGroup id="prompts-tabs">
-            <div className="flex items-center gap-6">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`relative -mb-px shrink-0 pb-2 text-sm font-semibold transition-colors ${
-                    activeTab === tab.key
-                      ? "text-primary"
-                      : "text-text-secondary hover:text-foreground"
-                  }`}
-                >
-                  {tab.label}
-                  {typeof tab.count === "number" ? ` (${tab.count})` : ""}
-                  {activeTab === tab.key && (
-                    <motion.div
-                      layoutId="prompts-tab-indicator"
-                      className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-primary"
-                      transition={{ type: "spring", stiffness: 500, damping: 40 }}
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
-          </LayoutGroup>
-        </div>
+        <ContentFilterPills
+          ariaLabel="Filter prompts"
+          options={tabs.map((tab) => ({
+            value: tab.key,
+            label: tab.label,
+            count: tab.count,
+          }))}
+          value={activeTab}
+          onChange={setActiveTab}
+        />
       }
     >
       {isLoading && prompts.length === 0 ? (
