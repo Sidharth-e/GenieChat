@@ -22,11 +22,12 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
     servers,
     isLoading,
     error,
+    tools,
+    loadingServerTools,
     setServers,
     deleteServer,
     toggleServer,
     fetchServers,
-    // Tools
     isLoadingTools,
     toolsError,
     fetchTools,
@@ -44,14 +45,12 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
   >(null);
   const router = useRouter();
 
-  // Optional hydration when parent provides server data.
   React.useEffect(() => {
     if (initialServers.length > 0 && servers.length === 0) {
       setServers(initialServers);
     }
   }, [initialServers, servers.length, setServers]);
 
-  // Client-first fetch for fast route transitions.
   React.useEffect(() => {
     if (servers.length === 0 && !isLoading && initialServers.length === 0) {
       fetchServers();
@@ -59,6 +58,18 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
   }, [servers.length, isLoading, initialServers.length, fetchServers]);
 
   const displayServers = servers.length > 0 ? servers : initialServers;
+
+  React.useEffect(() => {
+    displayServers.forEach((server) => {
+      if (
+        server.enabled &&
+        tools[server.id] === undefined &&
+        !loadingServerTools[server.id]
+      ) {
+        fetchTools(server.id);
+      }
+    });
+  }, [displayServers, tools, loadingServerTools, fetchTools]);
 
   const handleEdit = (server: MCPServerConfig) => {
     router.push(`/mcp/${server.id}/edit`);
@@ -86,7 +97,9 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
   const handleViewTools = (server: MCPServerConfig) => {
     setSelectedServer(server);
     setIsToolsDialogOpen(true);
-    fetchTools(server.id);
+    if (!tools[server.id] && server.enabled) {
+      fetchTools(server.id);
+    }
   };
 
   const filteredServers = displayServers.filter((server) => {
@@ -162,6 +175,10 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
                 server={server}
                 index={i}
                 toolCount={getToolsForServer(server.id).length}
+                isLoadingTools={
+                  loadingServerTools[server.id] ||
+                  (server.enabled && tools[server.id] === undefined)
+                }
                 onToggle={(e) => handleToggle(server, e)}
                 onEdit={(e) => {
                   e.stopPropagation();

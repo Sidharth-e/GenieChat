@@ -7,6 +7,7 @@ import {
   Globe,
   Radio,
   EllipsisVertical,
+  Loader2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -26,6 +27,7 @@ export const transportIcons = {
 interface ServerCardProps {
   server: MCPServerConfig;
   toolCount: number;
+  isLoadingTools?: boolean;
   index?: number;
   onToggle: (e: MouseEvent) => void;
   onEdit: (e: MouseEvent) => void;
@@ -37,6 +39,7 @@ interface ServerCardProps {
 export function ServerCard({
   server,
   toolCount,
+  isLoadingTools,
   onToggle,
   onEdit,
   onDelete,
@@ -91,7 +94,14 @@ export function ServerCard({
       </div>
 
       <div className="col-span-5 md:col-span-3 font-mono text-[10px] text-tertiary/50">
-        {toolCount} Tools exported
+        {server.enabled && isLoadingTools ? (
+          <span className="inline-flex items-center gap-1.5 text-tertiary/60">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Loading tools...
+          </span>
+        ) : (
+          `${toolCount} Tools exported`
+        )}
       </div>
 
       <div className="col-span-1 text-right flex justify-end">

@@ -19,7 +19,8 @@ interface MCPState {
     error: string | null;
 
     // Tools state
-    tools: Record<string, MCPToolInfo[]>; // serverId -> tools
+    tools: Record<string, MCPToolInfo[]>;
+    loadingServerTools: Record<string, boolean>;
     isLoadingTools: boolean;
     toolsError: string | null;
 
@@ -54,8 +55,8 @@ export const useMCPStore = create<MCPState>()(
             isLoading: false,
             error: null,
 
-            // Tools state
             tools: {},
+            loadingServerTools: {},
             isLoadingTools: false,
             toolsError: null,
 
@@ -152,11 +153,19 @@ export const useMCPStore = create<MCPState>()(
                         throw new Error("Failed to delete MCP server");
                     }
 
-                    set((state) => ({
-                        servers: state.servers.filter((s) => s.id !== id),
-                        selectedServerId:
-                            state.selectedServerId === id ? null : state.selectedServerId,
-                    }));
+                    set((state) => {
+                        const { [id]: removedTools, ...restTools } = state.tools;
+                        const { [id]: removedLoading, ...restLoading } = state.loadingServerTools;
+                        void removedTools;
+                        void removedLoading;
+                        return {
+                            servers: state.servers.filter((s) => s.id !== id),
+                            tools: restTools,
+                            loadingServerTools: restLoading,
+                            selectedServerId:
+                                state.selectedServerId === id ? null : state.selectedServerId,
+                        };
+                    });
                     return true;
                 } catch (error) {
                     set({
@@ -169,7 +178,12 @@ export const useMCPStore = create<MCPState>()(
             toggleServer: async (id) => {
                 const server = get().servers.find((s) => s.id === id);
                 if (!server) return null;
-                return get().updateServer(id, { enabled: !server.enabled });
+                const willBeEnabled = !server.enabled;
+                const result = await get().updateServer(id, { enabled: willBeEnabled });
+                if (willBeEnabled && result) {
+                    get().fetchTools(id);
+                }
+                return result;
             },
 
             setSelectedServer: (id) => {
@@ -178,7 +192,14 @@ export const useMCPStore = create<MCPState>()(
 
             // Tools Actions
             fetchTools: async (serverId) => {
-                set({ isLoadingTools: true, toolsError: null });
+                set((state) => ({
+                    isLoadingTools: true,
+                    toolsError: null,
+                    loadingServerTools: {
+                        ...state.loadingServerTools,
+                        [serverId]: true,
+                    },
+                }));
                 try {
                     const response = await fetch(`/api/mcp/${serverId}/tools`);
                     if (!response.ok) {
@@ -186,18 +207,36 @@ export const useMCPStore = create<MCPState>()(
                         throw new Error(data.error || "Failed to fetch tools");
                     }
                     const toolsData: MCPToolInfo[] = await response.json();
-                    set((state) => ({
-                        tools: {
-                            ...state.tools,
-                            [serverId]: toolsData,
-                        },
-                        isLoadingTools: false,
-                    }));
+                    set((state) => {
+                        const updatedLoading = {
+                            ...state.loadingServerTools,
+                            [serverId]: false,
+                        };
+                        return {
+                            tools: {
+                                ...state.tools,
+                                [serverId]: toolsData,
+                            },
+                            loadingServerTools: updatedLoading,
+                            isLoadingTools: Object.values(updatedLoading).some(Boolean),
+                        };
+                    });
                     return toolsData;
                 } catch (error) {
-                    set({
-                        toolsError: error instanceof Error ? error.message : "Unknown error",
-                        isLoadingTools: false,
+                    set((state) => {
+                        const updatedLoading = {
+                            ...state.loadingServerTools,
+                            [serverId]: false,
+                        };
+                        return {
+                            tools: {
+                                ...state.tools,
+                                [serverId]: state.tools[serverId] || [],
+                            },
+                            loadingServerTools: updatedLoading,
+                            toolsError: error instanceof Error ? error.message : "Unknown error",
+                            isLoadingTools: Object.values(updatedLoading).some(Boolean),
+                        };
                     });
                     return [];
                 }
@@ -211,11 +250,13 @@ export const useMCPStore = create<MCPState>()(
                 if (serverId) {
                     set((state) => {
                         const { [serverId]: removedToolEntry, ...rest } = state.tools;
+                        const { [serverId]: removedLoadingEntry, ...restLoading } = state.loadingServerTools;
                         void removedToolEntry;
-                        return { tools: rest };
+                        void removedLoadingEntry;
+                        return { tools: rest, loadingServerTools: restLoading };
                     });
                 } else {
-                    set({ tools: {} });
+                    set({ tools: {}, loadingServerTools: {} });
                 }
             },
         }),
