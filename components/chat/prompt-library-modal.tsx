@@ -10,9 +10,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Loader2, FileText, X } from "lucide-react";
+import { Search, Loader2, FileText, X, Plus } from "lucide-react";
 import { PromptCard } from "@/components/prompts/prompt-card";
-import { usePrompts } from "@/hooks/use-prompts-queries";
+import {
+  PromptEditor,
+  type PromptEditorData,
+} from "@/components/prompts/prompt-editor";
+import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
+import { ShareModal } from "@/components/share/share-modal";
+import {
+  usePrompts,
+  useCreatePrompt,
+  useUpdatePrompt,
+  useDeletePrompt,
+  useSharePrompt,
+  useToggleFavoritePrompt,
+} from "@/hooks/use-prompts-queries";
+import { Prompt } from "@/lib/types";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 
 interface PromptLibraryModalProps {
@@ -24,6 +39,8 @@ interface PromptLibraryModalProps {
 
 type PromptTab = "favorites" | "discover" | "public" | "custom";
 
+type EditorState = { mode: "create" } | { mode: "edit"; prompt: Prompt };
+
 export function PromptLibraryModal({
   open,
   onOpenChange,
@@ -31,6 +48,11 @@ export function PromptLibraryModal({
   animationOrigin,
 }: PromptLibraryModalProps) {
   const { data: prompts = [], isLoading } = usePrompts();
+  const createPromptMutation = useCreatePrompt();
+  const updatePromptMutation = useUpdatePrompt();
+  const deletePromptMutation = useDeletePrompt();
+  const sharePromptMutation = useSharePrompt();
+  const favoritePromptMutation = useToggleFavoritePrompt();
 
   const [searchQuery, setSearchQuery] = React.useState("");
   const [activeTab, setActiveTab] = React.useState<PromptTab>("discover");
@@ -43,6 +65,14 @@ export function PromptLibraryModal({
     Record<string, string>
   >({});
   const [isManualEdit, setIsManualEdit] = React.useState(false);
+  const [editorState, setEditorState] = React.useState<EditorState | null>(
+    null,
+  );
+  const [editorError, setEditorError] = React.useState<string | null>(null);
+  const [promptToDelete, setPromptToDelete] = React.useState<Prompt | null>(
+    null,
+  );
+  const [sharingPrompt, setSharingPrompt] = React.useState<Prompt | null>(null);
 
   const tabFilteredPrompts = prompts.filter((prompt) => {
     if (activeTab === "favorites") return !!prompt.isFavorite;
@@ -71,6 +101,10 @@ export function PromptLibraryModal({
       setTemplateContent("");
       setVariableValues({});
       setIsManualEdit(false);
+      setEditorState(null);
+      setEditorError(null);
+      setPromptToDelete(null);
+      setSharingPrompt(null);
     }
   }, [open]);
 
@@ -125,6 +159,108 @@ export function PromptLibraryModal({
     }
   };
 
+  // --- Create / edit / delete ---
+
+  const handleStartCreate = () => {
+    setSelectedPromptId(null);
+    setEditorError(null);
+    setEditorState({ mode: "create" });
+  };
+
+  const handleStartEdit = (prompt: Prompt) => {
+    setSelectedPromptId(null);
+    setEditorError(null);
+    setEditorState({ mode: "edit", prompt });
+  };
+
+  const handleCancelEditor = () => {
+    setEditorState(null);
+    setEditorError(null);
+  };
+
+  const handleSavePrompt = async (data: PromptEditorData) => {
+    if (!editorState) return;
+
+    setEditorError(null);
+    try {
+      if (editorState.mode === "create") {
+        const created = await createPromptMutation.mutateAsync(data);
+        // Clear the filters so the new prompt is actually visible behind the pane.
+        setActiveTab("discover");
+        setSearchQuery("");
+        setSelectedPromptId(created.id);
+      } else {
+        await updatePromptMutation.mutateAsync({
+          id: editorState.prompt.id,
+          updates: data,
+        });
+        setSelectedPromptId(editorState.prompt.id);
+      }
+      setEditorState(null);
+    } catch (error) {
+      logger.error({ error }, "Failed to save prompt");
+      setEditorError("Could not save the prompt. Please try again.");
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!promptToDelete) return;
+
+    const deletedId = promptToDelete.id;
+    try {
+      await deletePromptMutation.mutateAsync(deletedId);
+      if (selectedPromptId === deletedId) setSelectedPromptId(null);
+      if (editorState?.mode === "edit" && editorState.prompt.id === deletedId) {
+        setEditorState(null);
+      }
+      setPromptToDelete(null);
+    } catch (error) {
+      logger.error({ error }, "Failed to delete prompt");
+    }
+  };
+
+  // --- Card actions ---
+
+  const handleToggleFavorite = (prompt: Prompt, e: React.MouseEvent) => {
+    e.stopPropagation();
+    favoritePromptMutation.mutate({
+      promptId: prompt.id,
+      favorite: !prompt.isFavorite,
+    });
+  };
+
+  const handleCopyContent = (prompt: Prompt, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(prompt.content).catch((error) => {
+      logger.error({ error }, "Failed to copy prompt content");
+    });
+  };
+
+  const handleToggleShare = async (
+    enable: boolean,
+    shareMode?: "public" | "specific",
+    sharedWith?: { id: string; displayName: string; email: string }[],
+  ) => {
+    if (!sharingPrompt) return;
+
+    try {
+      await sharePromptMutation.mutateAsync({
+        promptId: sharingPrompt.id,
+        enable,
+        shareMode,
+        sharedWith,
+      });
+      setSharingPrompt(null);
+    } catch (error) {
+      logger.error({ error }, "Failed to update prompt sharing");
+    }
+  };
+
+  const getShareUrl = (prompt: Prompt) =>
+    typeof window !== "undefined" && prompt.shareId
+      ? `${window.location.origin}/share/prompts/${prompt.shareId}`
+      : null;
+
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => {
     setMounted(true);
@@ -132,7 +268,22 @@ export function PromptLibraryModal({
 
   React.useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onOpenChange(false);
+      if (e.key !== "Escape") return;
+      // ShareModal wraps its own Dialog, which closes itself on Escape — the
+      // library must not close with it.
+      if (sharingPrompt) return;
+      if (promptToDelete) {
+        setPromptToDelete(null);
+        return;
+      }
+      // Escape unwinds one layer at a time — closing the library from inside the
+      // editor would silently discard whatever was typed.
+      if (editorState) {
+        setEditorState(null);
+        setEditorError(null);
+        return;
+      }
+      onOpenChange(false);
     };
     if (open) {
       document.addEventListener("keydown", handleEscape);
@@ -142,7 +293,8 @@ export function PromptLibraryModal({
       document.removeEventListener("keydown", handleEscape);
       document.body.style.overflow = "";
     };
-  }, [open, onOpenChange]);
+    // `sharingPrompt` re-asserts the scroll lock ShareModal drops when it closes.
+  }, [open, onOpenChange, sharingPrompt, promptToDelete, editorState]);
 
   const favoriteCount = prompts.filter((prompt) => !!prompt.isFavorite).length;
   const tabs: { key: PromptTab; label: string; count?: number }[] = [
@@ -152,9 +304,9 @@ export function PromptLibraryModal({
     { key: "custom", label: "Custom" },
   ];
 
-  const noopCardAction = (e: React.MouseEvent) => {
-    e.stopPropagation();
-  };
+  const isPaneOpen = !!selectedPrompt || !!editorState;
+  const isSavingPrompt =
+    createPromptMutation.isPending || updatePromptMutation.isPending;
 
   if (!mounted) return null;
 
@@ -201,7 +353,7 @@ export function PromptLibraryModal({
                 <DialogHeader className="p-5 mb-0">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      <div className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-card-border bg-secondary/50">
+                      <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-card-border bg-secondary/50">
                         <FileText className="h-4 w-4 text-foreground/80" />
                       </div>
                       <div className="space-y-1">
@@ -209,8 +361,7 @@ export function PromptLibraryModal({
                           Prompt Library
                         </DialogTitle>
                         <DialogDescription>
-                          Select a template, customize it, and insert it into
-                          chat.
+                          Create, edit, and insert prompts into chat.
                         </DialogDescription>
                       </div>
                     </div>
@@ -239,42 +390,51 @@ export function PromptLibraryModal({
                   <div
                     className={cn(
                       "w-full min-h-0 flex flex-1 flex-col gap-4 overflow-hidden p-4 transition-all duration-200",
-                      selectedPrompt && "sm:max-w-[58%]",
+                      isPaneOpen && "sm:max-w-[58%]",
                     )}
                   >
-                    <div className="-mx-1 overflow-x-auto hide-scrollbar px-1">
-                      <LayoutGroup id="prompt-modal-tabs">
-                        <div className="flex min-w-max items-center gap-6">
-                          {tabs.map((tab) => (
-                            <button
-                              key={tab.key}
-                              onClick={() => setActiveTab(tab.key)}
-                              className={cn(
-                                "relative -mb-px pb-2 text-sm font-semibold transition-colors",
-                                activeTab === tab.key
-                                  ? "text-primary"
-                                  : "text-text-secondary hover:text-foreground",
-                              )}
-                            >
-                              {tab.label}
-                              {typeof tab.count === "number"
-                                ? ` (${tab.count})`
-                                : ""}
-                              {activeTab === tab.key && (
-                                <motion.div
-                                  layoutId="prompt-modal-tab-indicator"
-                                  className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-primary"
-                                  transition={{
-                                    type: "spring",
-                                    stiffness: 500,
-                                    damping: 40,
-                                  }}
-                                />
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </LayoutGroup>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="-mx-1 min-w-0 flex-1 overflow-x-auto hide-scrollbar px-1">
+                        <LayoutGroup id="prompt-modal-tabs">
+                          <div className="flex min-w-max items-center gap-6">
+                            {tabs.map((tab) => (
+                              <button
+                                key={tab.key}
+                                onClick={() => setActiveTab(tab.key)}
+                                className={cn(
+                                  "relative -mb-px pb-2 text-sm font-semibold transition-colors",
+                                  activeTab === tab.key
+                                    ? "text-primary"
+                                    : "text-text-secondary hover:text-foreground",
+                                )}
+                              >
+                                {tab.label}
+                                {typeof tab.count === "number"
+                                  ? ` (${tab.count})`
+                                  : ""}
+                                {activeTab === tab.key && (
+                                  <motion.div
+                                    layoutId="prompt-modal-tab-indicator"
+                                    className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-primary"
+                                    transition={{
+                                      type: "spring",
+                                      stiffness: 500,
+                                      damping: 40,
+                                    }}
+                                  />
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </LayoutGroup>
+                      </div>
+                      <Button
+                        onClick={handleStartCreate}
+                        className="h-9 shrink-0 rounded-full px-4 shadow-none hover:scale-100"
+                      >
+                        New Prompt
+                        <Plus className="ml-1.5 h-4 w-4" />
+                      </Button>
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -296,8 +456,21 @@ export function PromptLibraryModal({
                               ? "Try a different search keyword."
                               : activeTab === "favorites"
                                 ? "Favorite prompts will show up here."
-                                : "No prompts available for this tab."}
+                                : activeTab === "public"
+                                  ? "Prompts you share will show up here."
+                                  : "Create a prompt to start building your library."}
                           </p>
+                          {!searchQuery &&
+                            (activeTab === "discover" ||
+                              activeTab === "custom") && (
+                              <Button
+                                onClick={handleStartCreate}
+                                className="mt-4 h-9 rounded-full px-4 shadow-none hover:scale-100"
+                              >
+                                <Plus className="h-4 w-4" />
+                                Create Prompt
+                              </Button>
+                            )}
                         </div>
                       ) : (
                         <LayoutGroup id="prompt-modal-cards">
@@ -334,12 +507,19 @@ export function PromptLibraryModal({
                                   prompt={prompt}
                                   index={index}
                                   isFavorite={!!prompt.isFavorite}
-                                  showQuickActions={false}
-                                  onEdit={noopCardAction}
-                                  onCopy={noopCardAction}
-                                  onDelete={noopCardAction}
-                                  onShare={noopCardAction}
-                                  onFavoriteToggle={noopCardAction}
+                                  onEdit={() => handleStartEdit(prompt)}
+                                  onCopy={(e) => handleCopyContent(prompt, e)}
+                                  onDelete={(e) => {
+                                    e.stopPropagation();
+                                    setPromptToDelete(prompt);
+                                  }}
+                                  onShare={(e) => {
+                                    e.stopPropagation();
+                                    setSharingPrompt(prompt);
+                                  }}
+                                  onFavoriteToggle={(e) =>
+                                    handleToggleFavorite(prompt, e)
+                                  }
                                 />
                               </div>
                             ))}
@@ -352,12 +532,29 @@ export function PromptLibraryModal({
                   <div
                     className={cn(
                       "w-full min-h-0 overflow-hidden border-card-border/50 bg-secondary/20 transition-all duration-200 ease-out sm:border-l",
-                      selectedPrompt
+                      isPaneOpen
                         ? "max-h-[66vh] border-t opacity-100 sm:w-[48%] sm:max-h-none sm:border-t-0"
                         : "pointer-events-none max-h-0 border-t-0 opacity-0 sm:w-0 sm:max-h-none sm:border-t-0 sm:opacity-0",
                     )}
                   >
-                    {selectedPrompt ? (
+                    {editorState ? (
+                      <PromptEditor
+                        key={
+                          editorState.mode === "edit"
+                            ? `${editorState.prompt.id}:${editorState.prompt.updatedAt}`
+                            : "new"
+                        }
+                        initialData={
+                          editorState.mode === "edit"
+                            ? editorState.prompt
+                            : null
+                        }
+                        onSave={handleSavePrompt}
+                        onCancel={handleCancelEditor}
+                        isSaving={isSavingPrompt}
+                        error={editorError}
+                      />
+                    ) : selectedPrompt ? (
                       <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 pb-6">
                         <div className="flex items-center justify-between">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
@@ -467,22 +664,53 @@ export function PromptLibraryModal({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 bg-modal-bg px-5 py-3">
-                  <Button
-                    variant="ghost"
-                    onClick={() => onOpenChange(false)}
-                    className="h-9 rounded-md px-4 shadow-none hover:scale-100"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSelectPrompt}
-                    disabled={!selectedPrompt || !editedContent.trim()}
-                    className="h-9 rounded-md px-4 shadow-none hover:scale-100"
-                  >
-                    Use Prompt
-                  </Button>
-                </div>
+                {!editorState && (
+                  <div className="flex items-center justify-end gap-2 bg-modal-bg px-5 py-3">
+                    <Button
+                      variant="ghost"
+                      onClick={() => onOpenChange(false)}
+                      className="h-9 rounded-md px-4 shadow-none hover:scale-100"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSelectPrompt}
+                      disabled={!selectedPrompt || !editedContent.trim()}
+                      className="h-9 rounded-md px-4 shadow-none hover:scale-100"
+                    >
+                      Use Prompt
+                    </Button>
+                  </div>
+                )}
+
+                <DeleteConfirmationModal
+                  isOpen={!!promptToDelete}
+                  onClose={() => setPromptToDelete(null)}
+                  onConfirm={handleConfirmDelete}
+                  isDeleting={deletePromptMutation.isPending}
+                  title="Delete Prompt"
+                  description="Are you sure you want to delete this prompt? This action cannot be undone."
+                  dialogClassName="border border-card-border"
+                />
+
+                {(() => {
+                  if (!sharingPrompt) return null;
+                  const latestPrompt =
+                    prompts.find((p) => p.id === sharingPrompt.id) ||
+                    sharingPrompt;
+                  return (
+                    <ShareModal
+                      isOpen={true}
+                      onClose={() => setSharingPrompt(null)}
+                      isShared={latestPrompt.isShared}
+                      shareUrl={getShareUrl(latestPrompt)}
+                      shareMode={latestPrompt.shareMode}
+                      sharedWith={latestPrompt.sharedWith}
+                      allowPublic={false}
+                      onToggleShare={handleToggleShare}
+                    />
+                  );
+                })()}
               </motion.div>
             </motion.div>
           </div>

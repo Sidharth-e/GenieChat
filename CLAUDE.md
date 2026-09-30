@@ -44,11 +44,13 @@ Package manager is **pnpm** (v11.1.2, `node-linker=hoisted`). Node >= 20 require
 
 ### Route Groups (App Router)
 
-- `app/(main)/` — authenticated pages: chat, agent-chat, multi-agent-chat, swarm-chat, auto, agents, prompts, tools, MCP, webhooks, artifacts, memories, workflow, workspace, admin, settings
-- `app/(forms)/` — form-based CRUD pages: agents, prompts, tools, MCP, webhooks, workflow (separate layout, no chat sidebar)
+- `app/(main)/` — authenticated pages: chat, agent-chat, multi-agent-chat, swarm-chat, auto, agents, tools, MCP, webhooks, artifacts, memories, workflow, workspace, admin, settings
+- `app/(forms)/` — form-based CRUD pages: agents, tools, MCP, webhooks, workflow (separate layout, no chat sidebar)
 - `app/api/` — API routes for chat streaming, agents, workflows, arena, secrets, storage, etc.
 - `app/login/` — login page
 - `app/preview/`, `app/share/` — standalone views
+
+Prompts are the exception to the page-per-entity rule: they have no route of their own. The chat input's `PromptLibraryModal` (`components/chat/prompt-library-modal.tsx`) is the only surface — its right pane is the preview of the selected prompt or, when you press New Prompt or Edit, an editor (`components/prompts/prompt-editor.tsx`). One modal, so there is no second page and no nested overlay.
 
 ### Server-Side Core (`lib/`)
 

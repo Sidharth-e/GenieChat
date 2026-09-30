@@ -142,7 +142,10 @@ export function PromptCard({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="w-44 border-card-border bg-card-bg shadow-lg"
+                // Radix portals this menu to `document.body`, and the prompt library
+                // modal it lives in is `z-100` — without clearing that the menu
+                // renders behind the modal and cannot be clicked.
+                className="z-[110] w-44 border-card-border bg-card-bg shadow-lg"
                 onClick={(e) => e.stopPropagation()}
               >
                 <DropdownMenuItem

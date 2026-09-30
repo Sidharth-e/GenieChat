@@ -4,7 +4,6 @@ export { useMCPStore, type MCPToolInfo } from "./mcp";
 export { usePendingMessageStore } from "./pending-message";
 export { useDraftStore } from "./draft-inputs";
 export { useThreadsStore } from "./threads";
-export { usePromptsStore } from "./prompts";
 export { useWorkflowsStore } from "./workflows";
 export { useToolsStore } from "./tools";
 export { useQuickActionsStore } from "./quick-actions";
