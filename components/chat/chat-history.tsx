@@ -12,7 +12,6 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import {
-  Search,
   Plus,
   Image as ImageIcon,
   Paperclip,
@@ -30,6 +29,11 @@ import { Message, Thread } from "@/lib/types";
 import { getThreadRoute } from "@/constants/nav-routes";
 import { ShareModal } from "@/components/share/share-modal";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
+import { ContentLayout } from "@/components/common/content-layout";
+import {
+  ContentFilterPills,
+  type ContentFilterPill,
+} from "@/components/common/content-filter-pills";
 import { formatRelativeTime } from "@/lib/relative-time";
 
 type ActivityFilter = "all" | "attachments" | "images" | "bookmarks";
@@ -284,102 +288,80 @@ export function ChatHistory() {
     filteredThreads.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endItem = Math.min(currentPage * pageSize, filteredThreads.length);
 
+  const activityFilters: ContentFilterPill<ActivityFilter>[] = [
+    // The ratio, not a bare count: it is what tells you the date and activity
+    // filters are actually narrowing the list.
+    { value: "all", label: `All Chats (${resultLabel})` },
+    { value: "attachments", label: "Attachments", icon: Paperclip },
+    { value: "images", label: "Images", icon: ImageIcon },
+    { value: "bookmarks", label: "Bookmarks", icon: BookmarkIcon },
+  ];
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 pb-5 pt-14 md:px-8 md:pt-20 animate-in fade-in duration-300">
-      <div ref={topAnchorRef} />
-      <header className="space-y-6">
-        <div className="space-y-1.5">
-          <h1 className="font-serif text-3xl text-foreground md:text-4xl">
-            Session History
-          </h1>
-          <p className="text-sm text-text-secondary">
-            Review and manage your previous conversations
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-tertiary/40" />
-            <input
-              type="text"
-              placeholder="Search past workspaces or outputs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-card-bg border border-card-border py-2 pl-10 pr-4 text-sm font-sans rounded-sm focus:outline-none focus:border-tertiary/60 text-foreground placeholder:text-tertiary/40"
+    <ContentLayout
+      title="Session History"
+      description="Review and manage your previous conversations"
+      searchPlaceholder="Search past workspaces or outputs..."
+      searchValue={searchQuery}
+      onSearchChange={setSearchQuery}
+      actionButton={
+        <Button
+          onClick={handleNewChat}
+          className="h-10 rounded-full px-4 shadow-none hover:scale-100"
+        >
+          <Plus className="h-4 w-4" />
+          New Chat
+        </Button>
+      }
+      navigation={
+        <div className="space-y-3">
+          {/* The pagination scroll anchor sits inside the strip, not above the
+              title, so paging lands on the filters and the list. */}
+          <div ref={topAnchorRef} />
+          {isSearchingMessages && (
+            <p className="text-xs text-text-secondary">
+              Searching message content...
+            </p>
+          )}
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <ContentFilterPills
+              ariaLabel="Filter conversations"
+              options={activityFilters}
+              value={activeFilter}
+              onChange={setActiveFilter}
             />
-          </div>
-          <button
-            onClick={handleNewChat}
-            className="h-10 rounded-sm bg-primary text-background px-4 text-sm font-medium hover:opacity-80 transition-opacity flex items-center gap-2 cursor-pointer shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            New Chat
-          </button>
-        </div>
 
-        {isSearchingMessages && (
-          <div className="text-xs text-text-secondary">
-            Searching message content...
-          </div>
-        )}
+            <div className="flex flex-wrap items-center gap-3 md:shrink-0">
+              <div className="flex items-center gap-2 text-sm text-text-secondary">
+                <Calendar className="h-3.5 w-3.5" />
+                <Select
+                  value={dateFilter}
+                  onChange={(v) => setDateFilter(v as DateFilter)}
+                  options={DATE_FILTER_OPTIONS}
+                  size="sm"
+                />
+              </div>
 
-        <div className="flex flex-col gap-3 border-b border-card-border pb-2 md:flex-row md:items-end md:justify-between">
-          <div className="flex min-w-0 flex-1 items-center gap-5 overflow-x-auto hide-scrollbar">
-            <FilterButton
-              active={activeFilter === "all"}
-              onClick={() => setActiveFilter("all")}
-              label={`All Chats (${resultLabel})`}
-            />
-            <FilterButton
-              active={activeFilter === "attachments"}
-              onClick={() => setActiveFilter("attachments")}
-              label="Attachments"
-              icon={<Paperclip className="h-3.5 w-3.5" />}
-            />
-            <FilterButton
-              active={activeFilter === "images"}
-              onClick={() => setActiveFilter("images")}
-              label="Images"
-              icon={<ImageIcon className="h-3.5 w-3.5" />}
-            />
-            <FilterButton
-              active={activeFilter === "bookmarks"}
-              onClick={() => setActiveFilter("bookmarks")}
-              label="Bookmarks"
-              icon={<BookmarkIcon className="h-3.5 w-3.5" />}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 pb-1 md:shrink-0 md:justify-end md:pb-0">
-            <div className="flex items-center gap-2 text-sm text-text-secondary">
-              <Calendar className="h-3.5 w-3.5" />
-              <Select
-                value={dateFilter}
-                onChange={(v) => setDateFilter(v as DateFilter)}
-                options={DATE_FILTER_OPTIONS}
-                size="sm"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 text-sm text-text-secondary">
-              <span className="whitespace-nowrap">Per page</span>
-              <Select
-                value={String(pageSize)}
-                onChange={(v) =>
-                  setPageSize(Number(v) as (typeof PAGE_SIZE_OPTIONS)[number])
-                }
-                options={PAGE_SIZE_OPTIONS.map((size) => ({
-                  value: String(size),
-                  label: String(size),
-                }))}
-                size="sm"
-              />
+              <div className="flex items-center gap-2 text-sm text-text-secondary">
+                <span className="whitespace-nowrap">Per page</span>
+                <Select
+                  value={String(pageSize)}
+                  onChange={(v) =>
+                    setPageSize(Number(v) as (typeof PAGE_SIZE_OPTIONS)[number])
+                  }
+                  options={PAGE_SIZE_OPTIONS.map((size) => ({
+                    value: String(size),
+                    label: String(size),
+                  }))}
+                  size="sm"
+                />
+              </div>
             </div>
           </div>
         </div>
-      </header>
-
-      <section className="pb-10 pt-5">
+      }
+    >
+      <div className="pb-10">
         {isLoading ? (
           <div className="flex flex-col border-l border-card-border ml-2 pl-6 relative">
             {Array.from({ length: pageSize }).map((_, index) => (
@@ -416,7 +398,7 @@ export function ChatHistory() {
             ))}
           </div>
         )}
-      </section>
+      </div>
 
       {!isLoading && filteredThreads.length > 0 && (
         <div className="mb-8 mt-2 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -482,34 +464,7 @@ export function ChatHistory() {
         title="Delete Chat"
         description="Are you sure you want to delete this chat? This action cannot be undone."
       />
-    </div>
-  );
-}
-
-function FilterButton({
-  active,
-  onClick,
-  label,
-  icon,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "font-mono text-[10px] uppercase tracking-widest pb-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap",
-        active
-          ? "text-foreground border-b border-foreground"
-          : "text-tertiary/40 hover:text-foreground",
-      )}
-    >
-      {icon}
-      {label}
-    </button>
+    </ContentLayout>
   );
 }
 

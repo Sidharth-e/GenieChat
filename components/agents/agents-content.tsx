@@ -158,7 +158,7 @@ export function AgentsContent({ initialAgents }: AgentsContentProps) {
       actionButton={
         <Button
           onClick={handleCreateNew}
-          className="h-10 rounded-md px-4 shadow-none hover:scale-100"
+          className="h-10 rounded-full px-4 shadow-none hover:scale-100"
         >
           <Plus className="h-4 w-4" /> Create Agent
         </Button>
@@ -296,7 +296,7 @@ export function AgentsContent({ initialAgents }: AgentsContentProps) {
           {!searchQuery && activeTab !== "favorites" && (
             <Button
               onClick={handleCreateNew}
-              className="mt-4 h-9 rounded-md px-4 shadow-none hover:scale-100"
+              className="mt-4 h-9 rounded-full px-4 shadow-none hover:scale-100"
             >
               <Plus className="mr-2 h-4 w-4" />
               Create Agent

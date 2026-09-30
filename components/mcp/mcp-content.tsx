@@ -110,7 +110,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
       actionButton={
         <Button
           onClick={handleCreateNew}
-          className="h-10 rounded-md px-4 shadow-none hover:scale-100"
+          className="h-10 rounded-full px-4 shadow-none hover:scale-100"
         >
           <Plus className="h-4 w-4" /> Add Connector
         </Button>

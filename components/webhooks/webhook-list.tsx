@@ -76,7 +76,7 @@ export function WebhookList() {
       actionButton={
         <Button
           onClick={handleCreate}
-          className="h-10 rounded-md px-4 shadow-none hover:scale-100"
+          className="h-10 rounded-full px-4 shadow-none hover:scale-100"
         >
           New Webhook
           <Plus className="ml-2 h-4 w-4" />
@@ -116,7 +116,7 @@ export function WebhookList() {
           {!searchQuery && (
             <Button
               onClick={handleCreate}
-              className="mt-4 h-9 rounded-md px-4 shadow-none hover:scale-100"
+              className="mt-4 h-9 rounded-full px-4 shadow-none hover:scale-100"
             >
               <Plus className="mr-2 h-4 w-4" />
               Create Webhook

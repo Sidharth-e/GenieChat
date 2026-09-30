@@ -85,8 +85,10 @@ export function ContentLayout({
 
           {(actionButton || searchField) && (
             <div className="flex items-center gap-2 lg:flex-1 lg:justify-end">
-              {actionButton}
+              {/* Search first, action last: the primary action anchors the far
+                  right of the header, which is where the eye ends. */}
               {searchField}
+              {actionButton}
             </div>
           )}
         </div>

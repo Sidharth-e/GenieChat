@@ -110,7 +110,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
                 ? "Disable memory in chats"
                 : "Enable memory in chats"
             }
-            className="h-10 shrink-0 rounded-md px-3 shadow-none hover:scale-100"
+            className="h-10 shrink-0 rounded-full px-3 shadow-none hover:scale-100"
             onClick={() => setMemoryEnabled(!memoryEnabled)}
           >
             <Brain className="mr-2 h-4 w-4" />
@@ -121,7 +121,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
               setEditingMemory(null);
               setIsCreating(true);
             }}
-            className="h-10 shrink-0 rounded-md px-4 shadow-none hover:scale-100"
+            className="h-10 shrink-0 rounded-full px-4 shadow-none hover:scale-100"
           >
             New Memory
             <Plus className="ml-2 h-4 w-4" />
@@ -184,7 +184,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
                 setEditingMemory(null);
                 setIsCreating(true);
               }}
-              className="mt-4 h-9 rounded-md px-4 shadow-none hover:scale-100"
+              className="mt-4 h-9 rounded-full px-4 shadow-none hover:scale-100"
             >
               <Plus className="mr-2 h-4 w-4" />
               Create Memory
