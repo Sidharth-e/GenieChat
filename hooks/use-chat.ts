@@ -10,6 +10,7 @@ import {
 } from "./use-chat-base";
 import { useChatSettings, useMachineStateStore } from "@/lib/stores";
 import { Message } from "@/lib/types";
+import { isAutoRouterModel } from "@/lib/langchain/model-config";
 import { parseSseChunk } from "@/lib/utils/sse";
 
 const STREAM_FLUSH_INTERVAL_MS = 30;
@@ -509,12 +510,18 @@ export function useChat(options: UseChatOptions = {}) {
 
                 case "model_resolved":
                   if (data.routedModel) {
-                    useMachineStateStore.getState().setLiveRoutedModel(data.routedModel);
-                    useMachineStateStore.getState().addAuditLog({
-                      action: "Model routed",
-                      detail: `Routed to ${data.routedModel}`,
-                      type: "model",
-                    });
+                    // Every provider names the model it served, so this event is
+                    // not evidence of routing. Only the router's own runs get to
+                    // claim a route target; the message keeps the resolved name
+                    // either way.
+                    if (isAutoRouterModel(modelToUse)) {
+                      useMachineStateStore.getState().setLiveRoutedModel(data.routedModel);
+                      useMachineStateStore.getState().addAuditLog({
+                        action: "Model routed",
+                        detail: `Routed to ${data.routedModel}`,
+                        type: "model",
+                      });
+                    }
                     updateAssistantMessage((message) => ({
                       ...message,
                       routedModel: data.routedModel,

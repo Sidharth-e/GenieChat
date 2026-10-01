@@ -10,7 +10,7 @@ import { useThreads, useThreadMessages } from "@/hooks/use-threads-queries";
 import { useAgents } from "@/hooks/use-agents-queries";
 import {
   formatModelName,
-  JEV_ROUTER_MODEL_ID,
+  resolveAutoRoute,
 } from "@/lib/langchain/model-config";
 
 interface HeaderProps {
@@ -55,23 +55,14 @@ export function Header({ inlineOnMobile = false }: HeaderProps) {
     currentThread?.title ||
     (currentAgent ? currentAgent.name : "Conversation");
 
-  const threadRoutedModel = useMemo(() => {
-    if (liveRoutedModel) return liveRoutedModel;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant" && messages[i].routedModel) {
-        return messages[i].routedModel;
-      }
-    }
-    return null;
-  }, [liveRoutedModel, messages]);
-
-  const isAutoMode =
-    selectedModel === JEV_ROUTER_MODEL_ID ||
-    currentThread?.model === JEV_ROUTER_MODEL_ID ||
-    Boolean(threadRoutedModel) ||
-    messages.some(
-      (m) => m.model === JEV_ROUTER_MODEL_ID || Boolean(m.routedModel),
-    );
+  // The badge describes the model the next message will use, so it follows the
+  // selection rather than the thread's history: choosing a single model after
+  // an auto-routed reply has to clear it.
+  const activeModelId = currentAgent?.modelId ?? selectedModel;
+  const { isAuto, routedModel } = useMemo(
+    () => resolveAutoRoute({ activeModelId, liveRoutedModel, messages }),
+    [activeModelId, liveRoutedModel, messages],
+  );
 
   return (
     <motion.div
@@ -102,7 +93,7 @@ export function Header({ inlineOnMobile = false }: HeaderProps) {
             visible: { transition: { staggerChildren: 0.05 } },
           }}
         >
-          {isAutoMode && (
+          {isAuto && (
             <motion.button
               variants={{
                 hidden: { opacity: 0, y: -4 },
@@ -115,8 +106,8 @@ export function Header({ inlineOnMobile = false }: HeaderProps) {
             >
               <Box className="h-3 w-3 shrink-0" />
               <span className="truncate max-w-[130px] sm:max-w-[200px]">
-                {threadRoutedModel
-                  ? `Auto → ${formatModelName(threadRoutedModel)}`
+                {routedModel
+                  ? `Auto → ${formatModelName(routedModel)}`
                   : "Auto Mode"}
               </span>
               {liveTokens && liveTokens.total > 0 && (

@@ -13,8 +13,8 @@ import { ChatLoadingIndicator } from "./chat-loading-indicator";
 import { ArenaComparisonView } from "./arena-comparison-view";
 import {
   AVAILABLE_MODELS,
-  JEV_ROUTER_MODEL_ID,
   formatModelName,
+  isAutoRouterModel,
 } from "@/lib/langchain/model-config";
 
 const AGENT_BADGE_COLORS = [
@@ -282,7 +282,7 @@ function MessageItemComponent({
                 {name}
               </span>
               {(() => {
-                if (displayMessage.model === JEV_ROUTER_MODEL_ID || displayMessage.routedModel) {
+                if (isAutoRouterModel(displayMessage.model)) {
                   return (
                     <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[0.6875rem] font-medium text-primary">
                       <Box className="h-3 w-3 shrink-0" />
@@ -306,7 +306,7 @@ function MessageItemComponent({
                 const modelLabel = isArenaVoted && displayMessage.arenaMetadata?.winnerId
                   ? (AVAILABLE_MODELS.find((m) => m.id === displayMessage.arenaMetadata!.winnerId)?.name
                     || displayMessage.arenaMetadata.winnerId)
-                  : displayMessage.model;
+                  : formatModelName(displayMessage.model);
                 return modelLabel ? (
                   <span className="rounded-full border border-tertiary/10 bg-tertiary/5 px-2 py-0.5 text-[0.6875rem] font-medium text-tertiary/60">
                     {modelLabel}
@@ -328,17 +328,13 @@ function MessageItemComponent({
 
           {!isUser &&
             ((displayMessage.toolCalls && displayMessage.toolCalls.length > 0) ||
-              displayMessage.model === JEV_ROUTER_MODEL_ID ||
-              Boolean(displayMessage.routedModel)) && (
+              isAutoRouterModel(displayMessage.model)) && (
               <div className="mt-1">
                 <ToolCallGroup
                   toolCalls={displayMessage.toolCalls || []}
                   isStreaming={isStreaming}
                   routedModel={displayMessage.routedModel}
-                  isAutoRouter={
-                    displayMessage.model === JEV_ROUTER_MODEL_ID ||
-                    Boolean(displayMessage.routedModel)
-                  }
+                  isAutoRouter={isAutoRouterModel(displayMessage.model)}
                 />
               </div>
             )}

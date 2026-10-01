@@ -6,6 +6,9 @@ import {
   DEFAULT_MODEL_ID,
   JEV_ROUTER_MODEL_ID,
   formatModelName,
+  isAutoRouterModel,
+  resolveAutoRoute,
+  type RoutedMessage,
 } from "@/lib/langchain/model-config";
 
 describe("getModelMaxInputChars", () => {
@@ -106,5 +109,91 @@ describe("formatModelName", () => {
     expect(formatModelName("openai/gpt-4o")).toBe("Gpt 4o");
     expect(formatModelName("")).toBe("");
     expect(formatModelName(undefined)).toBe("");
+  });
+});
+
+describe("isAutoRouterModel", () => {
+  it("is true only for the Jev Router id", () => {
+    expect(isAutoRouterModel(JEV_ROUTER_MODEL_ID)).toBe(true);
+    expect(isAutoRouterModel("deepseek-v4.1-flash")).toBe(false);
+    expect(isAutoRouterModel("openrouter/claude-sonnet-5")).toBe(false);
+    expect(isAutoRouterModel(null)).toBe(false);
+    expect(isAutoRouterModel(undefined)).toBe(false);
+  });
+});
+
+describe("resolveAutoRoute", () => {
+  const message = (over: Partial<RoutedMessage> = {}): RoutedMessage => ({
+    role: "assistant",
+    ...over,
+  });
+
+  it("is not auto when a plain model is selected, even though the provider reported a served model", () => {
+    // `routedModel` is set on every completion (the provider names itself in
+    // response_metadata), so a truthy value must never be read as "the router ran".
+    const state = resolveAutoRoute({
+      activeModelId: "deepseek-v4.1-flash",
+      liveRoutedModel: "deepseek-v4.1-flash:cloud",
+      messages: [
+        message({ model: "deepseek-v4.1-flash", routedModel: "deepseek-v4.1-flash:cloud" }),
+      ],
+    });
+
+    expect(state.isAuto).toBe(false);
+    expect(state.routedModel).toBeNull();
+  });
+
+  it("ignores routedModel recorded against a message that did not run through the router", () => {
+    const state = resolveAutoRoute({
+      activeModelId: JEV_ROUTER_MODEL_ID,
+      liveRoutedModel: null,
+      messages: [
+        message({ model: "glm-5.3-flash", routedModel: "glm-5.3-flash:cloud" }),
+        message({ model: JEV_ROUTER_MODEL_ID, routedModel: "openai/gpt-6-luna" }),
+      ],
+    });
+
+    expect(state.isAuto).toBe(true);
+    expect(state.routedModel).toBe("openai/gpt-6-luna");
+  });
+
+  it("takes the newest routed message in the thread", () => {
+    const state = resolveAutoRoute({
+      activeModelId: JEV_ROUTER_MODEL_ID,
+      liveRoutedModel: null,
+      messages: [
+        message({ model: JEV_ROUTER_MODEL_ID, routedModel: "openai/gpt-6-luna" }),
+        message({ role: "user" }),
+        message({ model: JEV_ROUTER_MODEL_ID, routedModel: "deepseek/deepseek-v4.1-flash" }),
+      ],
+    });
+
+    expect(state.routedModel).toBe("deepseek/deepseek-v4.1-flash");
+  });
+
+  it("prefers the live route over history while a stream is in flight", () => {
+    const state = resolveAutoRoute({
+      activeModelId: JEV_ROUTER_MODEL_ID,
+      liveRoutedModel: "openai/gpt-6-luna",
+      messages: [message({ model: JEV_ROUTER_MODEL_ID, routedModel: "deepseek/deepseek-v4.1-flash" })],
+    });
+
+    expect(state.routedModel).toBe("openai/gpt-6-luna");
+  });
+
+  it("reports auto with no target before the router has chosen anything", () => {
+    expect(
+      resolveAutoRoute({
+        activeModelId: JEV_ROUTER_MODEL_ID,
+        liveRoutedModel: null,
+        messages: [],
+      }),
+    ).toEqual({ isAuto: true, routedModel: null });
+  });
+
+  it("is not auto when no model is selected", () => {
+    expect(
+      resolveAutoRoute({ activeModelId: undefined, liveRoutedModel: null, messages: [] }),
+    ).toEqual({ isAuto: false, routedModel: null });
   });
 });

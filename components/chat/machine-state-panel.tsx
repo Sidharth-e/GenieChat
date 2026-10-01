@@ -23,8 +23,9 @@ import { useModels } from "@/hooks/use-models-queries";
 import { defaultSystemPrompt } from "@/constants/prompt";
 import {
   AVAILABLE_MODELS,
-  JEV_ROUTER_MODEL_ID,
   formatModelName,
+  isAutoRouterModel,
+  resolveAutoRoute,
 } from "@/lib/langchain/model-config";
 import { ModelConfig } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -147,15 +148,10 @@ export function MachineStatePanel() {
     return { chars, estimatedTokens };
   }, [effectiveSystemPrompt]);
 
-  const currentRoutedModel = useMemo(() => {
-    if (liveRoutedModel) return liveRoutedModel;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant" && messages[i].routedModel) {
-        return messages[i].routedModel;
-      }
-    }
-    return null;
-  }, [liveRoutedModel, messages]);
+  const { isAuto, routedModel: currentRoutedModel } = useMemo(
+    () => resolveAutoRoute({ activeModelId, liveRoutedModel, messages }),
+    [activeModelId, liveRoutedModel, messages],
+  );
 
   const tokenUsage = useMemo(() => {
     const cumulative = messages.reduce(
@@ -347,9 +343,10 @@ export function MachineStatePanel() {
           ? `${msg.tokens.prompt + msg.tokens.completion} tokens (${msg.tokens.prompt} in / ${msg.tokens.completion} out)`
           : undefined;
 
-        const routedInfo = msg.routedModel
-          ? ` → ${formatModelName(msg.routedModel)}`
-          : "";
+        const routedInfo =
+          isAutoRouterModel(msg.model) && msg.routedModel
+            ? ` → ${formatModelName(msg.routedModel)}`
+            : "";
         history.push({
           id: `asst-${msg.id}`,
           time: timeStr,
@@ -491,7 +488,7 @@ export function MachineStatePanel() {
               </p>
             )}
 
-            {(activeModel.id === JEV_ROUTER_MODEL_ID || Boolean(currentRoutedModel)) && (
+            {isAuto && (
               <div className="flex items-center justify-between rounded-xs border border-primary/20 bg-primary/10 px-2 py-1.5 text-[10px]">
                 <span className="text-primary font-medium flex items-center gap-1">
                   <ArrowRightLeft className="w-3 h-3" />
