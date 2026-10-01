@@ -3,18 +3,13 @@
 import { useChat } from "@/hooks/use-chat";
 import { createUserMessage } from "@/hooks/use-chat-base";
 import { ChatInput } from "./chat-input";
-import { MessageItem } from "./message-item";
+import { ConversationShell } from "./conversation-shell";
+import { useConversationShell } from "@/hooks/use-conversation-shell";
 
 import { Message, ChatAttachment, ThreadType } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import * as React from "react";
-import {
-  usePendingMessageStore,
-  useThreadsStore,
-  useArenaStore,
-} from "@/lib/stores";
+import { usePendingMessageStore, useArenaStore } from "@/lib/stores";
 import { AI_NAME } from "@/constants/main";
-import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import { useCanvasStore } from "@/lib/stores/canvas-store";
 import { DeepResearchPlanCard } from "./deep-research-plan-card";
 import { DeepResearchStatus } from "./deep-research-status";
@@ -23,11 +18,11 @@ import type { DeepResearchDepth } from "@/lib/deep-research";
 import type { ReasoningEffort } from "@/lib/types";
 import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
 import { NEW_CHAT_PENDING_KEY } from "@/lib/stores/pending-message";
+import type { PendingMessageData } from "@/lib/stores/pending-message";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/auth";
 import { useArenaChat } from "@/hooks/use-arena-chat";
 import { ArenaModelSelector } from "./arena-model-selector";
-import { useAgents } from "@/hooks/use-agents-queries";
 
 interface ChatConversationProps {
   threadId: string;
@@ -46,9 +41,9 @@ export function ChatConversation({
   const isNewConversation = threadId === NEW_CHAT_PENDING_KEY;
   const effectiveThreadId = isNewConversation ? undefined : threadId;
   const pendingStoreKey = isNewConversation ? NEW_CHAT_PENDING_KEY : threadId;
-  const pendingMessageSent = React.useRef(false);
-  const pendingMessageTextRef = React.useRef<string>("");
-  const pendingAttachmentsRef = React.useRef<ChatAttachment[]>([]);
+
+  // Chat's own pending flags. The shell owns the latch; these carry the
+  // research / arena routing that only this surface has.
   const pendingForceWebSearchRef = React.useRef<boolean>(false);
   const pendingIsResearchRef = React.useRef<boolean>(false);
   const pendingResearchDepthRef = React.useRef<DeepResearchDepth>("medium");
@@ -71,9 +66,6 @@ export function ChatConversation({
   const [researchState, setResearchState] = React.useState<
     "IDLE" | "PLANNING" | "REVIEW" | "EXECUTING" | "DONE"
   >("IDLE");
-  const [regeneratingMessageId, setRegeneratingMessageId] = React.useState<
-    string | null
-  >(null);
   const [researchPlan, setResearchPlan] = React.useState<string[]>([]);
   const [researchOutline, setResearchOutline] = React.useState("");
   const [researchQuery, setResearchQuery] = React.useState("");
@@ -81,22 +73,12 @@ export function ChatConversation({
     string[]
   >([]);
   const [finalReport, setFinalReport] = React.useState("");
-  const addThread = useThreadsStore((state) => state.addThread);
-  const threadAlreadyInStore = useThreadsStore((state) =>
-    isNewConversation
-      ? false
-      : state.threads.some((thread) => thread.id === threadId),
-  );
-  const userId = useAuthStore((state) => state.user?.id ?? "");
   const userName = useAuthStore((state) => state.user?.name ?? "");
   const userEmail = useAuthStore((state) => state.user?.email ?? "");
 
   // Get pending message functions from Zustand store
   const getPendingMessage = usePendingMessageStore(
     (state) => state.getPendingMessage,
-  );
-  const clearPendingMessage = usePendingMessageStore(
-    (state) => state.clearPendingMessage,
   );
 
   // Check for pending message BEFORE calling useChat (only on initial render)
@@ -123,13 +105,7 @@ export function ChatConversation({
     setSelectedModel,
     stopGeneration,
     loadMessages,
-    handleVersionChange,
-    handleFeedbackChange,
-    streamingMessageId,
   } = chatHook;
-
-  const { data: allAgents = [] } = useAgents();
-  const agentNames = React.useMemo(() => allAgents.map((a) => a.name), [allAgents]);
 
   const modelSupportsReasoning =
     AVAILABLE_MODELS.find((m) => m.id === selectedModel)?.supportReasoning ??
@@ -152,25 +128,6 @@ export function ChatConversation({
       loadMessages,
       router,
     });
-
-  const { scrollRef, bottomRef, scrollToBottom } =
-    useAutoScroll<HTMLDivElement>(
-      [
-        messages.length,
-        messages[messages.length - 1]?.content,
-        researchState,
-        researchStatusHistory.length,
-        finalReport.length,
-      ],
-      { smooth: true },
-    );
-
-  // Initial scroll to bottom on mount if we have messages
-  React.useEffect(() => {
-    if (messages.length > 0) {
-      scrollToBottom();
-    }
-  }, [messages.length, scrollToBottom]);
 
   // Auto-hide research status panel 3s after completion
   React.useEffect(() => {
@@ -348,128 +305,60 @@ export function ChatConversation({
     ],
   );
 
-  // Check for pending message and send it
-  React.useEffect(() => {
-    const pendingData = getPendingMessage(pendingStoreKey);
+  // Effect 1 of the pending handoff: latch the routing flags the shell cannot
+  // know about, and the research/arena state that goes with them.
+  const onPendingLatched = React.useCallback(
+    (pending: PendingMessageData) => {
+      const isResearch =
+        !!pending.isResearch || initialThreadType === "research";
 
-    if (pendingData && !pendingMessageSent.current) {
-      pendingMessageSent.current = true;
-      pendingMessageTextRef.current = pendingData.message || "";
-      pendingAttachmentsRef.current = pendingData.attachments || [];
-      pendingForceWebSearchRef.current = pendingData.forceWebSearch || false;
-      pendingIsResearchRef.current =
-        !!pendingData.isResearch || initialThreadType === "research";
-      pendingResearchDepthRef.current =
-        pendingData.deepResearchDepth || "medium";
-
-      pendingIsArenaRef.current = !!pendingData.isArena;
-      pendingArenaModelsRef.current = pendingData.arenaModels || [];
+      pendingForceWebSearchRef.current = pending.forceWebSearch || false;
+      pendingIsResearchRef.current = isResearch;
+      pendingResearchDepthRef.current = pending.deepResearchDepth || "medium";
+      pendingIsArenaRef.current = !!pending.isArena;
+      pendingArenaModelsRef.current = pending.arenaModels || [];
 
       setIsWebSearchEnabled(
-        pendingIsResearchRef.current
-          ? false
-          : pendingData.forceWebSearch || false,
+        isResearch ? false : pending.forceWebSearch || false,
       );
-      setIsDeepResearchEnabled(pendingIsResearchRef.current);
+      setIsDeepResearchEnabled(isResearch);
       setDeepResearchDepth(pendingResearchDepthRef.current);
-      if (pendingIsResearchRef.current) {
+      if (isResearch) {
         setThreadType("research");
       }
       // Activate arena mode if pending from home page
-      if (
-        pendingIsArenaRef.current &&
-        pendingArenaModelsRef.current.length >= 2
-      ) {
+      if (pending.isArena && (pending.arenaModels?.length ?? 0) >= 2) {
         useArenaStore.getState().setArenaMode(true);
-        useArenaStore
-          .getState()
-          .setSelectedModels(pendingArenaModelsRef.current);
+        useArenaStore.getState().setSelectedModels(pending.arenaModels!);
       }
+    },
+    [initialThreadType],
+  );
 
-      if (!isNewConversation && !threadAlreadyInStore) {
-        const now = new Date().toISOString();
-        addThread({
-          id: threadId,
-          userId,
-          userName,
-          userEmail,
-          title: "New Chat",
-          isBookmarked: false,
-          createdAt: now,
-          updatedAt: now,
-          lastMessageAt: now,
-          messageCount: 0,
-          model: selectedModel,
-          isShared: false,
-          threadType: pendingIsResearchRef.current ? "research" : "chat",
-        });
-      }
-
-      clearPendingMessage(pendingStoreKey);
-      setInput(pendingData.message);
-    }
-  }, [
-    addThread,
-    clearPendingMessage,
-    getPendingMessage,
-    initialThreadType,
-    isNewConversation,
-    pendingStoreKey,
-    selectedModel,
-    setInput,
-    threadAlreadyInStore,
-    threadId,
-    userEmail,
-    userId,
-    userName,
-  ]);
-
-  // Send the message after input is set
-  React.useEffect(() => {
-    if (
-      (input || pendingAttachmentsRef.current.length > 0) &&
-      pendingMessageSent.current &&
-      !isLoading &&
-      messages.length === 0
-    ) {
-      // Use the ref'd message text to avoid race condition where attachments
-      // trigger this effect before setInput has updated the input state
-      const messageToSend = input || pendingMessageTextRef.current;
+  // Effect 2: route the latched message to research, arena, or a plain send.
+  const dispatchPending = React.useCallback(
+    (messageToSend: string, attachments: ChatAttachment[]) => {
       if (pendingIsResearchRef.current) {
-        void startResearchPlanning(
-          messageToSend,
-          pendingAttachmentsRef.current,
-        );
-        setInput("");
+        void startResearchPlanning(messageToSend, attachments);
       } else if (
         pendingIsArenaRef.current &&
         pendingArenaModelsRef.current.length >= 2
       ) {
-        void sendArenaMessage(messageToSend, pendingAttachmentsRef.current);
-        setInput("");
+        void sendArenaMessage(messageToSend, attachments);
       } else {
-        sendMessage(pendingAttachmentsRef.current, {
+        void sendMessage(attachments, {
           webSearch: pendingForceWebSearchRef.current,
           message: messageToSend,
         });
-        setInput("");
       }
-      pendingMessageTextRef.current = "";
-      pendingAttachmentsRef.current = [];
+
       pendingForceWebSearchRef.current = false;
       pendingIsResearchRef.current = false;
       pendingIsArenaRef.current = false;
       pendingArenaModelsRef.current = [];
-    }
-  }, [
-    input,
-    isLoading,
-    messages.length,
-    sendArenaMessage,
-    sendMessage,
-    setInput,
-    startResearchPlanning,
-  ]);
+    },
+    [sendArenaMessage, sendMessage, startResearchPlanning],
+  );
 
   const handleSubmit = React.useCallback(
     (attachments: ChatAttachment[]) => {
@@ -515,148 +404,77 @@ export function ChatConversation({
     ],
   );
 
-  const lastAssistantMessageId = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i].role === "assistant") {
-        return messages[i].id;
-      }
-    }
-    return null;
-  }, [messages]);
-
-  const lastMessage = messages[messages.length - 1];
-  const shouldShowStandaloneLoadingIndicator =
-    isLoading &&
-    !streamingMessageId &&
-    (!lastMessage || lastMessage.role === "user") &&
-    researchState === "IDLE";
-  const standaloneLoadingMessage = React.useMemo<Message>(
-    () => ({
-      id: "__loading-indicator__",
-      threadId: effectiveThreadId || "",
-      userId,
-      role: "assistant",
-      userName,
-      userEmail,
-      content: "",
-      model: selectedModel,
-      versions: [],
-      activeVersionIndex: 0,
-      createdAt: new Date().toISOString(),
-    }),
-    [effectiveThreadId, selectedModel, userEmail, userId, userName],
+  // The research panels scroll into view as they update, so the status history
+  // and the final report join the auto-scroll dependencies here.
+  const extraScrollDependencies = React.useMemo(
+    () => [researchState, researchStatusHistory.length, finalReport.length],
+    [researchState, researchStatusHistory.length, finalReport.length],
   );
 
-  const handleRegenerate = React.useCallback(
-    async (assistantMessageId: string) => {
-      if (isLoading || threadType === "research") return;
-      if (assistantMessageId !== lastAssistantMessageId) return;
-
-      const assistantIndex = messages.findIndex(
-        (message) => message.id === assistantMessageId,
-      );
-      if (assistantIndex <= 0) return;
-
-      const previousUserMessage = messages
-        .slice(0, assistantIndex)
-        .reverse()
-        .find((message) => message.role === "user");
-      const previousPrompt = previousUserMessage?.content?.trim();
-      if (!previousPrompt) return;
-
-      setRegeneratingMessageId(assistantMessageId);
-      try {
-        await sendMessage([], {
-          webSearch: isWebSearchEnabled,
-          message: previousPrompt,
-          regenerateId: assistantMessageId,
-        });
-      } finally {
-        setRegeneratingMessageId(null);
-      }
-    },
-    [
-      isLoading,
-      threadType,
-      lastAssistantMessageId,
-      messages,
-      sendMessage,
-      isWebSearchEnabled,
-    ],
+  const shouldRegisterThread = React.useCallback(
+    (inStore: boolean) => !isNewConversation && !inStore,
+    [isNewConversation],
   );
+
+  // Stable identities: the shell folds both into its `handlers` memo, which
+  // would otherwise be invalidated on every keystroke.
+  const canRegenerate = React.useCallback(
+    () => threadType !== "research",
+    [threadType],
+  );
+  const sendDefaults = React.useMemo(
+    () => ({ webSearch: isWebSearchEnabled }),
+    [isWebSearchEnabled],
+  );
+  const threadDefaults = React.useMemo(
+    () => ({ model: selectedModel, threadType }),
+    [selectedModel, threadType],
+  );
+
+  const shell = useConversationShell({
+    threadId: effectiveThreadId || "",
+    pendingStoreKey,
+    chat: chatHook,
+    threadDefaults,
+    onPendingLatched,
+    dispatchPending,
+    canRegenerate,
+    sendDefaults,
+    extraScrollDependencies,
+    shouldRegisterThread,
+  });
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Messages Area */}
-      <main
-        ref={scrollRef}
-        className={cn(
-          "mr-[2px] flex-1 overflow-y-auto overflow-x-hidden",
-          "scrollbar-thin scrollbar-track-transparent scrollbar-thumb-card-border",
-        )}
-      >
-        <div className="mx-auto max-w-3xl">
-          {messages.map((message) => (
-            <React.Fragment key={message.id}>
-              {/* message.toolCalls handling moved to MessageItem */}
-
-              <MessageItem
-                message={message}
-                name={AI_NAME}
-                agentNames={agentNames}
-                isStreaming={isLoading && message.id === streamingMessageId}
-                onRegenerate={handleRegenerate}
-                canRegenerate={
-                  message.role === "assistant" &&
-                  message.id === lastAssistantMessageId &&
-                  threadType !== "research"
-                }
-                isRegenerating={
-                  isLoading &&
-                  regeneratingMessageId === message.id &&
-                  message.role === "assistant"
-                }
-                onEditSubmit={
-                  message.role === "user" && !isLoading
-                    ? (messageId, newContent) =>
-                        sendMessage([], {
-                          webSearch: isWebSearchEnabled,
-                          message: newContent,
-                          editId: messageId,
-                        })
-                    : undefined
-                }
-                onVersionChange={handleVersionChange}
-                onFeedbackChange={handleFeedbackChange}
-                onArenaVote={
-                  message.arenaMetadata?.isArena ? voteArenaWinner : undefined
-                }
-              />
-            </React.Fragment>
-          ))}
-
-          {/* Waiting Animation - shows when loading and no assistant response yet */}
-          {shouldShowStandaloneLoadingIndicator && (
-            <MessageItem
-              message={standaloneLoadingMessage}
-              name={AI_NAME}
-              agentNames={agentNames}
-              isStreaming
-            />
-          )}
-
+    <ConversationShell
+      messages={messages}
+      isLoading={isLoading}
+      streamingMessageId={chatHook.streamingMessageId}
+      agentNames={shell.agentNames}
+      lastAssistantMessageId={shell.lastAssistantMessageId}
+      nameForMessage={() => AI_NAME}
+      loadingName={AI_NAME}
+      showStandaloneLoader={
+        shell.showStandaloneLoader && researchState === "IDLE"
+      }
+      loadingMessage={shell.loadingMessage}
+      handlers={{
+        ...shell.handlers,
+        onArenaVote: voteArenaWinner,
+      }}
+      slotAfterMessages={
+        <>
           {researchState === "PLANNING" && (
             <div className="mt-6 w-full px-3 sm:px-4">
-              <div className="flex items-center gap-3 p-4 rounded-xl border border-primary/20 bg-primary/5">
-                <div className="relative flex items-center justify-center h-6 w-6 shrink-0">
-                  <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
+              <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+                  <div className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
                   <div className="h-2.5 w-2.5 rounded-full bg-primary" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-foreground">
                     Generating research plan
                   </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Analyzing your query and drafting search strategy...
                   </p>
                 </div>
@@ -682,51 +500,45 @@ export function ChatConversation({
               />
             </div>
           )}
-        </div>
-        <div ref={bottomRef} className="h-4" />
-      </main>
-
-      {/* Input Area */}
-      <div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-2 sm:pt-3">
-        <div className="mx-auto max-w-3xl">
-          <ChatInput
-            value={input}
-            onChange={setInput}
-            onSubmit={handleSubmit}
-            onStop={isArenaMode ? stopArenaGeneration : stopGeneration}
-            isLoading={isLoading}
-            placeholder={`Message ${AI_NAME}`}
-            contextKey={`thread-${threadId}`}
-            model={{
-              selectedModel,
-              onModelChange: setSelectedModel,
-              showModelSelector: !isArenaMode,
-              arenaSelector: <ArenaModelSelector disabled={isLoading} />,
-            }}
-            webSearch={{
-              enabled: isWebSearchEnabled,
-              onChange: setIsWebSearchEnabled,
-            }}
-            deepResearch={{
-              enabled: isDeepResearchEnabled,
-              onChange: setIsDeepResearchEnabled,
-              depth: deepResearchDepth,
-              onDepthChange: setDeepResearchDepth,
-            }}
-            {...(modelSupportsReasoning
-              ? {
-                  reasoning: {
-                    effort: reasoningEffort,
-                    onChange: setReasoningEffort,
-                  },
-                }
-              : {})}
-          />
-          {/* <p className="mt-3 text-center text-xs text-tertiary/50">
-            {AI_NAME} can make mistakes. Check important info.
-          </p> */}
-        </div>
-      </div>
-    </div>
+        </>
+      }
+      composer={
+        <ChatInput
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          onStop={isArenaMode ? stopArenaGeneration : stopGeneration}
+          isLoading={isLoading}
+          placeholder={`Message ${AI_NAME}`}
+          contextKey={`thread-${threadId}`}
+          model={{
+            selectedModel,
+            onModelChange: setSelectedModel,
+            showModelSelector: !isArenaMode,
+            arenaSelector: <ArenaModelSelector disabled={isLoading} />,
+          }}
+          webSearch={{
+            enabled: isWebSearchEnabled,
+            onChange: setIsWebSearchEnabled,
+          }}
+          deepResearch={{
+            enabled: isDeepResearchEnabled,
+            onChange: setIsDeepResearchEnabled,
+            depth: deepResearchDepth,
+            onDepthChange: setDeepResearchDepth,
+          }}
+          {...(modelSupportsReasoning
+            ? {
+                reasoning: {
+                  effort: reasoningEffort,
+                  onChange: setReasoningEffort,
+                },
+              }
+            : {})}
+        />
+      }
+      scrollRef={shell.scrollRef}
+      bottomRef={shell.bottomRef}
+    />
   );
 }

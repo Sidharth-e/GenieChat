@@ -20,6 +20,13 @@ import {
   shouldShowStandaloneLoader,
 } from "@/lib/conversation";
 
+/** Stable identity so the default costs no extra effect runs. */
+const NO_EXTRA_SCROLL_DEPENDENCIES: unknown[] = [];
+
+function defaultShouldRegisterThread(threadAlreadyInStore: boolean): boolean {
+  return !threadAlreadyInStore;
+}
+
 export interface UseConversationShellOptions {
   threadId: string;
   /** `NEW_CHAT_PENDING_KEY` when the thread is not yet persisted. */
@@ -37,6 +44,14 @@ export interface UseConversationShellOptions {
   sendDefaults?: SendMessageOptions;
   /** Default 0. Swarm passes 1000 to preserve its current timing. */
   clearDelayMs?: number;
+  /** Extra values that should also re-trigger auto-scroll (chat's research state). */
+  extraScrollDependencies?: unknown[];
+  /**
+   * Whether to write the optimistic thread record. Defaults to "when it is not
+   * already in the store"; chat additionally skips it for a not-yet-persisted
+   * thread, because the send itself creates the record there.
+   */
+  shouldRegisterThread?: (threadAlreadyInStore: boolean) => boolean;
 }
 
 export interface UseConversationShellResult {
@@ -65,6 +80,8 @@ export function useConversationShell(
     canRegenerate,
     sendDefaults,
     clearDelayMs = 0,
+    extraScrollDependencies = NO_EXTRA_SCROLL_DEPENDENCIES,
+    shouldRegisterThread = defaultShouldRegisterThread,
   } = options;
 
   const { messages, input, setInput, sendMessage, isLoading, selectedModel } =
@@ -94,7 +111,11 @@ export function useConversationShell(
 
   const { scrollRef, bottomRef, scrollToBottom } =
     useAutoScroll<HTMLDivElement>(
-      [messages.length, messages[messages.length - 1]?.content],
+      [
+        messages.length,
+        messages[messages.length - 1]?.content,
+        ...extraScrollDependencies,
+      ],
       { smooth: true },
     );
 
@@ -196,7 +217,7 @@ export function useConversationShell(
     pendingMessageTextRef.current = pendingData.message || "";
     pendingAttachmentsRef.current = pendingData.attachments || [];
 
-    if (!threadAlreadyInStore) {
+    if (shouldRegisterThread(threadAlreadyInStore)) {
       const now = new Date().toISOString();
       addThread({
         id: threadId,
@@ -230,6 +251,7 @@ export function useConversationShell(
     onPendingLatched,
     pendingStoreKey,
     setInput,
+    shouldRegisterThread,
     threadAlreadyInStore,
     threadDefaults,
     threadId,
