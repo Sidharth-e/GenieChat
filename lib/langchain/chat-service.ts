@@ -7,7 +7,10 @@ import {
 } from "@langchain/core/messages";
 import { StructuredTool } from "langchain";
 import { Message } from "../types";
-import defaultToolsMap, { defaultTools } from "../tool/default-tools";
+import defaultToolsMap, {
+  createCodeSandboxTool,
+  webSearch,
+} from "../tool/default-tools";
 import { getModel } from "./model-factory";
 import {
   generateResponse,
@@ -102,12 +105,14 @@ export class ChatService {
     // owner-scoped too.
     const agentOnlyTools = new Set(["knowledge_base_search"]);
     const chatCustomTools = customToolsFiltered.filter((t) => !agentOnlyTools.has(t.name));
-    const allTools = [...defaultTools, ...chatCustomTools];
+    const activeCodeSandbox = params.userContext?.userId
+      ? createCodeSandboxTool(params.userContext.userId, params.userContext.threadId)
+      : defaultToolsMap.code_sandbox;
+    const defaultToolsForChat = [webSearch, activeCodeSandbox];
+    const allTools = [...defaultToolsForChat, ...chatCustomTools];
 
-    // Not every model supports tool binding (e.g. deepseek-r1 has supportsTools: false).
     const modelWithTools = model.bindTools ? model.bindTools(allTools) : model;
 
-    // Build a combined tools map for execution lookup
     const allToolsMap: Record<string, StructuredTool> = {};
     for (const t of allTools) {
       allToolsMap[t.name] = t;

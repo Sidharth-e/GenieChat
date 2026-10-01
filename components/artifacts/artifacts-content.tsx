@@ -25,7 +25,7 @@ const TYPE_FILTERS: { value: string; label: string }[] = [
   { value: "chart", label: "Charts" },
   { value: "mermaid", label: "Diagrams" },
   { value: "canvas", label: "Canvas" },
-  { value: "code_interpreter", label: "Code Output" },
+  { value: "code_sandbox", label: "Code Output" },
   { value: "file", label: "Files" },
 ];
 

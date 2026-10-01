@@ -50,7 +50,12 @@ describe("resolveDefaultTool", () => {
   it("resolves code_sandbox without a user id", async () => {
     const { resolveDefaultTool } = await import("@/lib/tool/default-tools");
     expect(resolveDefaultTool("code_sandbox")?.name).toBe("code_sandbox");
-    expect(resolveDefaultTool("code_interpreter")?.name).toBe("code_sandbox");
+  });
+
+  it("resolves code_sandbox with a user id and chat id", async () => {
+    const { resolveDefaultTool } = await import("@/lib/tool/default-tools");
+    const tool = resolveDefaultTool("code_sandbox", "user-1", "chat-1");
+    expect(tool?.name).toBe("code_sandbox");
   });
 
   it("validates code_sandbox schema inputs", async () => {

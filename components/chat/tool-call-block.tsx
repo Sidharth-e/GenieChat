@@ -234,7 +234,7 @@ const TOOL_CONFIGS: Partial<Record<string, ToolConfig>> = {
     activeSummaryLabel: "deleting a memory",
     summaryLabel: "deleted a memory",
   },
-  code_interpreter: {
+  code_sandbox: {
     icon: Terminal,
     accent: "zinc",
     activeLabel: (a) => a.language ? `Running ${String(a.language)} code…` : "Running code…",

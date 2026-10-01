@@ -43,7 +43,7 @@ export const ARTIFACT_TYPE_CONFIG: Record<ArtifactType, ArtifactTypeConfig> = {
     label: "Canvas",
     iconColorClass: "text-[var(--blue)]",
   },
-  code_interpreter: {
+  code_sandbox: {
     icon: FileCode,
     label: "Code Output",
     iconColorClass: "text-[var(--green)]",

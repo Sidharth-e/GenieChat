@@ -14,7 +14,7 @@ const VALID_TYPES: ArtifactType[] = [
   "chart",
   "mermaid",
   "canvas",
-  "code_interpreter",
+  "code_sandbox",
 ];
 
 const artifactStore = isDatabaseConfigured() ? new ArtifactStore() : null;

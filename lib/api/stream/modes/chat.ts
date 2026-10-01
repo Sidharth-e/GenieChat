@@ -105,6 +105,7 @@ export function createChatMode(params: {
         email: user.email,
         timezone,
         memories: memoryStrings,
+        threadId: context.threadId,
       },
     })) {
       switch (event.type) {

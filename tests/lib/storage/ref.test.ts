@@ -47,6 +47,7 @@ describe("isStorageRef", () => {
 describe("isStorageBucket", () => {
   it("accepts a known bucket", () => {
     expect(isStorageBucket("generated-images")).toBe(true);
+    expect(isStorageBucket("artifacts")).toBe(true);
   });
 
   it("rejects an unknown bucket", () => {

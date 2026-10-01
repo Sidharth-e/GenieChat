@@ -4,7 +4,7 @@ export type ArtifactType =
   | "chart"
   | "mermaid"
   | "canvas"
-  | "code_interpreter";
+  | "code_sandbox";
 
 export interface ArtifactSummary {
   id: string;

@@ -10,6 +10,7 @@ export const STORAGE_BUCKETS = {
   reports: "reports",
   agentDocuments: "agent-documents",
   generatedImages: "generated-images",
+  artifacts: "artifacts",
 } as const;
 
 export type StorageBucket =

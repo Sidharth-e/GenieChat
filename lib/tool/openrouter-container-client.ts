@@ -86,11 +86,17 @@ export interface ExecuteContainerOptions {
   containerId?: string;
   sessionId?: string;
   timeoutMs?: number;
+  userId?: string;
+  chatId?: string;
 }
 
 export interface ContainerFileReference {
   fileId: string;
   filename: string;
+  url?: string;
+  downloadUrl?: string;
+  download_url?: string;
+  artifactId?: string;
 }
 
 export interface ContainerExecutionResult {
@@ -200,10 +206,34 @@ export async function executeInContainer(
       return code;
     }, 0);
 
-    const files: ContainerFileReference[] = parsedShell.data.files.map((f) => ({
-      fileId: f.file_id,
-      filename: f.filename,
-    }));
+    const files: ContainerFileReference[] = [];
+
+    for (const f of parsedShell.data.files) {
+      const cid =
+        f.container_id || parsedShell.data.container_id || options.containerId;
+      let fileUrl: string | undefined;
+      let artifactId: string | undefined;
+
+      if (cid && f.file_id) {
+        const saved = await saveContainerFileArtifact(
+          cid,
+          f.file_id,
+          f.filename,
+          options,
+        );
+        fileUrl = saved.fileUrl;
+        artifactId = saved.artifactId;
+      }
+
+      files.push({
+        fileId: f.file_id,
+        filename: f.filename,
+        url: fileUrl,
+        downloadUrl: fileUrl,
+        download_url: fileUrl,
+        artifactId,
+      });
+    }
 
     return {
       stdout,
@@ -221,6 +251,125 @@ export async function executeInContainer(
       exitCode: 1,
       error: message,
     };
+  }
+}
+
+async function saveContainerFileArtifact(
+  containerId: string,
+  fileId: string,
+  filename: string,
+  options: ExecuteContainerOptions,
+): Promise<{ fileUrl?: string; artifactId?: string }> {
+  try {
+    const { putObject, presignGet } = await import("@/lib/storage");
+    const { keyForUser } = await import("@/lib/storage/ref");
+    const { STORAGE_BUCKETS, STORAGE_TTL } = await import(
+      "@/constants/storage"
+    );
+    const { ArtifactStore } = await import("@/lib/mongodb/artifact-store");
+    const { isDatabaseConfigured } = await import("@/lib/mongodb/client");
+    const { generateId } = await import("@/lib/utils");
+
+    const buffer = await getContainerFileBuffer(containerId, fileId);
+    const mime = getMimeType(filename);
+    const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const effectiveUserId =
+      options.userId || options.sessionId || "anonymous";
+    const s3Key = keyForUser(
+      effectiveUserId,
+      "code_sandbox",
+      `${generateId()}-${sanitizedFilename}`,
+    );
+
+    let storageRef: string | undefined;
+    let fileUrl = "";
+    const uploaded = await putObject(
+      STORAGE_BUCKETS.artifacts,
+      s3Key,
+      buffer,
+    );
+
+    if (uploaded.status === "OK") {
+      storageRef = uploaded.response;
+      try {
+        fileUrl = await presignGet(storageRef, STORAGE_TTL.attachment);
+      } catch (signErr) {
+        logger.warn(
+          { err: signErr, storageRef },
+          "Failed to presign storage URL for container file",
+        );
+        fileUrl = storageRef;
+      }
+    }
+
+    let artifactId: string | undefined;
+    if (isDatabaseConfigured()) {
+      try {
+        const artifactStore = new ArtifactStore();
+        const created = await artifactStore.createArtifact(effectiveUserId, {
+          type: "code_sandbox",
+          title: filename,
+          url: storageRef || fileUrl || "",
+          chatId: options.chatId || options.sessionId,
+          metadata: {
+            containerId,
+            fileId,
+            filename,
+            size: buffer.length,
+          },
+        });
+        artifactId = created.id;
+        if (!fileUrl && created.url) {
+          fileUrl = created.url;
+        }
+      } catch (dbErr) {
+        logger.error(
+          { err: dbErr, filename },
+          "Failed to save container file artifact to database",
+        );
+      }
+    }
+
+    if (!fileUrl && buffer.length > 0) {
+      fileUrl = `data:${mime};base64,${buffer.toString("base64")}`;
+    }
+
+    return { fileUrl: fileUrl || undefined, artifactId };
+  } catch (err) {
+    logger.error(
+      { err, fileId, filename },
+      "Failed to process container file artifact",
+    );
+    return {};
+  }
+}
+
+function getMimeType(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "svg":
+      return "image/svg+xml";
+    case "webp":
+      return "image/webp";
+    case "pdf":
+      return "application/pdf";
+    case "csv":
+      return "text/csv";
+    case "json":
+      return "application/json";
+    case "txt":
+      return "text/plain";
+    case "html":
+      return "text/html";
+    default:
+      return "application/octet-stream";
   }
 }
 
@@ -247,15 +396,23 @@ export async function listContainerFiles(
   }
 }
 
+export async function getContainerFileBuffer(
+  containerId: string,
+  fileId: string,
+): Promise<Buffer> {
+  const response = await openRouterClient.get<ArrayBuffer>(
+    `/containers/${encodeURIComponent(containerId)}/files/${encodeURIComponent(fileId)}/content`,
+    {
+      responseType: "arraybuffer",
+    },
+  );
+  return Buffer.from(response.data);
+}
+
 export async function getContainerFileContent(
   containerId: string,
   fileId: string,
 ): Promise<string> {
-  const response = await openRouterClient.get(
-    `/containers/${encodeURIComponent(containerId)}/files/${encodeURIComponent(fileId)}/content`,
-    {
-      responseType: "text",
-    },
-  );
-  return String(response.data);
+  const buffer = await getContainerFileBuffer(containerId, fileId);
+  return buffer.toString("utf-8");
 }

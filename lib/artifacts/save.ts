@@ -20,11 +20,9 @@ export async function saveToolArtifact(
 
   const { content, ext, ...rest } = payload;
 
-  // The only call site that mints an artifact key, so it is user-scoped by
-  // construction rather than by every caller remembering to do it.
   const uploaded = await putObject(
-    STORAGE_BUCKETS.generatedImages,
-    keyForUser(userId, "artifacts", payload.type, `${generateId()}.${ext}`),
+    STORAGE_BUCKETS.artifacts,
+    keyForUser(userId, payload.type, `${generateId()}.${ext}`),
     Buffer.from(content, "utf-8"),
   );
 

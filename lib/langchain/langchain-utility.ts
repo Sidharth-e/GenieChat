@@ -45,6 +45,7 @@ export interface UserContext {
    * their owner baked in — a tool factory cannot read it from anywhere else.
    */
   userId?: string;
+  threadId?: string;
 }
 
 /**
