@@ -75,18 +75,33 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/tool/` — Tool system: `default-tools.ts` (built-in tools), `custom-tool-converter.ts` (user-defined tools).
 - `lib/stores/` — Zustand client-side stores (agents, threads, chat settings, sidebar, workflows, etc.).
 - `lib/ai-actions/` — Server actions for agents, prompts, tools, and user search (`user-actions.ts`).
+- `lib/conversation.ts` — pure helpers shared by the four conversation surfaces: last-assistant detection, the standalone loading-message builder and its predicate. Unit-tested; see [Conversation Surfaces](#conversation-surfaces).
 
 ### Client-Side Patterns
 
 - **State management**: Zustand stores in `lib/stores/` with `persist` middleware for local storage. Auth store in `lib/auth/store.ts`. Machine state store in `lib/stores/machine-state-store.ts`.
 - **Data fetching**: TanStack React Query. Custom hooks in `hooks/` (`use-*-queries.ts` pattern) wrap API calls with query/mutation logic.
-- **Chat hooks**: `hooks/use-chat.ts` (standard), `hooks/use-agent-chat.ts` (agent), `hooks/use-multi-agent-chat.ts` (multi-agent), `hooks/use-arena-chat.ts` (arena mode).
+- **Chat hooks**: `hooks/use-chat.ts` (standard), `hooks/use-agent-chat.ts` (agent), `hooks/use-multi-agent-chat.ts` (multi-agent), `hooks/use-arena-chat.ts` (arena mode) — the four stream hooks described in [Conversation Surfaces](#conversation-surfaces).
 - **Navigation**: Permanent 64px icon rail (`components/layout/nav-rail.tsx`) with flyout groups replaces collapsible sidebar. Machine State panel (`components/chat/machine-state-panel.tsx`) provides inspector panel on conversation routes.
 - **List-page frame**: every list page is composed through `components/common/content-layout.tsx` — one title row carrying the action button and the search field, then a borderless filter strip, then the content. It is full-bleed by default (the rail to the right edge), so a form-shaped page has to opt back into the centred column with `width="bounded"` (only `app/(main)/auto/page.tsx` does). The filter strip comes from `components/common/content-filter-pills.tsx`, generic over the page's own tab union, so tab styling is not re-invented per page.
 - **UI components**: `components/ui/` (primitives via Radix UI + CVA), domain components organized by feature (`components/chat/`, `components/agents/`, `components/workflow/`, etc.).
 - **Rich text**: BlockNote editor for rich text input, React Markdown for message rendering (with remark-gfm, remark-math, rehype-katex, mermaid, syntax highlighting).
 - **Styling**: Editorial monochrome system (cold neutral tokens in `globals.css`, neutral `--accent`), Newsreader serif, Inter sans, JetBrains Mono, near-square radii (`--radius: 4px`). Tailwind CSS v4 with `tailwind-merge` and `clsx`. Theme system via `next-themes` with custom `ThemeProvider`.
 - **Path alias**: `@/*` maps to project root.
+
+### Conversation Surfaces
+
+Four routes render a conversation — `/chat/[id]` (plus `components/chat/new-chat-page.tsx` for `/chat/new`), `/agent-chat/[agentId]/[threadId]`, `/multi-agent-chat/[agentId]/[threadId]` and `/swarm-chat/[threadId]`. They share one render tree and one set of effects rather than four copies of each:
+
+- `components/chat/conversation-shell.tsx` — the `ConversationShell` render tree: scroll area, `MessageItem` list, standalone loading indicator, composer block. Two layouts (`plain`, `sidePanel`) and three slots (`slotBeforeMessages`, `slotAfterMessages`, `overlay`). Its `ConversationHandlers` are all optional, and an absent handler is what makes `MessageItem` omit the corresponding affordance — which is how swarm renders exactly the same list with no regenerate, edit, version or feedback controls.
+- `hooks/use-conversation-shell.ts` — the `useConversationShell` effects: auto-scroll, agent names, last-assistant detection, the loading message, regenerate and edit-submit, the optimistic thread record, and the pending-message handoff. Each surface supplies only what differs: `threadDefaults`, `dispatchPending`, `onPendingLatched`, and the gates below.
+- `lib/conversation.ts` — the pure parts, unit-tested.
+
+**The four hooks stay four hooks.** `useChat`, `useAgentChat`, `useMultiAgentChat` and `useSwarmChat` are not merged, because React forbids conditional hooks and each surface must call its own. They do share one `sendMessage(attachments, options?)` contract (`SendMessageOptions` in `lib/types.ts`), so a call site reads the same on every surface.
+
+The pending-message handoff is deliberately two effects. The first latches the payload into refs, registers the optimistic thread record and sets the input; the second sends, once the input state it set has been committed — which is why the send can see the text. Its guards are load-bearing: a one-shot `pendingMessageSent` ref so a re-render cannot re-fire it, `!isLoading` and `messages.length === 0` so a stale pending entry alongside existing messages sends nothing, and `(input || attachments.length > 0)` so an attachments-only send proceeds.
+
+Two options exist because chat is the only surface that needs them: `extraScrollDependencies` (chat also scrolls on research-state, status-history and report-length changes) and `shouldRegisterThread` (chat's thread record is written by the send for a not-yet-persisted conversation, so the shell must not register one there — its `threadId` is the empty string in that case). `clearDelayMs` preserves swarm's 1000 ms pending-clear window.
 
 ### Authentication Flow
 
