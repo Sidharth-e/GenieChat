@@ -120,6 +120,13 @@ export interface BuildAssistantPayloadArgs {
   routedModel?: string;
   pairedUserVersionId?: string;
   arenaMetadata?: unknown;
+  /**
+   * What to do when the provider reported no usage at all. `"fallback"`
+   * (default) estimates it, so a token-mode client never sees a zero. `"omit"`
+   * leaves the field off the document entirely — arena persists per-model
+   * totals and has no single stream to estimate from.
+   */
+  zeroUsagePolicy?: "fallback" | "omit";
 }
 
 /**
@@ -139,7 +146,12 @@ export function buildAssistantPayload(
     tokens:
       args.usage.total > 0
         ? { prompt: args.usage.prompt, completion: args.usage.completion }
-        : { prompt: args.fallback.prompt, completion: args.fallback.completion },
+        : args.zeroUsagePolicy === "omit"
+          ? undefined
+          : {
+              prompt: args.fallback.prompt,
+              completion: args.fallback.completion,
+            },
     citations: args.citations.length > 0 ? args.citations : undefined,
     arenaMetadata: args.arenaMetadata,
     pairedUserVersionId: args.pairedUserVersionId,

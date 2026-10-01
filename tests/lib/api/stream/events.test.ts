@@ -82,6 +82,32 @@ describe("buildAssistantPayload", () => {
     expect(payload.tokens).toEqual({ prompt: 1, completion: 1 });
   });
 
+  it("omits tokens entirely under the omit policy when the total is zero", () => {
+    const payload = buildAssistantPayload({
+      content: "hi",
+      model: "m",
+      usage,
+      fallback,
+      toolCalls: [],
+      citations: [],
+      zeroUsagePolicy: "omit",
+    });
+    expect(payload.tokens).toBeUndefined();
+  });
+
+  it("still prefers real usage under the omit policy when the total is non-zero", () => {
+    const payload = buildAssistantPayload({
+      content: "hi",
+      model: "m",
+      usage: { prompt: 5, completion: 6, total: 11 },
+      fallback,
+      toolCalls: [],
+      citations: [],
+      zeroUsagePolicy: "omit",
+    });
+    expect(payload.tokens).toEqual({ prompt: 5, completion: 6 });
+  });
+
   it("omits toolCalls and citations when they are empty", () => {
     const payload = buildAssistantPayload({
       content: "hi",

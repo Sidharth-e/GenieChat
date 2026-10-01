@@ -8,8 +8,12 @@ import { handleError, api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
 import { StreamPipeline, type StreamContext } from "@/lib/api/stream-pipeline";
-import { loadAgentContext, filterMcpServers, type AgentContext } from "../context";
-import { toSnakeCase } from "../tooling";
+import {
+  loadAgentContext,
+  filterMcpServers,
+  toSnakeCase,
+  type AgentContext,
+} from "../context";
 import { buildAssistantPayload, type ProducerEvent } from "../events";
 import {
   runTokenStream,
