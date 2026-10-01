@@ -448,11 +448,10 @@ export function ChatConversation({
         void sendArenaMessage(messageToSend, pendingAttachmentsRef.current);
         setInput("");
       } else {
-        sendMessage(
-          pendingAttachmentsRef.current,
-          pendingForceWebSearchRef.current,
-          messageToSend,
-        );
+        sendMessage(pendingAttachmentsRef.current, {
+          webSearch: pendingForceWebSearchRef.current,
+          message: messageToSend,
+        });
         setInput("");
       }
       pendingMessageTextRef.current = "";
@@ -493,14 +492,11 @@ export function ChatConversation({
         return;
       }
 
-      sendMessage(
-        attachments,
-        isWebSearchEnabled,
-        undefined,
-        undefined,
-        undefined,
-        reasoningEffort !== "off" ? reasoningEffort : undefined,
-      );
+      sendMessage(attachments, {
+        webSearch: isWebSearchEnabled,
+        reasoningEffort:
+          reasoningEffort !== "off" ? reasoningEffort : undefined,
+      });
     },
     [
       input,
@@ -570,12 +566,11 @@ export function ChatConversation({
 
       setRegeneratingMessageId(assistantMessageId);
       try {
-        await sendMessage(
-          [],
-          isWebSearchEnabled,
-          previousPrompt,
-          assistantMessageId,
-        );
+        await sendMessage([], {
+          webSearch: isWebSearchEnabled,
+          message: previousPrompt,
+          regenerateId: assistantMessageId,
+        });
       } finally {
         setRegeneratingMessageId(null);
       }
@@ -624,13 +619,11 @@ export function ChatConversation({
                 onEditSubmit={
                   message.role === "user" && !isLoading
                     ? (messageId, newContent) =>
-                        sendMessage(
-                          [],
-                          isWebSearchEnabled,
-                          newContent,
-                          undefined,
-                          messageId,
-                        )
+                        sendMessage([], {
+                          webSearch: isWebSearchEnabled,
+                          message: newContent,
+                          editId: messageId,
+                        })
                     : undefined
                 }
                 onVersionChange={handleVersionChange}

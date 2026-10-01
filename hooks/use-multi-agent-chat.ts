@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Message, ToolCall } from "@/lib/types";
+import { Message, SendMessageOptions, ToolCall } from "@/lib/types";
 import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import {
     useChatBase,
@@ -156,10 +156,15 @@ export function useMultiAgentChat(options: UseChatOptions ) {
 
     const sendMessage = useCallback(async (
         attachments: FileAttachment[] = [],
-        overrideMessage?: string,
-        regenerateMessageId?: string,
-        editMessageId?: string,
+        sendOptions: SendMessageOptions = {},
     ) => {
+        const {
+            message: overrideMessage,
+            regenerateId,
+            editId,
+        } = sendOptions;
+        const regenerateMessageId = regenerateId;
+        const editMessageId = editId;
         const isRegeneration = Boolean(regenerateMessageId);
         const isEdit = Boolean(editMessageId);
         const messageContent = (overrideMessage ?? input).trim();

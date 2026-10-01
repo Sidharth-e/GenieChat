@@ -8,7 +8,7 @@ import {
     createUserMessage,
     createAssistantMessage
 } from "./use-chat-base";
-import { Message } from "@/lib/types";
+import { Message, SendMessageOptions } from "@/lib/types";
 import { parseSseChunk } from "@/lib/utils/sse";
 import { useMachineStateStore } from "@/lib/stores";
 
@@ -146,10 +146,15 @@ export function useAgentChat(options: UseChatOptions = {}) {
 
     const sendMessage = useCallback(async (
         attachments: FileAttachment[] = [],
-        overrideMessage?: string,
-        regenerateMessageId?: string,
-        editMessageId?: string,
+        sendOptions: SendMessageOptions = {},
     ) => {
+        const {
+            message: overrideMessage,
+            regenerateId,
+            editId,
+        } = sendOptions;
+        const regenerateMessageId = regenerateId;
+        const editMessageId = editId;
         const isRegeneration = Boolean(regenerateMessageId);
         const isEdit = Boolean(editMessageId);
         const messageContent = (overrideMessage ?? input).trim();

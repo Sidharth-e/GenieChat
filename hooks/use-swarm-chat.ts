@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState, useRef } from "react";
-import { ToolCall } from "@/lib/types";
+import { SendMessageOptions, ToolCall } from "@/lib/types";
 import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import {
     useChatBase,
@@ -61,8 +61,9 @@ export function useSwarmChat(options: UseSwarmChatOptions) {
 
     const sendMessage = useCallback(async (
         attachments: FileAttachment[] = [],
-        overrideMessage?: string,
+        sendOptions: SendMessageOptions = {},
     ) => {
+        const { message: overrideMessage } = sendOptions;
         const messageContent = (overrideMessage ?? input).trim();
         if ((!messageContent && attachments.length === 0) || isLoading) return;
 

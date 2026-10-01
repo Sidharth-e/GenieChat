@@ -9,7 +9,7 @@ import {
   createAssistantMessage,
 } from "./use-chat-base";
 import { useChatSettings, useMachineStateStore } from "@/lib/stores";
-import { Message } from "@/lib/types";
+import { Message, SendMessageOptions } from "@/lib/types";
 import { isAutoRouterModel } from "@/lib/langchain/model-config";
 import { parseSseChunk } from "@/lib/utils/sse";
 
@@ -175,12 +175,17 @@ export function useChat(options: UseChatOptions = {}) {
   const sendMessage = useCallback(
     async (
       attachments: FileAttachment[] = [],
-      forceWebSearch?: boolean,
-      overrideMessage?: string,
-      regenerateMessageId?: string,
-      editMessageId?: string,
-      reasoningEffort?: import("@/lib/types").ReasoningEffort,
+      sendOptions: SendMessageOptions = {},
     ) => {
+      const {
+        webSearch: forceWebSearch,
+        message: overrideMessage,
+        regenerateId,
+        editId,
+        reasoningEffort,
+      } = sendOptions;
+      const regenerateMessageId = regenerateId;
+      const editMessageId = editId;
       const isRegeneration = Boolean(regenerateMessageId);
       const isEdit = Boolean(editMessageId);
       const messageContent = (overrideMessage ?? input).trim();

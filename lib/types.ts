@@ -749,3 +749,46 @@ export interface AiUsage {
   response?: string;
   createdAt: string;
 }
+
+// Conversation shell contract
+
+/**
+ * Options for sending a message. Each chat hook honours the subset it already
+ * supported and silently ignores the rest, so callers can use one uniform shape.
+ */
+export interface SendMessageOptions {
+  /** Standard chat only; ignored by the agent and swarm hooks. */
+  webSearch?: boolean;
+  /** Replaces the composer text for this send. */
+  message?: string;
+  /** Regenerate the assistant message with this id. */
+  regenerateId?: string;
+  /** Re-send a user message with this id after an edit. */
+  editId?: string;
+  /** Standard chat only; ignored by the agent and swarm hooks. */
+  reasoningEffort?: ReasoningEffort;
+}
+
+export type SendMessage = (
+  attachments: ChatAttachment[],
+  options?: SendMessageOptions,
+) => void | Promise<void>;
+
+/** The subset of chat-hook state the conversation shell renders. */
+export interface ConversationState {
+  messages: Message[];
+  input: string;
+  setInput: (value: string) => void;
+  sendMessage: SendMessage;
+  isLoading: boolean;
+  stopGeneration: () => void;
+  streamingMessageId: string | null;
+  selectedModel: string;
+  threadId?: string | null;
+  handleVersionChange?: (messageId: string, newIndex: number) => void;
+  handleFeedbackChange?: (
+    messageId: string,
+    versionId: string,
+    feedback: "like" | "dislike" | null,
+  ) => void;
+}

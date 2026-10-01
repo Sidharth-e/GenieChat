@@ -166,7 +166,7 @@ export function AgentConversationView({
       messages.length === 0
     ) {
       const messageToSend = input || pendingMessageTextRef.current;
-      sendMessage(pendingAttachmentsRef.current, messageToSend);
+      sendMessage(pendingAttachmentsRef.current, { message: messageToSend });
       setInput("");
       pendingMessageTextRef.current = "";
       pendingAttachmentsRef.current = [];
@@ -223,7 +223,10 @@ export function AgentConversationView({
 
       setRegeneratingMessageId(assistantMessageId);
       try {
-        await sendMessage([], previousPrompt, assistantMessageId);
+        await sendMessage([], {
+          message: previousPrompt,
+          regenerateId: assistantMessageId,
+        });
       } finally {
         setRegeneratingMessageId(null);
       }
@@ -266,7 +269,10 @@ export function AgentConversationView({
                 onEditSubmit={
                   message.role === "user" && !isLoading
                     ? (messageId, newContent) =>
-                        sendMessage([], newContent, undefined, messageId)
+                        sendMessage([], {
+                          message: newContent,
+                          editId: messageId,
+                        })
                     : undefined
                 }
                 onVersionChange={handleVersionChange}

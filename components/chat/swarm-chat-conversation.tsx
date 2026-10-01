@@ -162,7 +162,7 @@ export function SwarmChatConversation({ threadId }: SwarmChatConversationProps) 
       messages.length === 0
     ) {
       const messageToSend = input || pendingMessageTextRef.current;
-      sendMessage(pendingAttachmentsRef.current, messageToSend);
+      sendMessage(pendingAttachmentsRef.current, { message: messageToSend });
       setInput("");
       pendingMessageTextRef.current = "";
       pendingAttachmentsRef.current = [];
