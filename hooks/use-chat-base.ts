@@ -15,15 +15,24 @@ import { threadKeys } from "./use-threads-queries";
 import { generateId } from "@/lib/utils";
 
 // Shared types
-export interface UseChatOptions {
+/**
+ * Options `useChatBase` itself honours. The specialized hooks extend this with
+ * the fields only they read, so those cannot be passed to a hook that would
+ * silently ignore them.
+ */
+export interface BaseChatOptions {
   threadId?: string;
   initialMessages?: Message[];
+  skipInitialLoad?: boolean;
+  /** Pins the model for agent chat; otherwise the stored selection is used. */
+  selectedModel?: string;
+}
+
+export interface UseChatOptions extends BaseChatOptions {
   agentId?: string;
   systemPrompt?: string;
-  selectedModel?: string;
   temperature?: number;
   topP?: number;
-  skipInitialLoad?: boolean;
 }
 
 // Re-export ChatAttachment as FileAttachment for backward compatibility
@@ -57,7 +66,7 @@ export interface UseChatBaseReturn {
 /**
  * Base hook with shared state and utilities for both normal and agent chat
  */
-export function useChatBase(options: UseChatOptions = {}): UseChatBaseReturn {
+export function useChatBase(options: BaseChatOptions = {}): UseChatBaseReturn {
   const {
     threadId: initialThreadId,
     initialMessages = [],
@@ -67,7 +76,11 @@ export function useChatBase(options: UseChatOptions = {}): UseChatBaseReturn {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const { selectedModel, setSelectedModel } = useChatSettings();
+  const { selectedModel: storedModel, setSelectedModel } = useChatSettings();
+  // An explicit option pins the model (agent chat); otherwise the user's stored
+  // choice wins. Centralising the precedence here is what lets the specialized
+  // hooks stop repeating `options.selectedModel || selectedModel`.
+  const selectedModel = options.selectedModel ?? storedModel;
   const [threadId, setThreadId] = useState<string | undefined>(initialThreadId);
   const [threadTitle, setThreadTitle] = useState("New Chat");
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +131,7 @@ export function useChatBase(options: UseChatOptions = {}): UseChatBaseReturn {
         const models = (await res.json()) as Array<{ id: string }>;
         if (!Array.isArray(models) || models.length === 0) return;
 
-        const hasSelectedModel = models.some((model) => model.id === selectedModel);
+        const hasSelectedModel = models.some((model) => model.id === storedModel);
         if (!hasSelectedModel && !cancelled) {
           setSelectedModel(models[0].id);
         }
@@ -132,7 +145,7 @@ export function useChatBase(options: UseChatOptions = {}): UseChatBaseReturn {
     return () => {
       cancelled = true;
     };
-  }, [selectedModel, setSelectedModel]);
+  }, [storedModel, setSelectedModel]);
 
   // Load messages from API for a given thread
   const loadMessages = useCallback(async (id: string) => {

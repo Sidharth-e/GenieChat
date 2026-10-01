@@ -703,23 +703,31 @@ export function ChatConversation({
             onStop={isArenaMode ? stopArenaGeneration : stopGeneration}
             isLoading={isLoading}
             placeholder={`Message ${AI_NAME}`}
-            showModelSelector={!isArenaMode}
-            selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
             contextKey={`thread-${threadId}`}
-            isWebSearchEnabled={isWebSearchEnabled}
-            onWebSearchChange={setIsWebSearchEnabled}
-            isDeepResearchEnabled={isDeepResearchEnabled}
-            onDeepResearchChange={setIsDeepResearchEnabled}
-            deepResearchDepth={deepResearchDepth}
-            onDeepResearchDepthChange={setDeepResearchDepth}
+            model={{
+              selectedModel,
+              onModelChange: setSelectedModel,
+              showModelSelector: !isArenaMode,
+              arenaSelector: <ArenaModelSelector disabled={isLoading} />,
+            }}
+            webSearch={{
+              enabled: isWebSearchEnabled,
+              onChange: setIsWebSearchEnabled,
+            }}
+            deepResearch={{
+              enabled: isDeepResearchEnabled,
+              onChange: setIsDeepResearchEnabled,
+              depth: deepResearchDepth,
+              onDepthChange: setDeepResearchDepth,
+            }}
             {...(modelSupportsReasoning
               ? {
-                  reasoningEffort,
-                  onReasoningEffortChange: setReasoningEffort,
+                  reasoning: {
+                    effort: reasoningEffort,
+                    onChange: setReasoningEffort,
+                  },
                 }
               : {})}
-            arenaSelector={<ArenaModelSelector disabled={isLoading} />}
           />
           {/* <p className="mt-3 text-center text-xs text-tertiary/50">
             {AI_NAME} can make mistakes. Check important info.

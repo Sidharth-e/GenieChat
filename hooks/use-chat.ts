@@ -190,9 +190,7 @@ export function useChat(options: UseChatOptions = {}) {
         return;
       if ((isRegeneration || isEdit) && !threadId) return;
 
-      const modelToUse = agentId
-        ? options.selectedModel || selectedModel
-        : selectedModel;
+      const modelToUse = selectedModel;
       const endpoint = agentId ? "/api/agent/stream" : "/api/chat/stream";
       let pendingUserMessageId: string | null = null;
 
@@ -609,7 +607,6 @@ export function useChat(options: UseChatOptions = {}) {
       systemPrompt,
       fetchThreads,
       invalidateThreads,
-      options.selectedModel,
       setMessages,
       setInput,
       setIsLoading,

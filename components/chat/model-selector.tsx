@@ -19,10 +19,6 @@ export interface ModelSelectorProps {
   className?: string;
   triggerClassName?: string;
   showModelName?: boolean;
-  menuAlignOffset?: number;
-  shiftSubmenuLeftOnHome?: boolean;
-  autoMode?: boolean;
-  onAutoModeChange?: (auto: boolean) => void;
 }
 
 const providerIcons: Record<string, React.ReactNode> = {

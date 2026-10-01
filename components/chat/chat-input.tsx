@@ -74,6 +74,42 @@ interface SpeechRecognitionErrorEvent {
   message?: string;
 }
 
+/**
+ * The composer's optional features are passed as cohesive groups rather than
+ * flat props. Each group maps 1:1 to the menu that consumes it, so adding an
+ * option changes one object instead of a 26-line interface.
+ */
+export interface ChatInputModelOptions {
+  selectedModel?: string;
+  onModelChange?: (model: string) => void;
+  showModelSelector?: boolean;
+  arenaSelector?: React.ReactNode;
+}
+
+export interface ChatInputDeepResearchOptions {
+  enabled?: boolean;
+  onChange?: (enabled: boolean) => void;
+  depth?: DeepResearchDepth;
+  onDepthChange?: (depth: DeepResearchDepth) => void;
+}
+
+export interface ChatInputWebSearchOptions {
+  enabled?: boolean;
+  onChange?: (enabled: boolean) => void;
+}
+
+export interface ChatInputReasoningOptions {
+  effort?: ReasoningEffort;
+  onChange?: (effort: ReasoningEffort) => void;
+}
+
+export interface ChatInputAgentOptions {
+  selected?: Agent | null;
+  onChange?: (agent: Agent | null) => void;
+  selectedMany?: Agent[];
+  onChangeMany?: (agents: Agent[]) => void;
+}
+
 interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -82,25 +118,12 @@ interface ChatInputProps {
   isLoading?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  selectedModel?: string;
-  onModelChange?: (model: string) => void;
-  showModelSelector?: boolean;
   contextKey?: string;
-  isDeepResearchEnabled?: boolean;
-  onDeepResearchChange?: (enabled: boolean) => void;
-  deepResearchDepth?: DeepResearchDepth;
-  onDeepResearchDepthChange?: (depth: DeepResearchDepth) => void;
-  isWebSearchEnabled?: boolean;
-  onWebSearchChange?: (enabled: boolean) => void;
-  modelMenuAlignOffset?: number;
-  shiftSubmenuLeftOnHome?: boolean;
-  arenaSelector?: React.ReactNode;
-  reasoningEffort?: ReasoningEffort;
-  onReasoningEffortChange?: (effort: ReasoningEffort) => void;
-  selectedAgent?: Agent | null;
-  onAgentChange?: (agent: Agent | null) => void;
-  selectedAgents?: Agent[];
-  onAgentsChange?: (agents: Agent[]) => void;
+  model?: ChatInputModelOptions;
+  deepResearch?: ChatInputDeepResearchOptions;
+  webSearch?: ChatInputWebSearchOptions;
+  reasoning?: ChatInputReasoningOptions;
+  agentSelection?: ChatInputAgentOptions;
 }
 
 interface PendingUpload {
@@ -126,24 +149,36 @@ export function ChatInput({
   isLoading,
   disabled,
   placeholder = `Message ${AI_NAME}`,
-  selectedModel,
-  onModelChange,
-  showModelSelector = false,
   contextKey = "default",
-  isDeepResearchEnabled,
-  onDeepResearchChange,
-  deepResearchDepth = "medium",
-  onDeepResearchDepthChange,
-  isWebSearchEnabled,
-  onWebSearchChange,
-  reasoningEffort = "off",
-  onReasoningEffortChange,
-  arenaSelector,
-  selectedAgent,
-  onAgentChange,
-  selectedAgents,
-  onAgentsChange,
+  model = {},
+  deepResearch = {},
+  webSearch = {},
+  reasoning = {},
+  agentSelection = {},
 }: ChatInputProps) {
+  const {
+    selectedModel,
+    onModelChange,
+    showModelSelector = false,
+    arenaSelector,
+  } = model;
+  const {
+    enabled: isDeepResearchEnabled,
+    onChange: onDeepResearchChange,
+    depth: deepResearchDepth = "medium",
+    onDepthChange: onDeepResearchDepthChange,
+  } = deepResearch;
+  const { enabled: isWebSearchEnabled, onChange: onWebSearchChange } = webSearch;
+  const {
+    effort: reasoningEffort = "off",
+    onChange: onReasoningEffortChange,
+  } = reasoning;
+  const {
+    selected: selectedAgent,
+    onChange: onAgentChange,
+    selectedMany: selectedAgents,
+    onChangeMany: onAgentsChange,
+  } = agentSelection;
   const editorRef = React.useRef<HTMLDivElement>(null);
   const savedSelectionRef = React.useRef<Range | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);

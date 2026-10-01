@@ -286,37 +286,38 @@ export function HomeChatInterface() {
                     ? `Message ${selectedAgent.name}...`
                     : "Instruct agent or query canvas..."
             }
-            selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
-            showModelSelector={!isArenaMode}
             contextKey="new-chat"
-            isDeepResearchEnabled={isDeepResearchEnabled}
-            onDeepResearchChange={setIsDeepResearchEnabled}
-            deepResearchDepth={deepResearchDepth}
-            onDeepResearchDepthChange={setDeepResearchDepth}
-            isWebSearchEnabled={isWebSearchEnabled}
-            onWebSearchChange={setIsWebSearchEnabled}
+            model={{
+              selectedModel,
+              onModelChange: setSelectedModel,
+              showModelSelector: !isArenaMode,
+              arenaSelector: <ArenaModelSelector disabled={isLoading} />,
+            }}
+            webSearch={{
+              enabled: isWebSearchEnabled,
+              onChange: setIsWebSearchEnabled,
+            }}
+            deepResearch={{
+              enabled: isDeepResearchEnabled,
+              onChange: setIsDeepResearchEnabled,
+              depth: deepResearchDepth,
+              onDepthChange: setDeepResearchDepth,
+            }}
             {...(modelSupportsReasoning
               ? {
-                  reasoningEffort,
-                  onReasoningEffortChange: setReasoningEffort,
+                  reasoning: {
+                    effort: reasoningEffort,
+                    onChange: setReasoningEffort,
+                  },
                 }
               : {})}
-            modelMenuAlignOffset={0}
-            shiftSubmenuLeftOnHome={true}
-            selectedAgent={selectedAgent}
-            onAgentChange={setSelectedAgent}
-            selectedAgents={selectedAgents}
-            onAgentsChange={setSelectedAgents}
-            arenaSelector={<ArenaModelSelector disabled={isLoading} />}
+            agentSelection={{
+              selected: selectedAgent,
+              onChange: setSelectedAgent,
+              selectedMany: selectedAgents,
+              onChangeMany: setSelectedAgents,
+            }}
           />
-          <p className="mt-3 text-center font-mono text-[10px] text-tertiary/40">
-            Press{" "}
-            <kbd className="px-1 border border-card-border rounded-xs bg-card-bg font-sans">
-              Enter
-            </kbd>{" "}
-            to execute
-          </p>
         </div>
       </div>
     </div>

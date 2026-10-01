@@ -167,7 +167,7 @@ export function useMultiAgentChat(options: UseChatOptions ) {
         if ((isRegeneration || isEdit) && !threadId) return;
 
         const endpoint = "/api/multi-agent/stream";
-        const modelToUse = options.selectedModel || selectedModel;
+        const modelToUse = selectedModel;
         let pendingUserMessageId: string | null = null;
 
         if (!isRegeneration && !isEdit) {
@@ -608,7 +608,7 @@ export function useMultiAgentChat(options: UseChatOptions ) {
             abortControllerRef.current = null;
             useMachineStateStore.getState().setMachineStatus("idle");
         }
-    }, [input, isLoading, threadId, selectedModel, agentId, systemPrompt, temperature, topP, fetchThreads, invalidateThreads, options.selectedModel, setMessages, setInput, setIsLoading, setError, abortControllerRef, setThreadId, setThreadTitle, updateThreadTitle, loadMessages]); 
+    }, [input, isLoading, threadId, selectedModel, agentId, systemPrompt, temperature, topP, fetchThreads, invalidateThreads, setMessages, setInput, setIsLoading, setError, abortControllerRef, setThreadId, setThreadTitle, updateThreadTitle, loadMessages]);
 
     const handleFeedbackChange = useCallback((messageId: string, versionId: string, feedback: "like" | "dislike" | null) => {
         setMessages((prev) => {
