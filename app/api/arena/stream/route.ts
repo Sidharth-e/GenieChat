@@ -15,6 +15,10 @@ import {
   getHistoricalImages,
 } from "@/lib/api/stream-helper";
 import type { ArenaResponse, ArenaMetadata } from "@/lib/types";
+import { createSseWriter, SSE_HEADERS } from "@/lib/api/stream/envelope";
+import { buildAssistantPayload } from "@/lib/api/stream/events";
+import { persistAssistantMessage } from "@/lib/api/stream/runner";
+import { StreamPipeline } from "@/lib/api/stream-pipeline";
 
 export const runtime = "nodejs";
 
@@ -186,11 +190,7 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        const writeEvent = (payload: Record<string, unknown>) => {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-          );
-        };
+        const writeEvent = createSseWriter(controller, encoder);
 
         try {
           if (isNewThread) {
@@ -294,27 +294,34 @@ export async function POST(req: NextRequest) {
           // Save assistant message with the first successful response as the default content
           const firstSuccess =
             arenaResponses.find((r) => !r.error) || arenaResponses[0];
-          const savedAssistantMessage = await store.addMessage(
-            currentThreadId!,
-            {
+          const savedAssistantMessage = await persistAssistantMessage({
+            context: {
+              user,
+              requestBody: { message, model: models[0] },
               threadId: currentThreadId!,
-              userId,
-              userName: user.name,
-              userEmail: user.email,
-              role: "assistant",
+              isNewThread,
+              isFirstMessage,
+              isRegeneration: false,
+            },
+            payload: buildAssistantPayload({
               content: firstSuccess.content,
               model: firstSuccess.modelId,
-              tokens:
-                firstSuccess.tokens.prompt > 0
-                  ? firstSuccess.tokens
-                  : undefined,
+              usage: {
+                prompt: firstSuccess.tokens.prompt,
+                completion: firstSuccess.tokens.completion,
+                total: firstSuccess.tokens.prompt,
+              },
+              fallback: { prompt: 0, completion: 0, total: 0 },
+              toolCalls: [],
+              citations: [],
               arenaMetadata,
-            },
-          );
+              zeroUsagePolicy: "omit",
+            }),
+          });
 
           writeEvent({
             type: "arena_complete",
-            messageId: savedAssistantMessage.id,
+            messageId: savedAssistantMessage?.id,
             responses: arenaResponses.map((r) => ({
               modelId: r.modelId,
               modelName: r.modelName,
@@ -325,19 +332,12 @@ export async function POST(req: NextRequest) {
             })),
           });
 
-          // Generate title if first message
-          if (isFirstMessage) {
-            try {
-              const { chatService } =
-                await import("@/lib/langchain/chat-service");
-              const allMessages = await store.getMessages(currentThreadId!);
-              const title = await chatService.generateTitle(allMessages);
-              await store.updateThread(currentThreadId!, { title });
-              writeEvent({ type: "title", title });
-            } catch (e) {
-              logger.error("Failed to generate title:", e);
-            }
-          }
+          await StreamPipeline.generateTitleIfNeeded(
+            currentThreadId!,
+            isFirstMessage,
+            encoder,
+            controller,
+          );
 
           writeEvent({ type: "done" });
           controller.close();
@@ -351,13 +351,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    return new Response(stream, { headers: SSE_HEADERS });
   } catch (error) {
     logger.error({ err: error }, "Arena stream error");
     return handleError(error, "Arena stream");
