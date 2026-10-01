@@ -6,7 +6,7 @@ import { DeepResearchDepth } from "@/lib/deep-research";
 
 export const NEW_CHAT_PENDING_KEY = "__new_chat__";
 
-interface PendingMessageData {
+export interface PendingMessageData {
     message: string;
     attachments: ChatAttachment[];
     forceWebSearch?: boolean;
