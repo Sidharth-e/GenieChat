@@ -114,8 +114,6 @@ async function executeLLMNode(
   outputs: WorkflowOutputs,
   deps: WorkflowDeps,
 ): Promise<NodeResult> {
-  const model = deps.getModel(data.model.model);
-
   const messages: BaseMessage[] = (data.messages ?? [])
     .map((msg) => {
       const text = resolveTipTapContent(msg.content, outputs);
@@ -136,6 +134,11 @@ async function executeLLMNode(
       `LLM node "${data.name}" has no message content. Add text or variable references to at least one message.`,
     );
   }
+
+  // The model is built only once the node is known to be runnable: a node with
+  // no usable message content can never succeed, so constructing a provider
+  // client for it would be pure waste (and would demand config it does not need).
+  const model = deps.getModel(data.model.model);
 
   let fullResponse = "";
   let finalChunk: AIMessageChunk | null = null;
