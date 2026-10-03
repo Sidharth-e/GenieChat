@@ -30,6 +30,8 @@ export const config = {
       autoTasks: "auto_tasks",
       artifacts: "artifacts",
       webhooks: "webhooks",
+      schedules: "schedules",
+      scheduleRuns: "schedule_runs",
     },
   },
 

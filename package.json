@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "db:setup": "tsx scripts/setup-mongodb.ts",
+    "db:setup": "tsx --env-file=.env scripts/setup-mongodb.ts",
     "db:setup:pg": "tsx --env-file=.env scripts/setup-postgres.ts",
     "db:setup:neo4j": "tsx --env-file=.env scripts/setup-neo4j.ts",
     "memory:check": "tsx --env-file=.env scripts/check-memory.ts",

@@ -17,6 +17,8 @@ import {
   AiUsage,
   Webhook,
   WebhookInvocation,
+  Schedule,
+  ScheduleRun,
 } from "../types";
 import { Role } from "../rbac/types";
 import type { ArtifactType } from "../artifacts/types";
@@ -130,6 +132,17 @@ export interface AiUsageDocument extends AiUsage {
 export interface WebhookDocument extends Webhook {
   type: "webhook";
 }
+
+/**
+ * The two scheduling collections each hold exactly one document shape, and
+ * neither store writes nor queries a `type` discriminator — unlike `threads`
+ * and `webhooks`, whose stores do both. Declaring one here would name a field
+ * that is never stored and that no index or query filters on. A type alias
+ * rather than an empty `interface extends`, because the rule that would flag
+ * the latter (`no-empty-object-type`) is right that they are the same type.
+ */
+export type ScheduleDocument = Schedule;
+export type ScheduleRunDocument = ScheduleRun;
 
 export interface WebhookInvocationDocument extends WebhookInvocation {
   type: "webhook_invocation";

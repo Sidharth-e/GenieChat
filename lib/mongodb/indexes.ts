@@ -38,9 +38,11 @@ const NAMES = {
   autoTasks: "auto_tasks",
   artifacts: "artifacts",
   webhooks: "webhooks",
+  schedules: "schedules",
+  scheduleRuns: "schedule_runs",
 } as const;
 
-/** All 18 collection names. Asserted against `config.mongodb.collections`. */
+/** All 19 collection names. Asserted against `config.mongodb.collections`. */
 export const COLLECTION_NAMES: string[] = Object.values(NAMES);
 
 export type IndexSpec = {
@@ -635,5 +637,55 @@ export const INDEX_SPECS: IndexSpec[] = [
     keys: { shareId: 1 },
     options: { partialFilterExpression: { isShared: true } },
     name: "prompts_shareId",
+  },
+  // The scheduler tick's due query, on every tick. Partial rather than leading
+  // with `enabled`, matching `tools_keyhash` and `prompts_shareId`: a disabled
+  // schedule is never looked up this way, so indexing it is dead weight.
+  {
+    collection: NAMES.schedules,
+    keys: { nextRunAt: 1 },
+    options: { partialFilterExpression: { enabled: true } },
+    name: "schedules_due",
+  },
+  // The list page, which is scoped to one user and sorted newest-first.
+  {
+    collection: NAMES.schedules,
+    keys: { userId: 1, updatedAt: -1 },
+    name: "schedules_userId_updatedAt",
+  },
+  // Phase 4's claim (`status: "pending"` + `nextAttemptAt <= now`) and the
+  // retry write, which are the same query.
+  {
+    collection: NAMES.scheduleRuns,
+    keys: { status: 1, nextAttemptAt: 1 },
+    name: "scheduleRuns_due",
+  },
+  // Phase 1's reaper, which looks for runs that went quiet.
+  {
+    collection: NAMES.scheduleRuns,
+    keys: { status: 1, leaseExpiresAt: 1 },
+    name: "scheduleRuns_lease",
+  },
+  // Per-schedule history, and the overlap check that runs before every insert.
+  {
+    collection: NAMES.scheduleRuns,
+    keys: { scheduleId: 1, status: 1, createdAt: -1 },
+    name: "scheduleRuns_scheduleId_status_createdAt",
+  },
+  // Cross-schedule activity for one user.
+  {
+    collection: NAMES.scheduleRuns,
+    keys: { userId: 1, createdAt: -1 },
+    name: "scheduleRuns_userId_createdAt",
+  },
+  // Retention. `expireAfterSeconds: 0` means "expire at the stored instant",
+  // which is why `expiresAt` is a real `Date` and not an ISO string — a string
+  // field is not a `date` to the TTL monitor, so the index would never expire
+  // anything.
+  {
+    collection: NAMES.scheduleRuns,
+    keys: { expiresAt: 1 },
+    options: { expireAfterSeconds: 0 },
+    name: "scheduleRuns_expiresAt_ttl",
   },
 ];

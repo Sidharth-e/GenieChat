@@ -37,8 +37,8 @@ process.env.MONGODB_URI ??= "mongodb://test.invalid:27017";
 const { config } = await import("@/lib/config");
 
 describe("COLLECTION_NAMES", () => {
-  it("covers all 17 collections", () => {
-    expect(COLLECTION_NAMES).toHaveLength(17);
+  it("covers all 19 collections", () => {
+    expect(COLLECTION_NAMES).toHaveLength(19);
   });
 
   it("matches the config collection names exactly", () => {
@@ -258,6 +258,41 @@ describe("INDEX_SPECS", () => {
         collection: config.mongodb.collections.prompts,
         keys: { shareId: 1 },
         options: { partialFilterExpression: { isShared: true } },
+      },
+      // The scheduler tick's due query, on every tick. Partial rather than
+      // leading with `enabled`, matching `tools_keyhash`: a disabled schedule is
+      // never looked up this way.
+      schedules_due: {
+        collection: config.mongodb.collections.schedules,
+        keys: { nextRunAt: 1 },
+        options: { partialFilterExpression: { enabled: true } },
+      },
+      schedules_userId_updatedAt: {
+        collection: config.mongodb.collections.schedules,
+        keys: { userId: 1, updatedAt: -1 },
+      },
+      scheduleRuns_due: {
+        collection: config.mongodb.collections.scheduleRuns,
+        keys: { status: 1, nextAttemptAt: 1 },
+      },
+      scheduleRuns_lease: {
+        collection: config.mongodb.collections.scheduleRuns,
+        keys: { status: 1, leaseExpiresAt: 1 },
+      },
+      scheduleRuns_scheduleId_status_createdAt: {
+        collection: config.mongodb.collections.scheduleRuns,
+        keys: { scheduleId: 1, status: 1, createdAt: -1 },
+      },
+      scheduleRuns_userId_createdAt: {
+        collection: config.mongodb.collections.scheduleRuns,
+        keys: { userId: 1, createdAt: -1 },
+      },
+      // Retention. `expireAfterSeconds: 0` expires at the stored instant, which
+      // is why `expiresAt` is a real `Date` and not an ISO string.
+      scheduleRuns_expiresAt_ttl: {
+        collection: config.mongodb.collections.scheduleRuns,
+        keys: { expiresAt: 1 },
+        options: { expireAfterSeconds: 0 },
       },
     };
 
