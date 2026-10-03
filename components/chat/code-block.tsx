@@ -25,6 +25,14 @@ const ChartRenderer = dynamic(
   { loading: () => <div className="animate-pulse rounded-xl bg-card-bg border border-card-border p-6 my-6 h-40" /> },
 );
 
+const BarcodeRenderer = dynamic(
+  () => import("@/components/chat/barcode-renderer").then((mod) => ({ default: mod.BarcodeRenderer })),
+  {
+    ssr: false,
+    loading: () => <div className="animate-pulse rounded-xl bg-card-bg border border-card-border p-6 my-6 h-40" />,
+  },
+);
+
 interface CodeBlockProps {
   className?: string;
   children?: React.ReactNode;
@@ -143,6 +151,15 @@ export function CodeBlock({
 
   if (language === "chart") {
     return <ChartRenderer content={String(children).replace(/\n$/, "")} />;
+  }
+
+  if (language === "barcode") {
+    return (
+      <BarcodeRenderer
+        content={String(children).replace(/\n$/, "")}
+        isStreaming={isStreaming}
+      />
+    );
   }
 
   if (language === "react-canvas" || language === "canvas") {

@@ -50,7 +50,7 @@ Pick the **one** correct tool based on intent. When tools could overlap, follow 
 
 ## Direct Visualizations & Code Fences (No Tools Needed)
 
-Do NOT call tools for diagrams, charts, or UI components. Output them directly in your response stream using markdown code fences:
+Do NOT call tools for diagrams, charts, barcodes, or UI components. Output them directly in your response stream using markdown code fences:
 
 ### 1. Mermaid Diagrams (\`\`\`mermaid)
 For flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, or Gantt charts.
@@ -86,6 +86,28 @@ For building functional web UI mockups, interactive widgets, dashboards, or web 
   - Use React hooks (\`useState\`, \`useEffect\`, etc.) for any interactivity.
   - When modifying an existing canvas from the conversation, incorporate the changes and output the complete updated component.
 
+### 4. Barcode & QR Codes (\`\`\`barcode)
+For a scannable QR code or linear barcode the user can scan or print.
+- Output a single JSON object inside a \`\`\`barcode fence — no prose, no comments.
+- Schema:
+\`\`\`barcode
+{
+  "format": "qrcode",
+  "text": "https://example.com",
+  "caption": "Optional label shown under the code",
+  "scale": 2,
+  "height": 15,
+  "includeText": true
+}
+\`\`\`
+- **format** — one of: \`qrcode\`, \`datamatrix\`, \`code128\`, \`ean13\`, \`upca\`, \`code39\`.
+  - \`qrcode\` → URLs, plain text, WiFi or vCard payloads. \`datamatrix\` → compact industrial payloads. \`code128\` → arbitrary alphanumeric data. \`ean13\` / \`upca\` → retail product numbers.
+- **text** — the exact payload to encode. Never truncate, reformat, or pad it.
+- Optional: \`caption\` (label under the code), \`scale\` (1–6, default 2).
+- Linear formats only: \`height\` (5–50 mm, default 15) and \`includeText\` (set \`false\` for a bare symbol with no text bar).
+- **Check digits**: give 12 digits for \`ean13\` and 11 for \`upca\` — the encoder appends the check digit. Do not compute or append one yourself.
+- Never invent a payload. If the user has not supplied the data to encode, ask for it.
+
 ---
 
 ## Tool Output Formatting
@@ -93,6 +115,7 @@ For building functional web UI mockups, interactive widgets, dashboards, or web 
 - **Images**: Always display with \`![description](url)\`. Aspect ratio: landscape for scenes, portrait for people, square for icons/logos.
 - **Mermaid**: Wrap in a \`\`\`mermaid code block.
 - **Charts**: Wrap in a \`\`\`chart code block.
+- **Barcode**: Wrap in a \`\`\`barcode code block.
 - **Canvas**: Wrap in a \`\`\`react-canvas code block.
 - **Code Interpreter**: Present results directly. Render artifacts as \`[filename](download_url)\`. On error, report the actual error — never guess results, substitute sample data, or silently retry. On partial output, report both what was produced and what failed. Each invocation is stateless.
 

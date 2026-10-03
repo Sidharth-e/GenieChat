@@ -772,6 +772,46 @@ export type SendMessage = (
   options?: SendMessageOptions,
 ) => void | Promise<void>;
 
+// Barcode fence (```barcode)
+
+/** The `format` values a ```` ```barcode ```` fence accepts. */
+export type BarcodeFormat =
+  | "qrcode"
+  | "datamatrix"
+  | "code128"
+  | "ean13"
+  | "upca"
+  | "code39";
+
+/** A parsed ```` ```barcode ```` fence body. */
+export interface BarcodeConfig {
+  format: BarcodeFormat;
+  text: string;
+  caption?: string;
+  /** Integer 1–6. Defaults to 2; clamped when the options are built. */
+  scale?: number;
+  /** Linear formats only, in millimetres. Defaults to 15; clamped to 5–50. */
+  height?: number;
+  /** Linear formats only; whether the encoder draws the text bar. */
+  includeText?: boolean;
+}
+
+/**
+ * The slice of bwip-js's render options this fence sets. Declared here rather
+ * than imported so the pure module in `lib/barcode.ts` never pulls the encoder
+ * in, and so the two cannot drift silently — the renderer hands this object
+ * straight to `toSVG`, where it is checked against the vendor's own type.
+ */
+export interface BarcodeOptions {
+  bcid: string;
+  text: string;
+  scale?: number;
+  backgroundcolor?: string;
+  height?: number;
+  includetext?: boolean;
+  textxalign?: "center";
+}
+
 /** The subset of chat-hook state the conversation shell renders. */
 export interface ConversationState {
   messages: Message[];
