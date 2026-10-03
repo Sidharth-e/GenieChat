@@ -178,5 +178,7 @@ export type WorkflowStreamEvent =
     }
   | {
       eventType: "WORKFLOW_END";
+      isOk?: boolean;
       output?: unknown;
+      error?: string;
     };

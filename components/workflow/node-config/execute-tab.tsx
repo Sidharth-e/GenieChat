@@ -107,7 +107,15 @@ export function ExecuteTab({ close, onSave }: ExecuteTabProps) {
           break;
         }
         case "WORKFLOW_END": {
-          // Final output is extracted from the last Output node history entry
+          // A failed run reports its reason here rather than by throwing, so the
+          // tab reads it from the event. On success the output comes from the
+          // Output node's history entry, below.
+          if (!event.isOk) {
+            setResult((prev) => ({
+              ...prev,
+              error: event.error ?? "Execution failed",
+            }));
+          }
           break;
         }
       }
@@ -192,7 +200,7 @@ export function ExecuteTab({ close, onSave }: ExecuteTabProps) {
           if (outputHistories.length > 0) {
             const lastOutput =
               outputHistories[outputHistories.length - 1].result?.output;
-            setResult({ output: lastOutput });
+            setResult((prev) => ({ ...prev, output: lastOutput }));
           }
           return prev;
         });

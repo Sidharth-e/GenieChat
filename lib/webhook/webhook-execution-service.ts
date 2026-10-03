@@ -96,8 +96,8 @@ async function executeWorkflowTarget(
     // workflow that could not start at all (which yields it before any
     // execution record exists) and one whose node failed mid-run. Recording
     // either as "completed" would be a success for a run that did not
-    // succeed. `error` may be absent — the executor's end-of-run terminal
-    // event does not carry one yet — so the fallback is load-bearing.
+    // succeed. `error` carries the reason; the fallback covers an
+    // `isOk: false` event that arrives without one.
     if (event.eventType === "WORKFLOW_END" && event.isOk === false) {
       runError = event.error ?? "Workflow execution failed";
     }

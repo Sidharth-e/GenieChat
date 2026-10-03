@@ -277,7 +277,7 @@ export class WorkflowExecutionService {
       }
     }
 
-    yield { eventType: "WORKFLOW_END", isOk: !errorMessage };
+    yield { eventType: "WORKFLOW_END", isOk: !errorMessage, error: errorMessage };
   }
 }
 
