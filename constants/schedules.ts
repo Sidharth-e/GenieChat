@@ -68,3 +68,27 @@ export const SCHEDULE_TERMINAL_ERROR_CODES = [
 
 export type ScheduleTerminalErrorCode =
   (typeof SCHEDULE_TERMINAL_ERROR_CODES)[number];
+
+/**
+ * The ceiling on a per-schedule attempt count.
+ *
+ * A lower bound exists because `0` is falsy: the tick reads
+ * `schedule.maxAttempts || SCHEDULE_DEFAULT_MAX_ATTEMPTS`, so a stored `0`
+ * silently becomes 3 rather than meaning "no retries". An upper bound exists
+ * because a target that fails every time would otherwise retry for days at one
+ * model call per attempt -- three attempts is a working default and ten is
+ * already generous.
+ */
+export const SCHEDULE_MAX_ATTEMPTS = 10;
+
+/**
+ * The runtime lists behind `lib/types.ts`'s unions.
+ *
+ * The unions are the type; these are what a request body can be validated
+ * against, because a type is gone at runtime. `tests/lib/schedules/schedule-input.test.ts`
+ * pins each list against its union, so a new member added to one and not the
+ * other fails a test rather than silently rejecting the new value.
+ */
+export const SCHEDULE_TARGET_TYPES = ["workflow", "agent", "tool"] as const;
+export const SCHEDULE_OVERLAP_POLICIES = ["skip", "allow"] as const;
+export const SCHEDULE_CATCH_UP_POLICIES = ["skip", "once"] as const;
