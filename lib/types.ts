@@ -895,3 +895,72 @@ export interface TriggerTarget {
 export type ScheduleCadence =
   | { kind: "cron"; expression: string; timezone: string }
   | { kind: "once"; runAt: string };
+
+export type ScheduleRunStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "cancelled";
+
+/**
+ * A user's intent: "every weekday at 9am, run this agent with this prompt".
+ *
+ * Separate from `ScheduleRun` (the attempt) because retries and history need a
+ * record per attempt, and rolling them into one document would make "last status"
+ * the only thing expressible — which is exactly the shape being replaced.
+ */
+export interface Schedule {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  target: TriggerTarget;
+  /** Validated against the target executor's `inputSchema`; never inspected by the scheduler. */
+  input: unknown;
+  cadence: ScheduleCadence;
+  /** Explicit, unlike `RichWorkflow` — the only way to pause a schedule. */
+  enabled: boolean;
+  /** `skip` is the default: an overlap increments `skippedRuns` instead of inserting a row. */
+  overlapPolicy: "skip" | "allow";
+  /** `skip` is the default: a missed window produces no backlog. */
+  catchUpPolicy: "skip" | "once";
+  maxAttempts: number;
+  nextRunAt: string | null;
+  lastRunAt?: string;
+  lastRunStatus?: ScheduleRunStatus;
+  skippedRuns: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One attempt. Every model call the subsystem makes leaves one of these. */
+export interface ScheduleRun {
+  id: string;
+  scheduleId: string;
+  userId: string;
+  /** Snapshot, so history survives the target being renamed or deleted. */
+  target: TriggerTarget & { name?: string };
+  trigger: "schedule" | "manual";
+  scheduledFor: string;
+  status: ScheduleRunStatus;
+  attempt: number;
+  maxAttempts: number;
+  nextAttemptAt: string | null;
+  /** Set while `running`. Past it, another tick may take the run back. */
+  leaseExpiresAt: string | null;
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+  error?: { code: string; message: string; retryable: boolean };
+  resultRef?: {
+    executionId?: string;
+    threadId?: string;
+    outputPreview?: string;
+  };
+  /** A real `Date`, because the TTL index requires one. */
+  expiresAt: Date;
+  createdAt: string;
+  updatedAt: string;
+}
