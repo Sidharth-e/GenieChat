@@ -50,7 +50,7 @@ Pick the **one** correct tool based on intent. When tools could overlap, follow 
 
 ## Direct Visualizations & Code Fences (No Tools Needed)
 
-Do NOT call tools for diagrams, charts, barcodes, or UI components. Output them directly in your response stream using markdown code fences:
+Do NOT call tools for diagrams, charts, scan codes, or UI components. Output them directly in your response stream using markdown code fences:
 
 ### 1. Mermaid Diagrams (\`\`\`mermaid)
 For flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, or Gantt charts.
@@ -86,11 +86,11 @@ For building functional web UI mockups, interactive widgets, dashboards, or web 
   - Use React hooks (\`useState\`, \`useEffect\`, etc.) for any interactivity.
   - When modifying an existing canvas from the conversation, incorporate the changes and output the complete updated component.
 
-### 4. Barcode & QR Codes (\`\`\`barcode)
-For a scannable QR code or linear barcode the user can scan or print.
-- Output a single JSON object inside a \`\`\`barcode fence — no prose, no comments.
+### 4. Scan Codes (\`\`\`scancode)
+For a scannable QR code or linear barcode the user can scan, download, or print.
+- Output a single JSON object inside a \`\`\`scancode fence — no prose, no comments.
 - Schema:
-\`\`\`barcode
+\`\`\`scancode
 {
   "format": "qrcode",
   "text": "https://example.com",
@@ -115,7 +115,7 @@ For a scannable QR code or linear barcode the user can scan or print.
 - **Images**: Always display with \`![description](url)\`. Aspect ratio: landscape for scenes, portrait for people, square for icons/logos.
 - **Mermaid**: Wrap in a \`\`\`mermaid code block.
 - **Charts**: Wrap in a \`\`\`chart code block.
-- **Barcode**: Wrap in a \`\`\`barcode code block.
+- **Scan code**: Wrap in a \`\`\`scancode code block.
 - **Canvas**: Wrap in a \`\`\`react-canvas code block.
 - **Code Interpreter**: Present results directly. Render artifacts as \`[filename](download_url)\`. On error, report the actual error — never guess results, substitute sample data, or silently retry. On partial output, report both what was produced and what failed. Each invocation is stateless.
 

@@ -110,6 +110,38 @@ export class ArtifactStore {
     return Promise.all(docs.map(toSummary));
   }
 
+  /**
+   * The content hashes of the scan codes already saved on a thread.
+   *
+   * Scan codes are written automatically on every stream, so regenerating a
+   * message would otherwise store a second artifact for the same symbol.
+   * Comparing hashes against what the thread already holds is what makes a
+   * re-run idempotent.
+   *
+   * Deliberately not `getArtifacts`: that signs a URL per row, and this needs
+   * one field from each.
+   */
+  async getScancodeHashes(
+    userId: string,
+    chatId: string,
+  ): Promise<Set<string>> {
+    const docs = await this.artifactsCollection
+      .find(
+        { userId, type: "scancode", chatId },
+        { projection: { "metadata.scancodeHash": 1 } },
+      )
+      .toArray();
+
+    const hashes = new Set<string>();
+    for (const doc of docs) {
+      const hash = doc.metadata?.scancodeHash;
+      if (typeof hash === "string") {
+        hashes.add(hash);
+      }
+    }
+    return hashes;
+  }
+
   async getArtifact(
     userId: string,
     artifactId: string,

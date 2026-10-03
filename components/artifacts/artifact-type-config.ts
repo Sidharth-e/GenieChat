@@ -1,4 +1,4 @@
-import { Image, FileCode, BarChart3, GitBranch, Component, File } from "lucide-react";
+import { Image, FileCode, BarChart3, GitBranch, Component, ScanLine, File } from "lucide-react";
 import type { ArtifactType } from "@/lib/artifacts/types";
 
 /**
@@ -41,6 +41,11 @@ export const ARTIFACT_TYPE_CONFIG: Record<ArtifactType, ArtifactTypeConfig> = {
   canvas: {
     icon: Component,
     label: "Canvas",
+    iconColorClass: "text-[var(--blue)]",
+  },
+  scancode: {
+    icon: ScanLine,
+    label: "Scan code",
     iconColorClass: "text-[var(--blue)]",
   },
   code_sandbox: {

@@ -2,6 +2,7 @@ import { logger } from "@/lib/logger";
 import { store } from "@/lib/store";
 import { StreamPipeline } from "@/lib/api/stream-pipeline";
 import { saveToolArtifact } from "@/lib/artifacts/save";
+import { saveScancodeArtifacts } from "@/lib/artifacts/scancode";
 import type { ArtifactPayload } from "@/lib/artifacts/types";
 import { createTokenBuffer, SSE_HEADERS } from "./envelope";
 import {
@@ -242,6 +243,16 @@ export async function runTokenStream(params: {
           }
         }
         tokenBuffer.flush();
+
+        // Scan codes are saved from the message text, not from a tool result —
+        // the fence *is* the artifact, so there is no envelope to read. Detached
+        // like the tool-artifact write above: storage must not be able to fail a
+        // reply the user has already received.
+        saveScancodeArtifacts(
+          context.user.id,
+          accumulator.content,
+          context.threadId,
+        ).catch(() => {});
 
         const fallback = fallbackUsage(
           (context.requestBody.message ?? "").length,

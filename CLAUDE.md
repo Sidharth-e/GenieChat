@@ -75,6 +75,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/tool/` — Tool system: `default-tools.ts` (built-in tools), `custom-tool-converter.ts` (user-defined tools).
 - `lib/stores/` — Zustand client-side stores (agents, threads, chat settings, sidebar, workflows, etc.).
 - `lib/ai-actions/` — Server actions for agents, prompts, tools, and user search (`user-actions.ts`).
+- `lib/artifacts/` — the Artifacts store's writers. `save.ts` holds `saveToolArtifact`, which every type but one reaches through a tool-result envelope; `scancode.ts` is the exception, saving from the message text instead. See [Scan Codes (```scancode)](#scan-codes-scancode).
 - `lib/conversation.ts` — pure helpers shared by the four conversation surfaces: last-assistant detection, the standalone loading-message builder and its predicate. Unit-tested; see [Conversation Surfaces](#conversation-surfaces).
 
 ### Client-Side Patterns
@@ -127,7 +128,7 @@ One `REDIS_URL` connection string feeds both Redis consumers — rate limiting (
 
 Chat attachments, generated images, agent documents and deep-research reports live in self-hosted Garage behind the S3 API. Documents store a canonical `s3://bucket/key` ref rather than a durable URL, and every read presigns a fresh URL from that ref — so a shared link expires (`STORAGE_TTL` in `constants/storage.ts`), and a rotated key invalidates every outstanding presigned URL while the stored reference itself stays intact. See [Server-Side Core](#server-side-core-lib) for the module layout.
 
-`docker compose up -d` starts a single-node Garage alongside Redis (`docker-compose.yml`). The five buckets — `chat-documents`, `chat-images`, `reports`, `agent-documents` and `generated-images` — are ensured and granted to the application key by `scripts/garage-bootstrap.sh`, run by the `garage-bootstrap` compose service; it is idempotent and verifies the grant count rather than trusting `bucket list`. Garage's S3 API port (3900) is bound to all interfaces because **the browser, not only the app, fetches presigned URLs**; the web UI and admin API stay loopback-only.
+`docker compose up -d` starts a single-node Garage alongside Redis (`docker-compose.yml`). The six buckets — `chat-documents`, `chat-images`, `reports`, `agent-documents`, `generated-images` and `artifacts` — are ensured and granted to the application key by `scripts/garage-bootstrap.sh`, run by the `garage-bootstrap` compose service; it is idempotent and verifies the grant count rather than trusting `bucket list`. **A running Garage does not pick up a bucket added to that list later** — the service only runs at `compose up` — so a bucket added since the last bootstrap has to be created by re-running the service, or every write to it fails with `NoSuchBucket`. Garage's S3 API port (3900) is bound to all interfaces because **the browser, not only the app, fetches presigned URLs**; the web UI and admin API stay loopback-only.
 
 `garage.toml` ships a development-only fixed `rpc_secret`, and **any deployment beyond local development must generate its own** — the committed value is safe here only because the RPC port is unpublished locally. In production Garage must likewise be reachable by the **browser**, not only the Web App, for the same presigned-URL reason; `S3_PUBLIC_ENDPOINT` is how those two addresses are told apart.
 
@@ -244,6 +245,42 @@ that executes the same Cypher.
 ### Document Parsing (Docling)
 
 Document parsing runs on a self-hosted `docling-serve` sidecar (port 5001, loopback-only, since only the app talks to it), built from `scripts/docling.Dockerfile` to add the LibreOffice layer the published image omits — not for the legacy Office formats, which Docling 2.93.0 rejects with or without it, but for DrawingML/VML rendering inside DOCX. `DOCLING_SERVE_URL`, `DOCLING_SERVE_API_KEY` and `DOCLING_SERVE_TIMEOUT_MS` configure it and are optional: an unset or unreachable service degrades to empty extraction rather than blocking boot. The page cap and size cap that bound a conversion are container settings in `docker-compose.yml` (`DOCLING_SERVE_MAX_NUM_PAGES`, `DOCLING_SERVE_MAX_FILE_SIZE`) — both default to `sys.maxsize` upstream, so the compose file supplies the only limit there is.
+
+### Scan Codes (```scancode)
+
+A ```` ```scancode ```` fence renders a scannable symbol — a QR, a Data Matrix or a
+linear barcode — from a small JSON config, alongside the mermaid, chart and
+react-canvas fences. `lib/scancode.ts` is pure and unit-tested: it parses the
+fence body, maps it onto bwip-js options, names the download, and scans a
+finished message for complete fences. `components/chat/scancode-renderer.tsx` is
+the only thing that imports the encoder on the client, so it rides in that
+component's lazy chunk. `constants/prompt.ts` is what teaches the model the
+fence, so a rename has to change both together.
+
+**The fence's former name, `barcode`, is still accepted** — by the renderer's
+dispatch and by `extractScancodeFences`. Renaming in the prompt changes only what
+the model is told from then on: it does not rewrite threads already on disk, nor
+the earlier turns of the conversation the model is currently reading, so a model
+that sees its own past `barcode` fences goes on emitting them. Without the alias
+those messages render as raw JSON instead of a symbol.
+
+**"Scan code", not "barcode":** a QR is a matrix, not a barcode, and the two are
+different symbologies with different payload rules. Every file the fence produces
+is named for both — `qrcode-example-com.svg`, `ean13-590123412345.svg` — because
+a bare `barcode.svg` would misname the QR.
+
+Symbols reach Artifacts automatically. `lib/artifacts/scancode.ts` reads the
+finished message text and saves each fence it finds — nothing to click, because
+the fence *is* the artifact and there is no tool envelope to read, unlike every
+other artifact type. It **re-encodes the SVG from the fence's JSON** rather than
+accepting markup from the client, so the stored bytes come from our own encoder
+and a stored SVG is never a script vector; the browser and node builds of
+bwip-js emit identical output, so the artifact matches the card. A fence the
+encoder rejects — a bad EAN-13 check digit — is logged and skipped, since a
+symbol that cannot be drawn must not become an artifact that cannot be scanned.
+A content hash checked against the thread's existing scan codes makes a
+regenerate idempotent. Like the tool-artifact write, it runs detached: storage
+must not be able to fail a reply the user already has.
 
 ### Deployment
 

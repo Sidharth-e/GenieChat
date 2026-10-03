@@ -4,31 +4,26 @@ import * as React from "react";
 import { toSVG } from "bwip-js/browser";
 
 import {
-  BARCODE_FORMATS,
-  buildBarcodeOptions,
-  parseBarcodeConfig,
+  SCANCODE_FORMATS,
+  SCANCODE_FORMAT_LABELS,
+  buildScancodeOptions,
+  parseScancodeConfig,
+  scancodeFileName,
   withIntrinsicSize,
-} from "@/lib/barcode";
-import type { BarcodeFormat } from "@/lib/types";
-
-const FORMAT_LABELS: Record<BarcodeFormat, string> = {
-  qrcode: "QR Code",
-  datamatrix: "Data Matrix",
-  code128: "Code 128",
-  ean13: "EAN-13",
-  upca: "UPC-A",
-  code39: "Code 39",
-};
+} from "@/lib/scancode";
 
 const HEADER_LABEL =
   "text-[10px] font-semibold uppercase tracking-wider text-text-secondary";
+
+const HEADER_ACTION =
+  "text-[11px] font-medium text-primary hover:text-primary/80 transition-colors";
 
 /**
  * What a fence body resolves to. `empty` is a body that is not a usable config:
  * mid-stream it is still arriving, so a skeleton is honest; after the stream
  * ends it is malformed, and saying so beats a skeleton that pulses forever.
  */
-type BarcodeView =
+type ScancodeView =
   | { status: "empty" }
   | { status: "error"; message: string }
   | {
@@ -36,42 +31,48 @@ type BarcodeView =
       svg: string;
       label: string;
       text: string;
+      fileName: string;
       caption?: string;
     };
 
-interface BarcodeRendererProps {
+interface ScancodeRendererProps {
   content: string;
   isStreaming?: boolean;
 }
 
 /**
- * Renders a ```` ```barcode ```` fence as a scanable symbol.
+ * Renders a ```` ```scancode ```` fence as a scanable symbol — a QR, a Data
+ * Matrix, or a linear barcode, depending on the fence's `format`.
  *
- * bwip-js is imported here, not in `lib/barcode.ts`, so the config/options
+ * bwip-js is imported here, not in `lib/scancode.ts`, so the config/options
  * logic stays pure and testable and the encoder rides in this component's lazy
  * chunk. `toSVG` throws a string-or-Error on a symbol it cannot encode — a bad
  * EAN-13 check digit, say — which reaches the reader instead of being swallowed.
  */
-export function BarcodeRenderer({
+export function ScancodeRenderer({
   content,
   isStreaming,
-}: BarcodeRendererProps) {
+}: ScancodeRendererProps) {
   const [isCopied, setIsCopied] = React.useState(false);
   const copyResetTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const revokeTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
-  const view = React.useMemo<BarcodeView>(() => {
-    const config = parseBarcodeConfig(content);
+  const view = React.useMemo<ScancodeView>(() => {
+    const config = parseScancodeConfig(content);
     if (!config) {
       return { status: "empty" };
     }
     try {
       return {
         status: "ready",
-        svg: withIntrinsicSize(toSVG(buildBarcodeOptions(config))),
-        label: FORMAT_LABELS[config.format],
+        svg: withIntrinsicSize(toSVG(buildScancodeOptions(config))),
+        label: SCANCODE_FORMAT_LABELS[config.format],
         text: config.text,
+        fileName: scancodeFileName(config),
         caption: config.caption,
       };
     } catch (error) {
@@ -87,41 +88,72 @@ export function BarcodeRenderer({
       if (copyResetTimeoutRef.current) {
         clearTimeout(copyResetTimeoutRef.current);
       }
+      if (revokeTimeoutRef.current) {
+        clearTimeout(revokeTimeoutRef.current);
+      }
     };
   }, []);
 
   if (view.status === "empty") {
-    return isStreaming ? <BarcodeSkeleton /> : <BarcodeError />;
+    return isStreaming ? <ScancodeSkeleton /> : <ScancodeError />;
   }
 
   if (view.status === "error") {
-    return <BarcodeError message={view.message} />;
+    return <ScancodeError message={view.message} />;
   }
+
+  const handleDownload = () => {
+    const blob = new Blob([view.svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = view.fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoked on the next tick rather than straight away: the download reads
+    // the blob after `click()` returns, and a synchronous revoke can cancel it.
+    if (revokeTimeoutRef.current) {
+      clearTimeout(revokeTimeoutRef.current);
+    }
+    revokeTimeoutRef.current = setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(view.text);
+    setIsCopied(true);
+    if (copyResetTimeoutRef.current) {
+      clearTimeout(copyResetTimeoutRef.current);
+    }
+    copyResetTimeoutRef.current = setTimeout(() => {
+      setIsCopied(false);
+    }, 1500);
+  };
 
   return (
     <div className="my-6 rounded-xl border border-card-border bg-card-bg overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 border-b border-card-border">
         <span className={HEADER_LABEL}>{view.label}</span>
-        <button
-          className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
-          onClick={async () => {
-            await navigator.clipboard.writeText(view.text);
-            setIsCopied(true);
-            if (copyResetTimeoutRef.current) {
-              clearTimeout(copyResetTimeoutRef.current);
-            }
-            copyResetTimeoutRef.current = setTimeout(() => {
-              setIsCopied(false);
-            }, 1500);
-          }}
-          aria-label={isCopied ? "Copied" : "Copy encoded text"}
-        >
-          {isCopied ? "Copied" : "Copy"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            className={HEADER_ACTION}
+            onClick={handleDownload}
+            aria-label={`Download ${view.label} as SVG`}
+          >
+            Download
+          </button>
+          <button
+            className={HEADER_ACTION}
+            onClick={handleCopy}
+            aria-label={isCopied ? "Copied" : "Copy encoded text"}
+          >
+            {isCopied ? "Copied" : "Copy"}
+          </button>
+        </div>
       </div>
 
       {/*
-        A barcode is a machine-read symbol: an inverted one fails on many
+        A scan code is a machine-read symbol: an inverted one fails on many
         scanners, so this panel stays white in both themes. Its padding is the
         quiet zone scanners need, in CSS pixels rather than BWIPP's points.
 
@@ -151,7 +183,7 @@ export function BarcodeRenderer({
   );
 }
 
-function BarcodeSkeleton() {
+function ScancodeSkeleton() {
   return (
     <div className="my-6 rounded-xl border border-card-border bg-card-bg overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 border-b border-card-border">
@@ -168,20 +200,20 @@ function BarcodeSkeleton() {
   );
 }
 
-function BarcodeError({ message }: { message?: string }) {
+function ScancodeError({ message }: { message?: string }) {
   return (
     <div className="my-6 rounded-xl border border-card-border bg-card-bg overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 border-b border-card-border">
-        <span className={HEADER_LABEL}>Barcode</span>
+        <span className={HEADER_LABEL}>Scan code</span>
         <span className="pill-red">Error</span>
       </div>
       <div className="px-4 py-4">
         <p className="text-sm text-[var(--red)]">
-          {message ?? "This does not look like a barcode config."}
+          {message ?? "This does not look like a scan code config."}
         </p>
         <p className="text-xs text-text-secondary mt-2">
           Expected JSON with a <code>format</code> and a <code>text</code>.
-          Supported formats: {BARCODE_FORMATS.join(", ")}.
+          Supported formats: {SCANCODE_FORMATS.join(", ")}.
         </p>
       </div>
     </div>

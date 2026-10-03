@@ -25,8 +25,8 @@ const ChartRenderer = dynamic(
   { loading: () => <div className="animate-pulse rounded-xl bg-card-bg border border-card-border p-6 my-6 h-40" /> },
 );
 
-const BarcodeRenderer = dynamic(
-  () => import("@/components/chat/barcode-renderer").then((mod) => ({ default: mod.BarcodeRenderer })),
+const ScancodeRenderer = dynamic(
+  () => import("@/components/chat/scancode-renderer").then((mod) => ({ default: mod.ScancodeRenderer })),
   {
     ssr: false,
     loading: () => <div className="animate-pulse rounded-xl bg-card-bg border border-card-border p-6 my-6 h-40" />,
@@ -153,9 +153,11 @@ export function CodeBlock({
     return <ChartRenderer content={String(children).replace(/\n$/, "")} />;
   }
 
-  if (language === "barcode") {
+  // `barcode` is the fence's former name, kept so threads written before the
+  // rename still render a symbol instead of a wall of JSON.
+  if (language === "scancode" || language === "barcode") {
     return (
-      <BarcodeRenderer
+      <ScancodeRenderer
         content={String(children).replace(/\n$/, "")}
         isStreaming={isStreaming}
       />
