@@ -123,15 +123,6 @@ const envSchema = z
     // Ollama (chat + embeddings)
     OLLAMA_API_KEY: z.string().optional(),
     OLLAMA_BASE_URL: z.string().url().default("https://ollama.com"),
-    OLLAMA_EMBEDDING_MODEL: z.string().default("nomic-embed-text"),
-    // Only set this for embedding models that accept a custom output width.
-    // The store's width is fixed by `EMBEDDING_DIMENSIONS`
-    // (`constants/embeddings.ts`) — every vector column and index is built from
-    // it — so a model whose width differs requires changing that constant too
-    // and re-embedding existing content: vectors from different models are not
-    // comparable even at the same width.
-    OLLAMA_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
-
     // External APIs
     GOOGLE_API_KEY: z.string().optional(),
     EXA_API_KEY: z.string().optional(),

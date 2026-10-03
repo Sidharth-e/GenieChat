@@ -152,9 +152,7 @@ Deleting a document deletes its chunks, and a stored object is no longer enough 
 
 `pnpm db:setup:pg` creates the schema and indexes. `pnpm knowledge:check` exercises the store end to end against a live database. `pnpm knowledge:backfill` re-chunks and re-embeds documents already in MongoDB.
 
-The table's vector column width is `EMBEDDING_DIMENSIONS` (`constants/embeddings.ts`, currently 2048) and must match `OLLAMA_EMBEDDING_MODEL`'s output width. Changing the model means changing both and re-running the backfill.
-
-### Memory Graph (Neo4j)
+ Memory Graph (Neo4j)
 
 Memories are a graph in Neo4j and nowhere else. Two node labels carry everything:
 `:Memory` and `:Entity`. Edges are
@@ -264,6 +262,15 @@ while `schedules` carries the intent plus `nextRunAt` and a `skippedRuns` count.
 schedule. That is what makes the subsystem portable — the same code runs on a
 container, a serverless function or a laptop, and the app never assumes a
 long-lived process.
+
+**The cost of that design is that a repo with no driver has schedules that never
+fire, and nothing says so.** `docker-compose.yml` therefore ships a
+`schedule-tick` sidecar: a pinned `curlimages/curl` looping on the endpoint once a
+minute, reaching the app through `host.docker.internal` because `pnpm dev` runs on
+the host and is not a compose service. It authenticates with `CRON_SECRET` from
+`.env` — the same value the app reads, so the two must agree or every tick is a
+401. It is a development convenience with no part in a deployment, which supplies
+its own driver.
 
 `runTick` is five phases, in order, and the order is load-bearing: **reap**
 (a run whose lease lapsed belongs to a process that died — this is what makes a
@@ -417,7 +424,7 @@ The app builds to a Next.js standalone bundle (`output: "standalone"` in `next.c
 
 The `docling-serve` sidecar is currently **local development only**, so a deployment has no `DOCLING_SERVE_URL` until a host for the sidecar exists. Until then nothing is parsed in production, and in chat that is deliberately not silent: plain-text attachments are still decoded directly because they bypass the sidecar, and a binary attachment produces a turn carrying an explicit notice that the file could not be read — so a misconfigured deployment makes itself visible in use rather than looking like a model that ignored the document. Agent documents go through the RAG path instead, where a conversion failure is logged and the document is attached unindexed. See [Document Parsing (Docling)](#document-parsing-docling).
 
-**The scheduled-execution driver is an external cron pointed at `POST /api/schedules/tick`**, authenticated with the same `CRON_SECRET` bearer the app has always used. The app holds no timer of its own — the endpoint runs one tick and returns — so the driver can be a system crontab, a container scheduler or a serverless cron with no change to the app. The route is exempted from the session proxy in `proxy.ts`, because an external driver has no session; its own bearer check is the whole gate. **Nothing pings `/api/cron` any more** — that route is deleted, so a deployment still configured to call it gets a silent 404 rather than an alert, and its schedules simply stop firing. See [Scheduling](#scheduling).
+**The scheduled-execution driver is an external cron pointed at `POST /api/schedules/tick`**, authenticated with the same `CRON_SECRET` bearer the app has always used. The app holds no timer of its own — the endpoint runs one tick and returns — so the driver can be a system crontab, a container scheduler or a serverless cron with no change to the app. `docker-compose.yml` ships one for local development (the `schedule-tick` sidecar — see [Scheduling](#scheduling)); a deployment supplies its own, and can override where the sidecar points with `SCHEDULE_TICK_URL`. The route is exempted from the session proxy in `proxy.ts`, because an external driver has no session; its own bearer check is the whole gate. **Nothing pings `/api/cron` any more** — that route is deleted, so a deployment still configured to call it gets a silent 404 rather than an alert, and its schedules simply stop firing. See [Scheduling](#scheduling).
 
 ## Next.js 16 (Breaking Changes)
 

@@ -102,8 +102,6 @@ export const config = {
   ollama: {
     baseUrl: env.OLLAMA_BASE_URL,
     apiKey: env.OLLAMA_API_KEY,
-    embeddingModel: env.OLLAMA_EMBEDDING_MODEL,
-    embeddingDimensions: env.OLLAMA_EMBEDDING_DIMENSIONS,
   },
 
   exa: {

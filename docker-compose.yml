@@ -1,6 +1,7 @@
 # Local development services: Redis, PostgreSQL + pgvector for knowledge RAG,
-# Neo4j for graph memory, Garage for S3-compatible object storage, and
-# docling-serve for document parsing.
+# Neo4j for graph memory, Garage for S3-compatible object storage,
+# docling-serve for document parsing, and the schedule-tick driver that makes
+# scheduled runs actually fire.
 #
 #   docker compose up -d      # start
 #   docker compose ps         # health
@@ -17,6 +18,14 @@
 # other two this one fails quietly when omitted: an unconfigured docling
 # degrades to empty extraction rather than erroring, so a developer who skips
 # it gets chat that works and silently reads nothing from attachments.
+#
+# The schedule-tick driver calls the app on the host over host.docker.internal,
+# so it needs the app listening on a port the container can reach (the default is
+# http://host.docker.internal:3000 -- override with SCHEDULE_TICK_URL). It
+# authenticates with CRON_SECRET, and the app reads that same value from .env:
+# if the two disagree the endpoint answers 401 and no schedule ever fires, which
+# is why compose refuses to start without it. The driver needs the app already
+# running -- it is not one of the services the app depends on, it is a caller.
 services:
   redis:
     image: redis:7-alpine
@@ -468,6 +477,63 @@ services:
     # OOMKilled=true but sampled memory well under its own ceiling, which reads
     # like a cgroup kill and is not one. Do not size this above the VM.
     mem_limit: 6g
+    restart: unless-stopped
+
+  # The thing that makes a schedule fire. The app holds no timer of its own --
+  # POST /api/schedules/tick runs one tick and returns -- so with nothing calling
+  # that endpoint, a due schedule is never claimed and silently never runs. This
+  # is the local-development caller.
+  #
+  # A shell loop rather than a cron daemon, because the tick serializes itself: a
+  # schedule is claimed by compare-and-swapping its own `nextRunAt`, so a caller
+  # that overlaps another cannot double-fire an occurrence. Sleeping between two
+  # calls is therefore the whole scheduler, and it costs a pinned curl image
+  # instead of a process manager that wants the Docker socket.
+  #
+  # It calls the app on the HOST, not a service in this file -- `pnpm dev` is not
+  # a compose service -- so it resolves it through host.docker.internal, which
+  # needs the extra_hosts mapping below on Linux (Docker Desktop supplies it
+  # already, and the mapping is harmless there).
+  #
+  # A deployment does NOT use this: it points a real cron (system crontab,
+  # container scheduler, serverless cron) at the same endpoint. See the
+  # Deployment section of CLAUDE.md.
+  schedule-tick:
+    image: curlimages/curl:8.11.1
+    container_name: geniechat-schedule-tick
+    # curl's own entrypoint IS curl, so a bare `command:` arrives as curl's
+    # arguments and the loop never runs. Replacing the entrypoint is what makes
+    # this a shell rather than a malformed curl invocation.
+    #
+    # The script is the third argv element, written as a block scalar. A string
+    # `command:` would NOT do: compose shlex-splits it, so `sh -c` receives only
+    # the first word and the shell dies with "unexpected end of file (expecting
+    # do)". The list form is what keeps the whole script as one argument.
+    #
+    # `$$` is compose-escaped to a literal `$`, so these are expanded by the
+    # container's shell at run time rather than by compose at parse time. That
+    # keeps the credential out of the command text: it is read from the
+    # environment the lines below set, never written into the invocation.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl -sS -X POST "$$SCHEDULE_TICK_URL" \
+            -H "Authorization: Bearer $$CRON_SECRET" \
+            -w "\n[schedule-tick] HTTP %{http_code}\n" \
+            || echo "[schedule-tick] curl failed (exit $$?)"
+          sleep 60
+        done
+    environment:
+      # The tick summary the endpoint returns is printed by -sS, and this log is
+      # the only view an operator gets of whether the pulse is landing.
+      SCHEDULE_TICK_URL: ${SCHEDULE_TICK_URL:-http://host.docker.internal:3000/api/schedules/tick}
+      # Required, like NEO4J_PASSWORD: a driver with no secret loops on 401s
+      # forever, which looks exactly like a driver that is working.
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:
