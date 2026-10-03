@@ -82,6 +82,8 @@ async function executeWorkflowTarget(
   });
 
   let executionId = "";
+  let runError: string | null = null;
+
   for await (const event of stream) {
     if (event.eventType === "WORKFLOW_START" && event.executionId) {
       executionId = event.executionId;
@@ -90,6 +92,19 @@ async function executeWorkflowTarget(
         executionId,
       });
     }
+    // `isOk: false` on the terminal event is how both failure shapes arrive: a
+    // workflow that could not start at all (which yields it before any
+    // execution record exists) and one whose node failed mid-run. Recording
+    // either as "completed" would be a success for a run that did not
+    // succeed. `error` may be absent — the executor's end-of-run terminal
+    // event does not carry one yet — so the fallback is load-bearing.
+    if (event.eventType === "WORKFLOW_END" && event.isOk === false) {
+      runError = event.error ?? "Workflow execution failed";
+    }
+  }
+
+  if (runError) {
+    throw new Error(runError);
   }
 
   await webhookStore.updateInvocation(invocation.id, webhook.userId, {
