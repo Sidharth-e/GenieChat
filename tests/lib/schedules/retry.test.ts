@@ -3,6 +3,7 @@ import {
   backoffMs,
   isTerminalErrorCode,
   nextAttemptDelayMs,
+  reaperOutcome,
 } from "@/lib/schedules/retry";
 import {
   SCHEDULE_BACKOFF_BASE_MS,
@@ -59,5 +60,43 @@ describe("nextAttemptDelayMs", () => {
   // consume the remaining attempts.
   it("returns null for a terminal code even with attempts left", () => {
     expect(nextAttemptDelayMs(1, "target_not_found", mid)).toBeNull();
+  });
+});
+
+/**
+ * Lives here rather than in a store test because the decision is retry policy,
+ * not storage: the store's module graph reaches `lib/env`, so testing it there
+ * would mean stubbing a database URI to exercise a pure branch.
+ */
+describe("reaperOutcome", () => {
+  const NOW = new Date("2026-10-05T12:00:00.000Z");
+
+  it("hands a lapsed run back for retry while attempts remain", () => {
+    const outcome = reaperOutcome({ attempt: 1, maxAttempts: 3 }, NOW, mid);
+    expect(outcome.status).toBe("pending");
+    expect(outcome).toMatchObject({
+      nextAttemptAt: new Date(
+        NOW.getTime() + SCHEDULE_BACKOFF_BASE_MS,
+      ).toISOString(),
+      error: { code: "lease_expired", retryable: true },
+    });
+  });
+
+  it("fails a lapsed run once its attempts are exhausted", () => {
+    const outcome = reaperOutcome({ attempt: 3, maxAttempts: 3 }, NOW, mid);
+    expect(outcome.status).toBe("failed");
+    expect(outcome).toMatchObject({ error: { code: "lease_expired" } });
+  });
+
+  // The boundary: the `maxAttempts`-th attempt is the last one, not one more.
+  // `attempt` is incremented by the claim, so a run at the ceiling has already
+  // spent every permitted attempt; handing it back would retry forever.
+  it("does not retry on the final permitted attempt", () => {
+    expect(reaperOutcome({ attempt: 2, maxAttempts: 3 }, NOW, mid).status).toBe(
+      "pending",
+    );
+    expect(reaperOutcome({ attempt: 3, maxAttempts: 3 }, NOW, mid).status).toBe(
+      "failed",
+    );
   });
 });

@@ -19,6 +19,8 @@ import {
   autoTasksCollectionName,
   artifactsCollectionName,
   webhooksCollectionName,
+  schedulesCollectionName,
+  scheduleRunsCollectionName,
 } from "./config";
 import { isDatabaseConfigured } from "@/lib/config";
 import type {
@@ -45,6 +47,8 @@ import type {
   ToolSecretDocument,
   ApiKeyDocument,
   RichWorkflowDocument,
+  ScheduleDocument,
+  ScheduleRunDocument,
 } from "./common";
 
 export { isDatabaseConfigured };
@@ -174,5 +178,17 @@ export function getApiKeysCollection(): Collection<WithMongoId<ApiKeyDocument>> 
 export function getRichWorkflowsCollection(): Collection<WithMongoId<RichWorkflowDocument>> {
   return getDb().collection<WithMongoId<RichWorkflowDocument>>(
     workflowCollectionName,
+  );
+}
+
+export function getSchedulesCollection(): Collection<WithMongoId<ScheduleDocument>> {
+  return getDb().collection<WithMongoId<ScheduleDocument>>(
+    schedulesCollectionName,
+  );
+}
+
+export function getScheduleRunsCollection(): Collection<WithMongoId<ScheduleRunDocument>> {
+  return getDb().collection<WithMongoId<ScheduleRunDocument>>(
+    scheduleRunsCollectionName,
   );
 }

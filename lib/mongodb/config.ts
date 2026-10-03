@@ -22,6 +22,8 @@ const usersCollectionName = config.mongodb.collections.users;
 const autoTasksCollectionName = config.mongodb.collections.autoTasks;
 const artifactsCollectionName = config.mongodb.collections.artifacts;
 const webhooksCollectionName = config.mongodb.collections.webhooks;
+const schedulesCollectionName = config.mongodb.collections.schedules;
+const scheduleRunsCollectionName = config.mongodb.collections.scheduleRuns;
 
 export {
   uri,
@@ -43,4 +45,6 @@ export {
   autoTasksCollectionName,
   artifactsCollectionName,
   webhooksCollectionName,
+  schedulesCollectionName,
+  scheduleRunsCollectionName,
 };

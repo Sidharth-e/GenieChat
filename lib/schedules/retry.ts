@@ -3,6 +3,7 @@ import {
   SCHEDULE_BACKOFF_CAP_MS,
   SCHEDULE_TERMINAL_ERROR_CODES,
 } from "@/constants/schedules";
+import type { ScheduleRun } from "@/lib/types";
 
 /** Fraction of the nominal delay that jitter may add or remove. */
 const JITTER = 0.2;
@@ -45,4 +46,49 @@ export function nextAttemptDelayMs(
 ): number | null {
   if (isTerminalErrorCode(code)) return null;
   return backoffMs(attempt, random);
+}
+
+/** The error every reaped run carries. Retryable: the process died, not the target. */
+const LEASE_EXPIRED = {
+  code: "lease_expired",
+  message: "The run's lease expired before it finished.",
+  retryable: true,
+} as const;
+
+/**
+ * What a lapsed lease becomes. Structurally the store's success-less
+ * `SettleOutcome`, but declared here so this module stays free of the store's
+ * I/O module graph.
+ */
+export type LapsedLeaseOutcome =
+  | { status: "pending"; nextAttemptAt: string; error: ScheduleRun["error"] }
+  | { status: "failed"; error: ScheduleRun["error"] };
+
+/**
+ * Decides what happens to a run whose lease lapsed, as a pure function.
+ *
+ * Here rather than in the store because it is retry policy, and because the
+ * store's module graph reaches `lib/env` — a pure decision that can only be
+ * unit-tested by stubbing a database URI first is a decision in the wrong file.
+ *
+ * The boundary is the whole point: `attempt` is incremented *by the claim*, so a
+ * run already at `attempt === maxAttempts` has used its last permitted attempt
+ * and must fail. Handing it back instead would retry forever.
+ */
+export function reaperOutcome(
+  run: Pick<ScheduleRun, "attempt" | "maxAttempts">,
+  now: Date,
+  random: () => number = Math.random,
+): LapsedLeaseOutcome {
+  if (run.attempt >= run.maxAttempts) {
+    return { status: "failed", error: LEASE_EXPIRED };
+  }
+
+  return {
+    status: "pending",
+    nextAttemptAt: new Date(
+      now.getTime() + backoffMs(run.attempt, random),
+    ).toISOString(),
+    error: LEASE_EXPIRED,
+  };
 }

@@ -15,6 +15,7 @@ import {
   WithMongoId,
   WorkflowExecutionDocument,
   RichWorkflowDocument,
+  dropUndefinedFields,
   hydrateDocument,
 } from "./common";
 
@@ -38,30 +39,6 @@ import {
  */
 export function dropUnsetNextRunAt<T extends { nextRunAt?: string }>(doc: T): T {
   if (doc.nextRunAt === undefined) delete doc.nextRunAt;
-  return doc;
-}
-
-/**
- * Deletes every key whose value is exactly `undefined`, in place.
- *
- * A partial update is built as `{ ...stored, ...updates }` and written back
- * with `replaceOne`, so an `undefined` in `updates` is not "leave this field
- * alone": it is an own key that displaces the stored value, and the driver
- * stores it as `null` rather than dropping it. A caller that sends only the
- * fields it means to change — a rename, or a later client sending `{ trigger }`
- * alone — would otherwise erase every field it did not mention: a `null` trigger
- * stops a scheduled workflow being scheduled and drops a webhook's secret. The
- * same applies on insert, where an omitted optional field would be stored as
- * `null` in a document whose absent-key shape is what the readers test for.
- *
- * `null` is kept deliberately. It is a value a caller chose to send, not a
- * missing field. Only exact `undefined` is a hole.
- */
-export function dropUndefinedFields<T extends object>(doc: T): T {
-  const record = doc as Record<string, unknown>;
-  for (const key of Object.keys(record)) {
-    if (record[key] === undefined) delete record[key];
-  }
   return doc;
 }
 

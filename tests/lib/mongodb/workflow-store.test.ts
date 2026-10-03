@@ -19,8 +19,11 @@ import type { RichWorkflowMetadataUpdate } from "@/lib/mongodb/workflow-store";
 // hoisted above this file's body, hence the dynamic import below.
 process.env.MONGODB_URI ??= "mongodb://test.invalid:27017";
 
-const { nextUpdatedAt, dropUnsetNextRunAt, dropUndefinedFields, mergeRichWorkflowUpdate } =
+const { nextUpdatedAt, dropUnsetNextRunAt, mergeRichWorkflowUpdate } =
   await import("@/lib/mongodb/workflow-store");
+// `dropUndefinedFields` is shared by every store that builds a partial update,
+// so it lives in `common` rather than in the workflow store it started in.
+const { dropUndefinedFields } = await import("@/lib/mongodb/common");
 
 /** The stored-document shape `mergeRichWorkflowUpdate` takes, taken from the helper itself. */
 type StoredRichWorkflow = Parameters<typeof mergeRichWorkflowUpdate>[0];
