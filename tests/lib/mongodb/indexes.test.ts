@@ -222,7 +222,7 @@ describe("INDEX_SPECS", () => {
         keys: { userId: 1, createdAt: -1 },
       },
 
-      // --- the four R62 indexes: queries that cannot use `{ userId: 1 }` -----
+      // --- the three R62 indexes: queries that cannot use `{ userId: 1 }` ----
       // `ApiKeyStore.findByHash` -- the API-key authentication path, reached on
       // every API-key-authenticated request. Without this index every
       // authenticated agent request becomes a collection scan of the collection
@@ -235,12 +235,6 @@ describe("INDEX_SPECS", () => {
         options: {
           partialFilterExpression: { type: "api_key", revoked: false },
         },
-      },
-      // `getScheduledRichWorkflows`, on every scheduler tick. The `$or` over
-      // `nextRunAt` (`$exists: false` / `$lte`) is served by the trailing key.
-      workflows_schedule: {
-        collection: config.mongodb.collections.workflows,
-        keys: { type: 1, "trigger.type": 1, nextRunAt: 1 },
       },
       // The admin listing `getAllUsers`. Nothing queries users by `userId` --
       // `_id` carries the id -- so this indexes a query that exists rather than

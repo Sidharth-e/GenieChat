@@ -13,7 +13,6 @@ import type { RichWorkflow, WorkflowTrigger } from "@/lib/types";
 const TRIGGER_TYPES: { value: WorkflowTrigger["type"]; label: string }[] = [
   { value: "manual", label: "Manual" },
   { value: "webhook", label: "Webhook" },
-  { value: "schedule", label: "Schedule" },
 ];
 
 export function WorkflowTriggerPanel({ workflow }: { workflow: RichWorkflow }) {
@@ -95,23 +94,6 @@ export function WorkflowTriggerPanel({ workflow }: { workflow: RichWorkflow }) {
               }
               placeholder="Shared secret sent as a Bearer token"
             />
-          </div>
-        )}
-
-        {draft.type === "schedule" && (
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Cron expression</label>
-            <Input
-              value={draft.config?.cronExpression ?? ""}
-              onChange={(event) =>
-                setConfig({ cronExpression: event.target.value })
-              }
-              placeholder="0 9 * * 1-5"
-              className="font-mono"
-            />
-            <p className="text-xs text-muted-foreground">
-              Evaluated by <code>POST /api/cron</code>.
-            </p>
           </div>
         )}
 

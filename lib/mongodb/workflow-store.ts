@@ -20,40 +20,12 @@ import {
 } from "./common";
 
 /**
- * Deletes `nextRunAt` when it is `undefined`, so the stored document has an
- * absent key rather than an explicit `null`.
- *
- * The driver stores an own `undefined` as `null`, and the two are not
- * interchangeable to `getScheduledRichWorkflows`: a workflow that has never run
- * is due through its `{ nextRunAt: { $exists: false } }` branch, and `$lte`
- * does not compare across BSON types, so a stored `null` is never `<=` an ISO
- * string. Deleting the key keeps the stored shape — and therefore the due
- * schedule — intact.
- *
- * Measured, not assumed: with a `null`-valued `nextRunAt` document and an
- * absent-key document side by side, `{ nextRunAt: { $lte: <iso> } }` returns
- * only the document that holds a comparable string (a `null` never matches
- * it), and `$exists: false` returns only the absent-key one. The driver stores
- * an explicit `undefined` as `null`, so this helper — not the driver — is what
- * produces the absent shape the query needs.
+ * The fields a metadata write may change. Anything else on the document — `userId`, `type`, `createdAt`, `nodes`, `edges` — is not the caller's to set here.
  */
-export function dropUnsetNextRunAt<T extends { nextRunAt?: string }>(doc: T): T {
-  if (doc.nextRunAt === undefined) delete doc.nextRunAt;
-  return doc;
-}
-
-/** The fields a metadata write may change. Anything else on the document — `userId`, `type`, `createdAt`, `nodes`, `edges` — is not the caller's to set here. */
 export type RichWorkflowMetadataUpdate = Partial<
   Pick<
     RichWorkflow,
-    | "name"
-    | "description"
-    | "isPublished"
-    | "visibility"
-    | "icon"
-    | "trigger"
-    | "lastRunAt"
-    | "nextRunAt"
+    "name" | "description" | "isPublished" | "visibility" | "icon" | "trigger" | "lastRunAt"
   >
 >;
 
@@ -65,9 +37,8 @@ export type RichWorkflowMetadataUpdate = Partial<
  * order is the whole point. An own `undefined` key is not "leave this field
  * alone": it displaces the stored value, and the driver then stores it as
  * `null`. A metadata-only PATCH — a rename — would therefore erase the trigger
- * and `nextRunAt` it never mentioned, silently un-scheduling a workflow.
- * Dropping the keys *afterwards* cannot undo that, because the spread has
- * already overwritten the field; the value is gone, not hidden.
+ * it never mentioned. Dropping the keys *afterwards* cannot undo that, because
+ * the spread has already overwritten the field; the value is gone, not hidden.
  *
  * The four identity fields are re-asserted after the spread so a caller cannot
  * re-own the workflow or move it in a listing.
@@ -93,15 +64,15 @@ export function mergeRichWorkflowUpdate(
  * `previous`, in which case it is advanced to the next millisecond so it still
  * differs.
  *
- * `claimRichWorkflowSchedule` claims a due run with a compare-and-swap on
- * `updatedAt`, so it only detects a competing writer if a write always *changes*
- * `updatedAt`. An ISO string has
+ * The version-filtered writes in this store claim with a compare-and-swap on
+ * `updatedAt`, so they only detect a competing writer if a write always
+ * *changes* `updatedAt`. An ISO string has
  * millisecond resolution, so two writes inside one millisecond would otherwise
  * store a byte-identical value, leave the loser's filter matching, and let both
- * claimers run the workflow. Every write this store makes to a workflow
+ * writers replace the same document. Every write this store makes to a workflow
  * document goes through here, which is what makes the value a version token
  * rather than just a timestamp: the write changes the token it compared
- * against, so at most one of two claimers holding the same version can match.
+ * against, so at most one of two writers holding the same version can match.
  *
  * The invariant it actually guarantees is `max(wall clock, previous + 1 ms)`,
  * not "the wall clock, give or take a millisecond". The stored value is an ISO
@@ -373,9 +344,9 @@ export class WorkflowStore {
         }
 
         // Built from the document this attempt just read, so the fields this
-        // merge does not own — `lastRunAt`, `nextRunAt`, the trigger — carry a
-        // schedule claim that landed since the previous attempt, rather than
-        // the pre-claim values a stale read held.
+        // merge does not own — `lastRunAt`, the trigger — carry whatever
+        // landed since the previous attempt, rather than the stale values a
+        // pre-claim read held.
         const updated: WithMongoId<RichWorkflowDocument> = {
           ...existingDoc,
           nodes: updatedNodes,
@@ -423,68 +394,6 @@ export class WorkflowStore {
       logger.error("Error deleting rich workflow:", error);
       return false;
     }
-  }
-
-  /**
-   * The schedule driver's read: a workflow is due when it is on a schedule and
-   * either has never run or its next fire time has passed. `$exists: false` is
-   * why `dropUnsetNextRunAt` has to run on every write — an explicit `null`
-   * would match neither arm.
-   */
-  async getScheduledRichWorkflows(nowISO: string): Promise<RichWorkflow[]> {
-    const docs = await this.richWorkflowCollection
-      .find({
-        type: "rich_workflow",
-        "trigger.type": "schedule",
-        $or: [
-          { nextRunAt: { $exists: false } },
-          { nextRunAt: { $lte: nowISO } },
-        ],
-      })
-      .toArray();
-
-    return docs.map((doc) => hydrateDocument(doc));
-  }
-
-  /**
-   * Claims one due run by compare-and-swap on `updatedAt`: the filter carries
-   * the version this runner read, so of two runners evaluating the same tick
-   * exactly one matches and the other is told it lost. Returns false rather than
-   * throwing — losing a race is an ordinary outcome, not an error.
-   */
-  async claimRichWorkflowSchedule(
-    workflowId: string,
-    userId: string,
-    lastRunAt: string,
-    nextRunAt: string | undefined,
-  ): Promise<boolean> {
-    const existingDoc = await this.richWorkflowCollection.findOne({
-      _id: workflowId,
-      userId,
-    });
-    if (!existingDoc) return false;
-
-    const updated = dropUnsetNextRunAt({
-      ...existingDoc,
-      lastRunAt,
-      nextRunAt,
-      updatedAt: nextUpdatedAt(existingDoc.updatedAt),
-    });
-
-    const result = await this.richWorkflowCollection.replaceOne(
-      { _id: workflowId, updatedAt: existingDoc.updatedAt },
-      updated,
-    );
-
-    if (result.matchedCount === 0) {
-      logger.info(
-        { workflowId },
-        "Rich workflow schedule already claimed by another runner",
-      );
-      return false;
-    }
-
-    return true;
   }
 
   // Get raw rich workflow document for update/delete

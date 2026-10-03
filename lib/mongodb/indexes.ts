@@ -439,12 +439,11 @@ function formatKeys(entries: [string, unknown][]): string {
  *    traverses an index in either direction, which is why `auto_tasks`'
  *    ascending `getPendingTask` shares the descending shape.
  *
- * 3. **Four queries that filter on something other than the partition key**
+ * 3. **Three queries that filter on something other than the partition key**
  *    (R62) and so could not use a `{ userId: 1 }` index at all:
  *    `tools.tools_keyhash` (the API-key auth path, reached on every
- *    API-key-authenticated request), `workflows.workflows_schedule` (runs on every
- *    scheduler tick), `users.users_listing` (the admin listing) and
- *    `prompt.prompts_shareId` (the public share-link lookup).
+ *    API-key-authenticated request), `users.users_listing` (the admin listing)
+ *    and `prompt.prompts_shareId` (the public share-link lookup).
  *
  * Two rows deserve a note because they are weaker than the rule above:
  *
@@ -600,7 +599,7 @@ export const INDEX_SPECS: IndexSpec[] = [
     name: "deepResearch_userId_createdAt",
   },
 
-  // --- the four R62 indexes: queries that cannot use `{ userId: 1 }` --------
+  // --- the three R62 indexes: queries that cannot use `{ userId: 1 }` --------
   // `ApiKeyStore.findByHash` -- the API-key authentication path, reached on
   // every API-key-authenticated request. Without this, every authenticated agent
   // request becomes a full collection scan of the collection that holds every
@@ -612,13 +611,6 @@ export const INDEX_SPECS: IndexSpec[] = [
       partialFilterExpression: { type: "api_key", revoked: false },
     },
     name: "tools_keyhash",
-  },
-  // `getScheduledRichWorkflows`, on every scheduler tick. The `$or` over
-  // `nextRunAt` (`$exists: false` / `$lte`) is served by the trailing key.
-  {
-    collection: NAMES.workflows,
-    keys: { type: 1, "trigger.type": 1, nextRunAt: 1 },
-    name: "workflows_schedule",
   },
   // The admin listing `getAllUsers`, and `UserStore.searchUsers` -- the share
   // picker's directory match -- which filters on the same `type` and sorts the

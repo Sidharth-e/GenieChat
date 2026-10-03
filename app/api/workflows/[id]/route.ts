@@ -5,7 +5,6 @@ import { getSessionUser } from "@/lib/auth/get-session-user";
 import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
-import { nextRunAtFor } from "@/lib/workflow/schedule";
 
 const workflowStore = isDatabaseConfigured() ? new WorkflowStore() : null;
 
@@ -62,15 +61,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
       const { name, description, isPublished, visibility, icon, trigger } = body;
 
-      let nextRunAt: string | undefined;
-      if (trigger !== undefined) {
-        try {
-          nextRunAt = nextRunAtFor(trigger, new Date()) ?? undefined;
-        } catch {
-          return api.badRequest("Invalid cron expression");
-        }
-      }
-
       const updated = await workflowStore.updateRichWorkflow(id, {
         name,
         description,
@@ -78,7 +68,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         visibility,
         icon,
         trigger,
-        nextRunAt,
       });
       if (!updated) return api.serverError("Failed to update workflow");
       return api.success(updated);

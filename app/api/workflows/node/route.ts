@@ -7,7 +7,6 @@ import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
 import { NodeKind } from "@/lib/workflow/types";
 import { createNodeData } from "@/lib/workflow/create-node";
-import { nextRunAtFor } from "@/lib/workflow/schedule";
 
 const workflowStore = isDatabaseConfigured() ? new WorkflowStore() : null;
 
@@ -35,15 +34,6 @@ export async function POST(request: NextRequest) {
 
     if (!name) return api.badRequest("Name is required");
 
-    let nextRunAt: string | undefined;
-    if (trigger !== undefined) {
-      try {
-        nextRunAt = nextRunAtFor(trigger, new Date()) ?? undefined;
-      } catch {
-        return api.badRequest("Invalid cron expression");
-      }
-    }
-
     // Create default Input and Output nodes
     const inputData = createNodeData(NodeKind.Input);
     const outputData = createNodeData(NodeKind.Output);
@@ -55,7 +45,6 @@ export async function POST(request: NextRequest) {
       name,
       description: description || "",
       trigger,
-      nextRunAt,
       nodes: [
         {
           id: inputData.id,

@@ -7,8 +7,8 @@ import type { RichWorkflowMetadataUpdate } from "@/lib/mongodb/workflow-store";
  * Scope is deliberately these functions only. The store's own methods are
  * I/O-bound (`findOne`/`replaceOne` against Mongo), which CLAUDE.md classifies
  * as an integration-test candidate rather than something to unit-test with
- * mocks; the concurrency guarantee of `claimRichWorkflowSchedule` is exercised
- * against a live container instead.
+ * mocks; the version filter those writes carry is asserted at the route level
+ * instead.
  */
 
 // Importing the store reaches `lib/env.ts` eagerly, through `./client` ->
@@ -19,8 +19,9 @@ import type { RichWorkflowMetadataUpdate } from "@/lib/mongodb/workflow-store";
 // hoisted above this file's body, hence the dynamic import below.
 process.env.MONGODB_URI ??= "mongodb://test.invalid:27017";
 
-const { nextUpdatedAt, dropUnsetNextRunAt, mergeRichWorkflowUpdate } =
-  await import("@/lib/mongodb/workflow-store");
+const { nextUpdatedAt, mergeRichWorkflowUpdate } = await import(
+  "@/lib/mongodb/workflow-store"
+);
 // `dropUndefinedFields` is shared by every store that builds a partial update,
 // so it lives in `common` rather than in the workflow store it started in.
 const { dropUndefinedFields } = await import("@/lib/mongodb/common");
@@ -30,28 +31,6 @@ type StoredRichWorkflow = Parameters<typeof mergeRichWorkflowUpdate>[0];
 
 /** A canonical UTC ISO instant, as `Date#toISOString` produces it. */
 const CANONICAL_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-
-/**
- * A minimal stand-in for the stored document `dropUnsetNextRunAt` is applied
- * to: an object carrying the optional `nextRunAt` the helper inspects. Built by
- * a factory so the shape lives in one place (CLAUDE.md).
- */
-function scheduleDoc(nextRunAt?: string): { nextRunAt?: string } {
-  return { nextRunAt };
-}
-
-/**
- * The same carrier holding an explicit `null`, which `dropUnsetNextRunAt` must
- * retain: `null` is a value a caller chose to send, not a missing field, and the
- * helper's contract is to drop exact `undefined` only.
- *
- * The helper's parameter is typed `{ nextRunAt?: string }`, so the cast is the
- * only way to hand it that value — and it is the point of the test: the helper's
- * contract at runtime is about `undefined`, not about "falsy".
- */
-function scheduleDocWithNull(): { nextRunAt?: string } {
-  return { nextRunAt: null } as unknown as { nextRunAt?: string };
-}
 
 describe("nextUpdatedAt", () => {
   afterEach(() => {
@@ -166,55 +145,6 @@ describe("nextUpdatedAt", () => {
   });
 });
 
-describe("dropUnsetNextRunAt", () => {
-  it("removes an undefined nextRunAt, leaving an absent key", () => {
-    const doc = scheduleDoc(undefined);
-    expect(Object.prototype.hasOwnProperty.call(doc, "nextRunAt")).toBe(true);
-
-    const result = dropUnsetNextRunAt(doc);
-
-    // The driver stores an own `undefined` as `null`, but the due-schedule query
-    // tests `$exists: false`, so the key must be deleted rather than written as
-    // `null`.
-    expect(Object.prototype.hasOwnProperty.call(result, "nextRunAt")).toBe(
-      false,
-    );
-    expect(result).not.toHaveProperty("nextRunAt");
-  });
-
-  it("leaves a defined nextRunAt untouched", () => {
-    const doc = scheduleDoc("2026-01-01T00:00:00.000Z");
-
-    const result = dropUnsetNextRunAt(doc);
-
-    expect(result.nextRunAt).toBe("2026-01-01T00:00:00.000Z");
-    expect(Object.prototype.hasOwnProperty.call(result, "nextRunAt")).toBe(
-      true,
-    );
-  });
-
-  it("keeps an explicit null, which the helper treats as a value, not a missing field", () => {
-    // Not a tidy-up candidate: `null` is a value a caller chose to send, not a
-    // missing field, and the due-window query treats it differently from an
-    // absent key — a `null` satisfies neither `$exists: false` nor
-    // `$lte: <iso>` — so it deliberately stays a stored value.
-    const doc = scheduleDocWithNull();
-
-    const result = dropUnsetNextRunAt(doc);
-
-    expect(Object.prototype.hasOwnProperty.call(result, "nextRunAt")).toBe(
-      true,
-    );
-    expect(result.nextRunAt).toBeNull();
-  });
-
-  it("returns the same object it was given", () => {
-    const doc = scheduleDoc(undefined);
-
-    expect(dropUnsetNextRunAt(doc)).toBe(doc);
-  });
-});
-
 describe("dropUndefinedFields", () => {
   /**
    * A partial update as the routes build one: the fields the caller sent, plus
@@ -230,7 +160,7 @@ describe("dropUndefinedFields", () => {
       isPublished: false,
       description: "",
       priority: 0,
-      nextRunAt: null,
+      customField: null,
     };
   }
 
@@ -256,8 +186,8 @@ describe("dropUndefinedFields", () => {
 
     const result = dropUndefinedFields(doc);
 
-    expect("nextRunAt" in result).toBe(true);
-    expect(result.nextRunAt).toBeNull();
+    expect("customField" in result).toBe(true);
+    expect(result.customField).toBeNull();
   });
 
   it("keeps defined falsy values", () => {
@@ -309,33 +239,29 @@ describe("mergeRichWorkflowUpdate", () => {
     };
   }
 
-  const SCHEDULE_TRIGGER = {
-    type: "schedule" as const,
-    config: { cronExpression: "0 9 * * *" },
+  const WEBHOOK_TRIGGER = {
+    type: "webhook" as const,
+    config: { webhookSecret: "whsec_1" },
   };
 
-  it("keeps a stored trigger and nextRunAt through a metadata-only rename", () => {
-    // The round-1 regression, directly: round 1's helper tests all passed while
-    // this sequence clobbered the trigger, because none of them exercised the
-    // merge. A rename must not un-schedule the workflow it never mentioned.
-    const existing = storedRichWorkflow({
-      trigger: SCHEDULE_TRIGGER,
-      nextRunAt: "2026-10-04T09:00:00.000Z",
-    });
+  it("keeps a stored trigger through a metadata-only rename", () => {
+    // The regression, directly: the helper tests all passed while this sequence
+    // clobbered the trigger, because none of them exercised the merge. A rename
+    // must not clear the trigger the workflow never mentioned.
+    const existing = storedRichWorkflow({ trigger: WEBHOOK_TRIGGER });
 
     const result = mergeRichWorkflowUpdate(existing, { name: "renamed" });
 
     expect(result.name).toBe("renamed");
-    expect(result.trigger).toEqual(SCHEDULE_TRIGGER);
-    expect(result.nextRunAt).toBe("2026-10-04T09:00:00.000Z");
+    expect(result.trigger).toEqual(WEBHOOK_TRIGGER);
   });
 
   it("treats a present-but-undefined key as unchanged, not as erasure", () => {
-    const existing = storedRichWorkflow({ trigger: SCHEDULE_TRIGGER });
+    const existing = storedRichWorkflow({ trigger: WEBHOOK_TRIGGER });
 
     const result = mergeRichWorkflowUpdate(existing, { trigger: undefined });
 
-    expect(result.trigger).toEqual(SCHEDULE_TRIGGER);
+    expect(result.trigger).toEqual(WEBHOOK_TRIGGER);
   });
 
   it("cannot be re-owned by the caller's updates", () => {
@@ -380,17 +306,13 @@ describe("mergeRichWorkflowUpdate", () => {
     expect("trigger" in updates).toBe(true);
   });
 
-  it("preserves the stored trigger and nextRunAt when the caller sends the route's full key set", () => {
-    // app/api/workflows/[id]/route.ts:125-133 spreads all seven keys into
-    // `updates` on every PATCH, so `trigger` and `nextRunAt` arrive as own keys
-    // holding `undefined` whenever the body omits them. Round 1 dropped the
-    // keys *after* the spread, which had already overwritten both values: the
-    // workflow stopped being scheduled and lost the next-run time that keeps it
-    // from firing on every tick. This is that exact input.
-    const existing = storedRichWorkflow({
-      trigger: { type: "schedule", config: { cronExpression: "0 9 * * *" } },
-      nextRunAt: "2026-10-04T09:00:00.000Z",
-    });
+  it("preserves the stored trigger when the caller sends the route's full key set", () => {
+    // app/api/workflows/[id]/route.ts spreads all six keys into `updates` on
+    // every PATCH, so `trigger` arrives as an own key holding `undefined`
+    // whenever the body omits it. Dropping keys *after* the spread had already
+    // overwritten the stored value, clearing a trigger the PATCH never
+    // mentioned. This is that exact input.
+    const existing = storedRichWorkflow({ trigger: WEBHOOK_TRIGGER });
 
     const updated = mergeRichWorkflowUpdate(existing, {
       name: "renamed",
@@ -399,14 +321,9 @@ describe("mergeRichWorkflowUpdate", () => {
       visibility: undefined,
       icon: undefined,
       trigger: undefined,
-      nextRunAt: undefined,
     });
 
     expect(updated.name).toBe("renamed");
-    expect(updated.trigger).toEqual({
-      type: "schedule",
-      config: { cronExpression: "0 9 * * *" },
-    });
-    expect(updated.nextRunAt).toBe("2026-10-04T09:00:00.000Z");
+    expect(updated.trigger).toEqual(WEBHOOK_TRIGGER);
   });
 });

@@ -367,10 +367,9 @@ export type ServerActionResponse<T> =
 
 // Workflow types for agentic workflows
 export interface WorkflowTrigger {
-  type: "manual" | "webhook" | "schedule";
+  type: "manual" | "webhook";
   config?: {
     webhookSecret?: string;
-    cronExpression?: string;
     position?: { x: number; y: number };
   };
 }
@@ -663,11 +662,12 @@ export interface RichWorkflow {
   visibility?: "private" | "public";
   /**
    * How the workflow starts. Manual is the default and needs no driver;
-   * `schedule` is polled by the cron route and `webhook` by the trigger route.
+   * `webhook` is dispatched by the trigger route. A `Schedule` document is what
+   * starts a workflow on a timer, and it points at the workflow rather than
+   * being stored here.
    */
   trigger?: WorkflowTrigger;
   lastRunAt?: string;
-  nextRunAt?: string;
   nodes: RichWorkflowNode[];
   edges: RichWorkflowEdge[];
   createdAt: string;
