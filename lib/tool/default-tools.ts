@@ -179,9 +179,7 @@ export const createUseSkillTool = (
 export const createCodeSandboxTool = (userId?: string, chatId?: string) =>
   tool(
     async (input) => {
-      const { executeInContainer } = await import(
-        "./openrouter-container-client"
-      );
+      const { executeInContainer } = await import("./code-sandbox");
       const result = await executeInContainer({
         code: input.code,
         language: input.language,

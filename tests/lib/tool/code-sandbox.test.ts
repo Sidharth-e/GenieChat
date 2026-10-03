@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 process.env.MONGODB_URI ??= "mongodb://test.invalid:27017";
 
-describe("openrouter-container-client", () => {
+describe("code-sandbox", () => {
   it("returns error when OPENROUTER_API_KEY is not configured", async () => {
     vi.resetModules();
     vi.doMock("@/lib/config", () => ({
@@ -14,7 +14,7 @@ describe("openrouter-container-client", () => {
     }));
 
     const { executeInContainer } = await import(
-      "@/lib/tool/openrouter-container-client"
+      "@/lib/tool/code-sandbox"
     );
     const result = await executeInContainer({ code: "print(1)" });
     expect(result.exitCode).toBe(1);
@@ -25,7 +25,7 @@ describe("openrouter-container-client", () => {
 
   it("handles empty container files gracefully", async () => {
     const { listContainerFiles } = await import(
-      "@/lib/tool/openrouter-container-client"
+      "@/lib/tool/code-sandbox"
     );
     const files = await listContainerFiles("invalid_container_id_12345");
     expect(Array.isArray(files)).toBe(true);
@@ -118,7 +118,7 @@ describe("openrouter-container-client", () => {
     });
 
     const { executeInContainer } = await import(
-      "@/lib/tool/openrouter-container-client"
+      "@/lib/tool/code-sandbox"
     );
 
     const result = await executeInContainer({
