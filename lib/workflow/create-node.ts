@@ -113,6 +113,7 @@ export function createNodeData(
             stdout: { type: "string" },
             stderr: { type: "string" },
             exit_code: { type: "number" },
+            files: { type: "array", items: { type: "string" } },
           },
           required: ["stdout"],
         },
