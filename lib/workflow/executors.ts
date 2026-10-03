@@ -4,6 +4,7 @@ import {
   AIMessageChunk,
   HumanMessage,
   SystemMessage,
+  ToolMessage,
   type BaseMessage,
 } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
@@ -17,6 +18,7 @@ import {
   type LLMNodeData,
   type OutputNodeData,
   type TemplateNodeData,
+  type ToolNodeData,
   type WorkflowToolKey,
 } from "./types";
 import {
@@ -100,6 +102,9 @@ export async function runNode(
 
     case NodeKind.Code:
       return executeCodeNode(node, deps);
+
+    case NodeKind.Tool:
+      return executeToolNode(node, state.outputs, deps);
 
     default:
       throw new Error(
@@ -294,4 +299,107 @@ async function executeCodeNode(
       files: parsed.files ?? [],
     },
   };
+}
+
+/**
+ * Reduce a react-agent run to what the execution record needs: the last
+ * non-empty assistant turn as the node's `answer`, every tool call paired with
+ * its result, and the summed token usage.
+ */
+export function summarizeAgentRun(messages: BaseMessage[]): NodeResult {
+  const resultsByCallId = new Map<string, string>();
+  for (const message of messages) {
+    if (message instanceof ToolMessage) {
+      resultsByCallId.set(message.tool_call_id, message.text);
+    }
+  }
+
+  const toolCalls: ToolCall[] = [];
+  let answer = "";
+  let prompt = 0;
+  let completion = 0;
+  let sawUsage = false;
+
+  for (const message of messages) {
+    // `usage_metadata` is carried by AI turns only, so the whole-list loop
+    // reads it behind a guard rather than off `BaseMessage`.
+    const usage =
+      message instanceof AIMessage || message instanceof AIMessageChunk
+        ? message.usage_metadata
+        : undefined;
+    if (usage) {
+      sawUsage = true;
+      prompt += usage.input_tokens ?? 0;
+      completion += usage.output_tokens ?? 0;
+    }
+
+    if (message instanceof AIMessage && message.tool_calls?.length) {
+      for (const call of message.tool_calls) {
+        const id = call.id ?? crypto.randomUUID();
+        toolCalls.push({
+          id,
+          name: call.name,
+          arguments: (call.args ?? {}) as Record<string, unknown>,
+          result: resultsByCallId.get(id),
+        });
+      }
+    }
+
+    if (message instanceof AIMessage && message.text.trim()) {
+      answer = message.text;
+    }
+  }
+
+  return { output: { answer }, toolCalls, tokens: sawUsage ? { prompt, completion } : undefined };
+}
+
+/**
+ * Run the node's tool through a react agent, so the model generates the
+ * arguments and the result is fed back — a single-shot tool call would leave
+ * the model's answer unavailable for downstream nodes.
+ */
+async function executeToolNode(
+  node: RichWorkflowNode,
+  outputs: WorkflowOutputs,
+  deps: WorkflowDeps,
+): Promise<NodeResult> {
+  const label = node.name || node.id;
+  const data = node.data as ToolNodeData;
+
+  if (!data.tool) {
+    throw new Error(`Tool node "${label}" has no tool selected.`);
+  }
+
+  const tool = await deps.loadTool(data.tool);
+  if (!tool) {
+    const where =
+      data.tool.type === "mcp-tool" ? ` from MCP server "${data.tool.serverName}"` : "";
+    throw new Error(
+      `Tool node "${label}": tool "${data.tool.id}"${where} could not be loaded. It may have been removed or disabled.`,
+    );
+  }
+
+  const { createReactAgent } = await import("@langchain/langgraph/prebuilt");
+  const instruction = resolveTipTapContent(data.message, outputs).trim();
+
+  const agent = createReactAgent({
+    llm: deps.getModel(data.model.model),
+    tools: [tool],
+    prompt:
+      instruction ||
+      `You run a single step of a workflow. Use the ${tool.name} tool, then report what it returned.`,
+  });
+
+  const result = await agent.invoke({
+    messages: [
+      {
+        role: "user",
+        content:
+          instruction ||
+          `Run the ${tool.name} tool for the workflow's current step and report the result.`,
+      },
+    ],
+  });
+
+  return summarizeAgentRun(result.messages as BaseMessage[]);
 }

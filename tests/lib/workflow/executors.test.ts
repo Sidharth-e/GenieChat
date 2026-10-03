@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { AIMessageChunk } from "@langchain/core/messages";
-import { runNode, type NodeInput, type WorkflowDeps } from "@/lib/workflow/executors";
+import { AIMessage, AIMessageChunk, ToolMessage } from "@langchain/core/messages";
+import {
+  runNode,
+  summarizeAgentRun,
+  type NodeInput,
+  type WorkflowDeps,
+} from "@/lib/workflow/executors";
 import { NodeKind } from "@/lib/workflow/types";
 import type { TipTapMentionJsonContent } from "@/lib/workflow/types";
 import type { RichWorkflowNode } from "@/lib/types";
@@ -246,6 +251,69 @@ describe("runNode — Code", () => {
   it("fails when the sandbox returns an unreadable result", async () => {
     await expect(runNode(codeNode(), input(), depsReturning("not json"))).rejects.toThrow(
       /returned an unreadable result/,
+    );
+  });
+});
+
+describe("summarizeAgentRun", () => {
+  it("collects tool calls with their results and sums token usage", () => {
+    const messages = [
+      new AIMessage({
+        content: "",
+        tool_calls: [{ id: "call-1", name: "web_search", args: { query: "birds" } }],
+        usage_metadata: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+      }),
+      new ToolMessage({ content: "3 results", tool_call_id: "call-1" }),
+      new AIMessage({
+        content: "Found three sources.",
+        usage_metadata: { input_tokens: 20, output_tokens: 5, total_tokens: 25 },
+      }),
+    ];
+    const result = summarizeAgentRun(messages);
+    expect(result.toolCalls).toEqual([
+      {
+        id: "call-1",
+        name: "web_search",
+        arguments: { query: "birds" },
+        result: "3 results",
+      },
+    ]);
+    expect(result.output).toEqual({ answer: "Found three sources." });
+    expect(result.tokens).toEqual({ prompt: 30, completion: 7 });
+  });
+
+  it("leaves tokens undefined when the model reported none", () => {
+    expect(summarizeAgentRun([new AIMessage("hi")]).tokens).toBeUndefined();
+  });
+});
+
+describe("runNode — Tool", () => {
+  const toolNode = (tool?: Record<string, unknown>) =>
+    node("tool", NodeKind.Tool, {
+      model: { provider: "google", model: "test-model" },
+      ...(tool ? { tool } : {}),
+    });
+
+  it("fails naming the node when no tool is selected", async () => {
+    await expect(runNode(toolNode(), input(), unusedDeps)).rejects.toThrow(
+      /Tool node "tool" has no tool selected/,
+    );
+  });
+
+  it("names the MCP server when the tool cannot be loaded", async () => {
+    const deps: WorkflowDeps = {
+      getModel: unusedDeps.getModel,
+      loadTool: async () => undefined,
+    };
+    const data = {
+      id: "search",
+      description: "Search",
+      type: "mcp-tool",
+      serverId: "s-1",
+      serverName: "Acme MCP",
+    };
+    await expect(runNode(toolNode(data), input(), deps)).rejects.toThrow(
+      /Tool node "tool": tool "search" from MCP server "Acme MCP" could not be loaded\. It may have been removed or disabled\./,
     );
   });
 });

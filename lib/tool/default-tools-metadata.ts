@@ -4,6 +4,21 @@ export interface ToolMetadata {
     alwaysEnabled?: boolean;
 }
 
+/**
+ * The app tools a workflow Tool node can resolve by name. Hand-written beside
+ * the catalogue below rather than derived from it, because `DEFAULT_TOOLS_METADATA`
+ * is shared with the agent surfaces and advertises entries no `default:`-prefixed
+ * resolver can produce: `get_weather` and `encode_base64` have no implementation
+ * at all, and `use_skill` is constructed per agent from that agent's own skills.
+ * `resolveDefaultTool` re-exports this beside itself, and a drift test asserts
+ * every name here resolves.
+ */
+export const RESOLVABLE_DEFAULT_TOOLS: readonly string[] = [
+  "web_search",
+  "knowledge_base_search",
+  "code_sandbox",
+];
+
 export const DEFAULT_TOOLS_METADATA: ToolMetadata[] = [
     {
         name: "get_weather",

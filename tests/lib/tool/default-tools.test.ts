@@ -75,4 +75,13 @@ describe("resolveDefaultTool", () => {
     const { resolveDefaultTool } = await import("@/lib/tool/default-tools");
     expect(resolveDefaultTool("nope")).toBeUndefined();
   });
+
+  it("resolves every name it advertises as resolvable", async () => {
+    const { resolveDefaultTool, RESOLVABLE_DEFAULT_TOOLS } = await import(
+      "@/lib/tool/default-tools"
+    );
+    for (const name of RESOLVABLE_DEFAULT_TOOLS) {
+      expect(resolveDefaultTool(name, "user-1"), name).toBeDefined();
+    }
+  });
 });
