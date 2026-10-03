@@ -114,8 +114,6 @@ type AppTool = { type: "app-tool" };
 export type WorkflowToolKey = {
   id: string;
   description: string;
-  parameterSchema?: ObjectJsonSchema7;
-  returnSchema?: JsonSchema7;
 } & (MCPTool | AppTool);
 
 export type ToolNodeData = BaseWorkflowNodeData<{ kind: NodeKind.Tool }> & {
