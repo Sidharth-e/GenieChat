@@ -83,6 +83,13 @@ export function buildWorkflowGraph(
   for (const node of nodes) {
     if (node.data.kind === NodeKind.Condition) {
       const mapping = conditionEdgeTargets(node, workflow.edges);
+      // A branch drawn to a node that never entered the graph — a Note, or a
+      // stale id — is unwired: LangGraph rejects an edge ending at an unknown
+      // node, and a branch with nowhere to go is what END is for. This mirrors
+      // the plain-edge `known.has(target)` guard below.
+      for (const [id, target] of Object.entries(mapping)) {
+        if (target !== END && !known.has(target)) mapping[id] = END;
+      }
       // Every branch the router can return needs an entry, or LangGraph rejects
       // the edge. An unwired branch routes to END — the run simply stops there.
       for (const branch of allConditionBranches((node.data as ConditionNodeData).branches)) {

@@ -143,6 +143,18 @@ describe("buildWorkflowGraph — condition routing", () => {
     const result = await buildWorkflowGraph(wf, deps).compile().invoke({ query: { n: "a" } });
     expect(result.outputs.c).toEqual({ branchId: "if-1", branchType: "if" });
   });
+
+  it("treats a branch wired to a non-executable node as unwired", async () => {
+    // A branch drawn to a Note (or a stale node id) names a node that never
+    // enters the graph; it must terminate, not throw "unknown node" at compile().
+    const wf = workflow(
+      [node("in", NodeKind.Input), conditionNode("c"), node("note", NodeKind.Note)],
+      [edge("in", "c"), edge("c", "note", "if-1")],
+    );
+    const result = await buildWorkflowGraph(wf, deps).compile().invoke({ query: { n: "a" } });
+    expect(result.outputs.c).toEqual({ branchId: "if-1", branchType: "if" });
+    expect(result.outputs.note).toBeUndefined();
+  });
 });
 
 describe("buildWorkflowGraph — hooks and failure", () => {
