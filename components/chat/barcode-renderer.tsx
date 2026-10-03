@@ -7,6 +7,7 @@ import {
   BARCODE_FORMATS,
   buildBarcodeOptions,
   parseBarcodeConfig,
+  withIntrinsicSize,
 } from "@/lib/barcode";
 import type { BarcodeFormat } from "@/lib/types";
 
@@ -68,7 +69,7 @@ export function BarcodeRenderer({
     try {
       return {
         status: "ready",
-        svg: toSVG(buildBarcodeOptions(config)),
+        svg: withIntrinsicSize(toSVG(buildBarcodeOptions(config))),
         label: FORMAT_LABELS[config.format],
         text: config.text,
         caption: config.caption,
@@ -123,6 +124,10 @@ export function BarcodeRenderer({
         A barcode is a machine-read symbol: an inverted one fails on many
         scanners, so this panel stays white in both themes. Its padding is the
         quiet zone scanners need, in CSS pixels rather than BWIPP's points.
+
+        The symbol is sized by `withIntrinsicSize`, not by CSS on this subtree:
+        a `[&>svg]:` variant here compiles to nothing when Tailwind does not
+        emit it, which is exactly how an unsized SVG ends up filling the card.
       */}
       <div
         className="flex justify-center p-5"
@@ -131,7 +136,6 @@ export function BarcodeRenderer({
         <div
           role="img"
           aria-label={`${view.label} encoding ${view.text}`}
-          className="[&>svg]:h-auto [&>svg]:max-w-full"
           dangerouslySetInnerHTML={{ __html: view.svg }}
         />
       </div>

@@ -136,3 +136,41 @@ export function buildBarcodeOptions(config: BarcodeConfig): BarcodeOptions {
 
   return options;
 }
+
+const SVG_OPEN_TAG = /^<svg\b[^>]*>/;
+const SVG_VIEW_BOX = /\bviewBox="0 0 ([\d.]+) ([\d.]+)"/;
+
+/**
+ * Give a bwip-js SVG the intrinsic size it does not ship with.
+ *
+ * `toSVG` emits a bare `<svg viewBox="0 0 W H">` — no `width`, no `height` — so
+ * the symbol has no intrinsic size and is laid out at whatever the surrounding
+ * box happens to give it. In practice that ranges from filling the card and
+ * being clipped by its `overflow-hidden` to collapsing to nothing, depending on
+ * the parent. Setting the viewBox's own dimensions makes the rendered size
+ * equal the scale knob the fence already exposes, and `max-width` lets it
+ * shrink rather than clip on a narrow screen.
+ *
+ * Returns the input unchanged if it is not a bwip-js SVG. `toSVG` always emits
+ * a viewBox, so that is a guard against a future format rather than a case the
+ * fence can reach.
+ */
+export function withIntrinsicSize(svg: string): string {
+  const openTag = SVG_OPEN_TAG.exec(svg);
+  if (!openTag) {
+    return svg;
+  }
+
+  const viewBox = SVG_VIEW_BOX.exec(openTag[0]);
+  if (!viewBox) {
+    return svg;
+  }
+
+  const [, width, height] = viewBox;
+  const sizedTag = openTag[0].replace(
+    "<svg",
+    `<svg width="${width}" height="${height}" style="max-width:100%;height:auto;display:block"`,
+  );
+
+  return svg.replace(openTag[0], sizedTag);
+}

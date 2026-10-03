@@ -4,6 +4,7 @@ import {
   parseBarcodeConfig,
   buildBarcodeOptions,
   isLinearBarcodeFormat,
+  withIntrinsicSize,
 } from "@/lib/barcode";
 import type { BarcodeConfig } from "@/lib/types";
 
@@ -185,5 +186,49 @@ describe("buildBarcodeOptions", () => {
     expect(buildBarcodeOptions(configFactory({ text: "ABC-123" })).text).toBe(
       "ABC-123",
     );
+  });
+});
+
+describe("withIntrinsicSize", () => {
+  const svg = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">';
+
+  it("takes its size from the viewBox", () => {
+    const sized = withIntrinsicSize(svg);
+    expect(sized).toContain('width="100"');
+    expect(sized).toContain('height="100"');
+  });
+
+  it("keeps the viewBox so the symbol still scales", () => {
+    expect(withIntrinsicSize(svg)).toContain('viewBox="0 0 100 100"');
+  });
+
+  it("lets a narrow container shrink it instead of clipping it", () => {
+    expect(withIntrinsicSize(svg)).toContain("max-width:100%");
+  });
+
+  it("keeps the other attributes on the opening tag", () => {
+    expect(withIntrinsicSize(svg)).toContain(
+      'xmlns="http://www.w3.org/2000/svg"',
+    );
+  });
+
+  it("handles a non-square viewBox, which is what the linear formats emit", () => {
+    const sized = withIntrinsicSize('<svg viewBox="0 0 224 102">');
+    expect(sized).toContain('width="224"');
+    expect(sized).toContain('height="102"');
+  });
+
+  it("leaves the rest of the document untouched", () => {
+    const body = `${svg}<path d="M0 1"/>`;
+    expect(withIntrinsicSize(body)).toContain('<path d="M0 1"/>');
+  });
+
+  it("returns the input unchanged when there is no viewBox to read", () => {
+    const bare = '<svg xmlns="http://www.w3.org/2000/svg">';
+    expect(withIntrinsicSize(bare)).toBe(bare);
+  });
+
+  it("returns the input unchanged when it is not an svg at all", () => {
+    expect(withIntrinsicSize("not an svg")).toBe("not an svg");
   });
 });
