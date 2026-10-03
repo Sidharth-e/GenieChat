@@ -65,6 +65,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/neo4j/` — the Neo4j driver. `config.ts` reads `config.neo4j` and is pure, returning null unless the URI *and* a password are present; `client.ts` is the `"server-only"` layer holding one lazily-built `Driver` plus `isNeo4jConfigured()`, so every caller degrades rather than throws.
 - `lib/memory/` — the memory graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore`; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same SQL the store does; `extract.ts`, `recall.ts`, `text.ts` and `update.ts` are pure and unit-tested; `enrichment-schema.ts` and `llm-extraction.ts` hold the model contract and the call, and `enrichment-write.ts` and `enrich.ts` write what it returns. `graph-view.ts` assembles the four graph reads into the drawn node/edge set and `graph-layout.ts` positions it — both pure and unit-tested, and both deliberately unaware of React Flow, so the decisions worth testing (which entities survive the cap, what an edge is called, what "degree" means, where a node lands) need no browser. `constants/memory.ts` holds the edge types, weights and limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
 - `lib/schedules/` — the scheduling subsystem. `cadence.ts` (cron and `once` next-occurrence), `retry.ts` (backoff, terminal error classes, the reaper's outcome and `isRunOpen`), `schedule-input.ts` (draft and patch parsing, and the next-run-after-patch rule), `input-form.ts` (a Zod schema into form fields, and the string-to-value coercer) and `input-schemas.ts` (the per-target input schemas) are pure and unit-tested. `registry.ts` holds the `TriggerExecutor` map every target kind registers into and registers nothing itself; `executors.ts` performs the executor imports and re-exports the registry, and is the module request-time consumers import from — importing `getExecutor` from `registry.ts` instead yields an empty registry that answers `invalid_target` for every target while the type-check and the unit suite stay green. `executor-workflow.ts` and `executor-agent.ts` are the two registered executors (`tool` is deliberately absent); `run-agent.ts` is the headless agent run the `agent` executor and the webhook service share; `dispatch.ts` runs one named run; `tick.ts` is the I/O layer that runs one pass. `lib/api/cron-guard.ts` is the `CRON_SECRET` bearer check the tick and the dispatch seam share. Execution is **at-least-once**: a claimed run holds a lease, and a run whose process died is handed back by the reaper rather than being lost. `constants/schedules.ts` holds the lease length, the retry curve and the tick's bounds. See [Scheduling](#scheduling).
+- `lib/api/` — helpers for the route layer. `rate-limit.ts` (see [Redis](#redis)), `agent-api-auth.ts` (the API-key path), `cron-guard.ts` (the `CRON_SECRET` bearer check the tick and the dispatch seam share), and `query-params.ts`, whose `boundedInt` clamps a query integer. It takes a `min` because `Number(null)` is `0` and a Mongo `.limit(0)` means *no limit* — without a lower bound an absent `?limit` returns the whole collection rather than a page.
 - `lib/redis-client.ts` — Shared ioredis connections, one per named consumer, with a per-consumer circuit breaker. `getRedisClient(name, options)` returns a discriminated result (`ready` / `unconfigured` / `circuit-open`) so each caller picks its own degradation policy. See [Redis](#redis).
 - `lib/mongodb/` — MongoDB data layer using the official `mongodb` driver. `client.ts` provides synchronous collection accessors that connect lazily on first use. Most `*-store.ts` files hold exactly one document shape, but some span more — `workflow-store.ts` spans workflows, rich workflows and executions — and one collection can back several stores — `tools` backs `tool-store.ts`, `secret-store.ts` and `api-key-store.ts`.
 - `lib/langchain/` — LLM orchestration layer:
@@ -347,11 +348,13 @@ exception [Key Conventions](#key-conventions) records for the webhook-invocation
 `expiresAt`.
 
 `pnpm db:setup` creates both collections and their indexes; `pnpm
-schedules:check` exercises the five properties that are concurrency properties
-and so cannot be unit-tested (a claim racing itself, a run claimed by id racing
-itself, an expired lease, spent attempts, an overlap under `skip`); `pnpm
-schedules:migrate` is a one-off that converts legacy workflow cron triggers into
-`schedules`. See [Server-Side Core](#server-side-core-lib) for the module layout.
+schedules:check` exercises the seven properties that belong to the store rather
+than to a pure function, and so cannot be unit-tested (a claim racing itself, a
+run claimed by id racing itself, an expired lease, spent attempts, the last-run
+status a settle writes, an overlap under `skip`, and a cleared description
+leaving no key behind); `pnpm schedules:migrate` is a one-off that converts legacy
+workflow cron triggers into `schedules`. See
+[Server-Side Core](#server-side-core-lib) for the module layout.
 
 ### Document Parsing (Docling)
 

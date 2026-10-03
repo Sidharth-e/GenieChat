@@ -198,10 +198,16 @@ export function describeCadence(cadence: ScheduleCadence): string {
  *
  * A one-liner over `nextOccurrence`, named because it is the write path's whole
  * arithmetic and because its two callers -- create, and resume-after-pause --
- * have to agree on it. `null` is reachable only from a cadence that never
- * validated, and the caller stores it as `null` rather than fabricating one: a
- * `once` already in the past stored with a real instant would fire the moment
- * it was saved.
+ * have to agree on it.
+ *
+ * `null` means "no next occurrence", and a *validated* cadence reaches it: a
+ * `once` whose `runAt` is already behind `from` is a real cadence with nothing
+ * left to fire. (The other route to it is a `once` malformed past `new Date`,
+ * which yields an invalid date and compares false.) A cron never returns null --
+ * a dead expression throws out of the parser instead, which is why
+ * `validateCadence` has to be the check for one. The caller stores the null
+ * rather than fabricating an instant: a spent `once` stored with a real instant
+ * would fire the moment it was saved.
  */
 export function nextRunAtISO(
   cadence: ScheduleCadence,

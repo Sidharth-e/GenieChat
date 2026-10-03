@@ -25,8 +25,10 @@ const publicPaths = [
   // The path is `/api/schedules/execute/...` rather than the spec's
   // `/api/schedules/runs/.../execute` because this list is prefix-matched:
   // exempting `/api/schedules/runs/` would also exempt the session-scoped
-  // `GET /api/schedules/runs/[runId]` beside it. A namespace created solely for
-  // the cron seam cannot accrete a session-scoped sibling.
+  // `GET /api/schedules/runs/[runId]` beside it. Keeping the seam in a namespace
+  // of its own is what avoids that today -- but the match is still a prefix, so a
+  // session-scoped route added *under* `/api/schedules/execute/` would be exempted
+  // just as silently. What protects this namespace is convention, not mechanism.
   "/api/schedules/execute",
 ];
 const STATIC_ASSET_PATH =
