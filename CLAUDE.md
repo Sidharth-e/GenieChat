@@ -71,7 +71,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/langchain/` — LLM orchestration layer:
   - `model-factory.ts` — creates LangChain `BaseChatModel` instances from model IDs. Central place for all provider wiring (Google and Ollama only — the `ProviderKey` union in `lib/types.ts` is the source of truth).
   - `model-config.ts` — `AVAILABLE_MODELS` array defining all supported models and their capabilities, plus `DEFAULT_MODEL_ID` used wherever a caller has no model of its own.
-  - `chat-service.ts` — single-agent streaming chat.
+  - `chat-service.ts` — single-agent streaming chat, and the one service that binds MCP tools with no agent record scoping them. See [MCP Tool Binding](#mcp-tool-binding).
   - `agent-service.ts` — agent-based chat with tools.
   - `multi-agent-service.ts` — multi-agent orchestration (LangGraph supervisor).
   - `workflow-execution-service.ts` — runs automated workflow steps.
@@ -109,6 +109,29 @@ The pending-message handoff is deliberately two effects. The first latches the p
 Two options exist because chat is the only surface that needs them: `extraScrollDependencies` (chat also scrolls on research-state, status-history and report-length changes) and `shouldRegisterThread` (chat's thread record is written by the send for a not-yet-persisted conversation, so the shell must not register one there — its `threadId` is the empty string in that case). `clearDelayMs` preserves swarm's 1000 ms pending-clear window.
 
 **Regeneration appends a version, up to a cap.** Regenerating adds to `message.versions` rather than replacing, so `MAX_MESSAGE_VERSIONS` (`constants/config.ts`) bounds it. `hasReachedVersionLimit` (`lib/conversation.ts`) is the one predicate; the stream pipeline refuses a regeneration past the cap *before* calling the model (so a refused attempt costs no tokens), and `MessageActions` disables the control with the reason as its title. **The hooks' `error` is rendered**, by `ConversationShell` above the composer — a rejected stream (a rate limit, a refusal) was invisible, which makes a broken control look like one that does nothing. `handleRegenerate`'s guards report through a toast for the same reason.
+
+### MCP Tool Binding
+
+Every surface that can call an MCP tool resolves the servers it will connect to
+through `filterMcpServers` (`lib/api/stream/tooling.ts`), which drops disabled
+servers and resolves their stored secrets. What differs is the required-tool
+list each surface hands it. Agent, multi-agent and swarm pass the agent records'
+own `tools`, so a server is reachable only where an agent names it. **Default
+chat passes `includeAllEnabled` and binds every enabled server** — it is the one
+surface with no agent record to scope them with, and no configuration of its own
+in which a narrower choice could be expressed. It binds every enabled custom tool
+for the same reason. This is a deliberate cost: each chat request opens a client
+against each enabled server and lists its tools.
+
+`chat-service.streamChat` owns its MCP client and releases it in a `finally`, so
+a throw, the streaming fallback, or a consumer that stops iterating cannot leak
+the connection; `agent-service` owns its client the same way. One name resolves
+to one tool, in a fixed precedence — the built-in defaults win outright, then
+MCP, then the user's own tools — because two tools sharing a name reach the model
+as a single ambiguous choice.
+
+See [Conversation Surfaces](#conversation-surfaces) for the four surfaces that
+render a conversation.
 
 ### Authentication Flow
 

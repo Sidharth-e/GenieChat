@@ -118,4 +118,48 @@ describe("filterMcpServers", () => {
 
     expect(kept.map((s) => s.name)).toEqual(["github"]);
   });
+
+  it("keeps every enabled server when includeAllEnabled is set, with nothing required", () => {
+    const allServers = [
+      server({ name: "github" }),
+      server({ name: "slack" }),
+      server({ name: "jira", enabled: false }),
+    ];
+
+    const kept = filterMcpServers({
+      allServers,
+      secretMap: {},
+      includeAllEnabled: true,
+    });
+
+    expect(kept.map((s) => s.name)).toEqual(["github", "slack"]);
+  });
+
+  it("still drops disabled servers when includeAllEnabled is set", () => {
+    const allServers = [
+      server({ name: "github", enabled: false }),
+      server({ name: "slack", enabled: false }),
+    ];
+
+    expect(
+      filterMcpServers({ allServers, secretMap: {}, includeAllEnabled: true }),
+    ).toEqual([]);
+  });
+
+  it("resolves secrets when includeAllEnabled is set", () => {
+    const allServers = [
+      server({
+        name: "github",
+        headers: { Authorization: "env.GITHUB_TOKEN" },
+      }),
+    ];
+
+    const kept = filterMcpServers({
+      allServers,
+      secretMap: { GITHUB_TOKEN: "ghp_secret" },
+      includeAllEnabled: true,
+    });
+
+    expect(kept[0].headers).toEqual({ Authorization: "ghp_secret" });
+  });
 });

@@ -29,21 +29,37 @@ export function toSnakeCase(name: string): string {
 export type CustomToolSelection = "allowed-only" | "all-enabled";
 
 /**
- * One algorithm, three callers — agent passes its own tools, multi-agent the
- * union of main-agent and sub-agent tools, swarm the union of its members'.
+ * One algorithm, four callers — agent passes its own tools, multi-agent the
+ * union of main-agent and sub-agent tools, swarm the union of its members', and
+ * chat sets `includeAllEnabled` because it has no agent record to name tools
+ * with at all.
  *
- * An empty tool list means no servers at all: every caller initialises
- * `mcpServers` to `[]` and none of them rescues it. A tool list where no entry
- * carries a `<server>:` prefix means every enabled server, which is how a mode
- * that names tools without server scoping keeps working.
+ * An empty tool list means no servers at all: every agent-driven caller
+ * initialises `mcpServers` to `[]` and none of them rescues it. A tool list
+ * where no entry carries a `<server>:` prefix means every enabled server, which
+ * is how a mode that names tools without server scoping keeps working.
  */
 export function filterMcpServers(params: {
   allServers: MCPServerConfig[];
   secretMap: Record<string, string>;
   allowedTools?: string[];
   extraRequiredTools?: string[];
+  /**
+   * Bind every enabled server without naming one. Default chat is the only
+   * caller: an agent's `tools` list is what scopes MCP servers on the agent,
+   * multi-agent and swarm surfaces, and chat has no agent — so there is no list
+   * to narrow with, and "no list means no servers" would leave a user's
+   * configured servers unreachable in the one surface with no configuration of
+   * its own. Disabled servers are still dropped.
+   */
+  includeAllEnabled?: boolean;
 }): MCPServerConfig[] {
   const enabled = params.allServers.filter((s) => s.enabled);
+
+  if (params.includeAllEnabled) {
+    return resolveMCPServerSecrets(enabled, params.secretMap);
+  }
+
   const required = new Set([
     ...(params.allowedTools ?? []),
     ...(params.extraRequiredTools ?? []),

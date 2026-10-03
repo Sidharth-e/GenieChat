@@ -8,6 +8,7 @@ import {
   createDeleteMemoryTool,
 } from "@/lib/tool/memory";
 import { convertCustomToolsToLangChain } from "@/lib/tool/custom-tool-converter";
+import { loadUserTooling, filterMcpServers, type UserTooling } from "../context";
 import { handleError, api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
@@ -77,6 +78,15 @@ export function createChatMode(params: {
     customToolsForAI.push(createDeleteMemoryTool(userId));
   }
 
+  // Started here for the same reason as the retrieval above — the two database
+  // rounds overlap instead of queueing. Chat binds every enabled MCP server and
+  // every enabled custom tool, because unlike the agent surfaces it has no
+  // record naming the subset it may use.
+  const toolingPromise: Promise<UserTooling> = loadUserTooling({
+    userId,
+    customToolSelection: "all-enabled",
+  });
+
   async function* produce(): AsyncGenerator<ProducerEvent> {
     logger.info(
       "Messages for processing:",
@@ -92,12 +102,29 @@ export function createChatMode(params: {
       ? await memoryPromise
       : (logger.info("[API] Memory disabled for this request"), []);
 
+    const tooling = await toolingPromise;
+    const mcpServers = filterMcpServers({
+      allServers: tooling.allServers,
+      secretMap: tooling.secretMap,
+      includeAllEnabled: true,
+    });
+
+    // The memory tools are constructed here rather than loaded, so they are not
+    // part of `tooling.customTools` — a user tool reusing one of their names
+    // would otherwise bind twice.
+    const memoryToolNames = new Set(customToolsForAI.map((t) => t.name));
+    const customTools = [
+      ...customToolsForAI,
+      ...tooling.customTools.filter((t) => !memoryToolNames.has(t.name)),
+    ];
+
     for await (const event of await chatService.streamChat({
       messages: context.messages,
       modelId: model,
       reasoningEffort,
       images: context.imagesForAI,
-      customTools: customToolsForAI,
+      customTools,
+      mcpServers,
       forceWebSearch,
       userContext: {
         userId,

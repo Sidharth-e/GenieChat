@@ -5,12 +5,13 @@ import {
   ToolMessage,
   AIMessageChunk,
 } from "@langchain/core/messages";
-import { StructuredTool } from "langchain";
-import { Message } from "../types";
+import type { StructuredToolInterface } from "@langchain/core/tools";
+import { Message, MCPServerConfig } from "../types";
 import defaultToolsMap, {
   createCodeSandboxTool,
   webSearch,
 } from "../tool/default-tools";
+import { createMCPClient } from "./langchain-mcp";
 import { getModel } from "./model-factory";
 import {
   generateResponse,
@@ -30,7 +31,13 @@ export class ChatService {
     modelId: string;
     reasoningEffort?: import("../types").ReasoningEffort;
     images?: { base64Data: string; mimeType: string }[];
-    customTools?: StructuredTool[];
+    customTools?: StructuredToolInterface[];
+    /**
+     * Already filtered and secret-resolved upstream by `filterMcpServers`. Chat
+     * is the one surface that binds every enabled server, because it has no
+     * agent record to scope them with.
+     */
+    mcpServers?: MCPServerConfig[];
     forceWebSearch?: boolean;
     userContext?: UserContext;
   }): AsyncGenerator<
@@ -80,44 +87,21 @@ export class ChatService {
       reasoningEffort: params.reasoningEffort,
     });
 
-    // Merge default tools with custom tools, avoiding duplicates
-    // Filter out custom tools that have the same name as default tools
-    const customToolsFiltered = (params.customTools ?? []).filter(
-      (customTool) => !defaultToolsMap[customTool.name],
-    );
-
-    if (
-      params.customTools &&
-      customToolsFiltered.length !== params.customTools.length
-    ) {
-      const duplicates = params.customTools
-        .filter((ct) => defaultToolsMap[ct.name])
-        .map((ct) => ct.name);
-      logger.warn(
-        `Skipping custom tools with duplicate names: ${duplicates.join(", ")}`,
-      );
-    }
-
     // `knowledge_base_search` has left `defaultTools` for a per-request factory,
-    // so it is no longer a `defaultToolsMap` key and the duplicate-name check
-    // above can no longer catch a custom tool that shadows it. This set is what
-    // keeps the name reserved, and it stays until custom tools can be
-    // owner-scoped too.
+    // so it is no longer a `defaultToolsMap` key and a custom tool that shadows
+    // it would now go unnoticed. This set is what keeps the name reserved, and
+    // it stays until custom tools can be owner-scoped too.
     const agentOnlyTools = new Set(["knowledge_base_search"]);
-    const chatCustomTools = customToolsFiltered.filter((t) => !agentOnlyTools.has(t.name));
+    const chatCustomTools = (params.customTools ?? []).filter(
+      (t) => !agentOnlyTools.has(t.name),
+    );
     const activeCodeSandbox = params.userContext?.userId
       ? createCodeSandboxTool(params.userContext.userId, params.userContext.threadId)
       : defaultToolsMap.code_sandbox;
     const defaultToolsForChat = [webSearch, activeCodeSandbox];
-    const allTools = [...defaultToolsForChat, ...chatCustomTools];
 
-    const modelWithTools = model.bindTools ? model.bindTools(allTools) : model;
-
-    const allToolsMap: Record<string, StructuredTool> = {};
-    for (const t of allTools) {
-      allToolsMap[t.name] = t;
-    }
-
+    // Built outside the `try` below, because the streaming `catch` reaches for
+    // this array when it falls back to `invoke`.
     const langChainMessages = convertToLangChainMessages({
       messages: validMessages,
       images: params.images,
@@ -134,7 +118,60 @@ export class ChatService {
     }
     langChainMessages.unshift(new SystemMessage(systemPrompt));
 
+    // An MCP client holds a live connection, so it is opened inside the `try`
+    // below and torn down in the `finally` — a throw anywhere past that point,
+    // the streaming fallback included, must not leak it.
+    let mcpClient: ReturnType<typeof createMCPClient> = null;
+
     try {
+      // A server that will not answer costs its own tools and nothing else, as
+      // a failing MCP server does on the agent surface.
+      const mcpTools: StructuredToolInterface[] = [];
+      if (params.mcpServers && params.mcpServers.length > 0) {
+        mcpClient = createMCPClient(params.mcpServers);
+        if (mcpClient) {
+          try {
+            mcpTools.push(...(await mcpClient.getTools()));
+            logger.info(`Loaded ${mcpTools.length} MCP tools for chat`);
+          } catch (toolError) {
+            logger.warn("Failed to load MCP tools:", toolError);
+          }
+        }
+      }
+
+      // One name, one tool. A duplicate is dropped rather than bound twice,
+      // because two tools sharing a name reach the model as a single ambiguous
+      // choice — the same check the agent service makes, in the same order:
+      // defaults win outright, then MCP, then the user's own tools.
+      const reservedNames = new Set([
+        ...Object.keys(defaultToolsMap),
+        ...mcpTools.map((t) => t.name),
+      ]);
+      const uniqueCustomTools = chatCustomTools.filter(
+        (t) => !reservedNames.has(t.name),
+      );
+      if (uniqueCustomTools.length !== chatCustomTools.length) {
+        const duplicates = chatCustomTools
+          .filter((t) => reservedNames.has(t.name))
+          .map((t) => t.name);
+        logger.warn(
+          `Skipping custom tools with duplicate names: ${duplicates.join(", ")}`,
+        );
+      }
+
+      const allTools: StructuredToolInterface[] = [
+        ...defaultToolsForChat,
+        ...mcpTools,
+        ...uniqueCustomTools,
+      ];
+
+      const modelWithTools = model.bindTools ? model.bindTools(allTools) : model;
+
+      const allToolsMap: Record<string, StructuredToolInterface> = {};
+      for (const t of allTools) {
+        allToolsMap[t.name] = t;
+      }
+
       let resolvedRoutedModel: string | undefined;
 
       for (;;) {
@@ -333,6 +370,15 @@ export class ChatService {
       } catch (invokeError) {
         logger.error("Both streaming and invoke failed:", invokeError);
         throw invokeError;
+      }
+    } finally {
+      if (mcpClient) {
+        try {
+          await mcpClient.close();
+          logger.info("Closed MCP client for chat stream");
+        } catch (closeError) {
+          logger.warn("Failed to close MCP client:", closeError);
+        }
       }
     }
   }
