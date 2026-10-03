@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { api, handleError } from "@/lib/api-utils";
+import { boundedInt } from "@/lib/api/query-params";
 import { getSessionUser } from "@/lib/auth/get-session-user";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
 import { ScheduleStore } from "@/lib/mongodb/schedule-store";
@@ -10,13 +11,6 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
 type RouteParams = { params: Promise<{ id: string }> };
-
-/** A query integer, clamped rather than rejected: a bad param gets a page, not a 400. */
-function boundedInt(raw: string | null, fallback: number, max: number): number {
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) return fallback;
-  return Math.min(Math.floor(value), max);
-}
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
@@ -32,8 +26,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (!schedule) return api.notFound("Schedule");
 
     const query = request.nextUrl.searchParams;
-    const limit = boundedInt(query.get("limit"), DEFAULT_LIMIT, MAX_LIMIT);
-    const offset = boundedInt(query.get("offset"), 0, Number.MAX_SAFE_INTEGER);
+    // `min: 1` on the limit: an absent param and an explicit `0` both have to
+    // become a page, because the store passes this straight to `.limit()`, where
+    // `0` means no limit at all.
+    const limit = boundedInt(query.get("limit"), {
+      fallback: DEFAULT_LIMIT,
+      min: 1,
+      max: MAX_LIMIT,
+    });
+    const offset = boundedInt(query.get("offset"), {
+      fallback: 0,
+      min: 0,
+      max: Number.MAX_SAFE_INTEGER,
+    });
 
     const [runs, total] = await Promise.all([
       scheduleStore.getRuns(id, user.id, limit, offset),
