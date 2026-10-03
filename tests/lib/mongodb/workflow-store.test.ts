@@ -378,4 +378,34 @@ describe("mergeRichWorkflowUpdate", () => {
     // The helper copies before deleting; the caller's own key must survive.
     expect("trigger" in updates).toBe(true);
   });
+
+  it("preserves the stored trigger and nextRunAt when the caller sends the route's full key set", () => {
+    // app/api/workflows/[id]/route.ts:125-133 spreads all seven keys into
+    // `updates` on every PATCH, so `trigger` and `nextRunAt` arrive as own keys
+    // holding `undefined` whenever the body omits them. Round 1 dropped the
+    // keys *after* the spread, which had already overwritten both values: the
+    // workflow stopped being scheduled and lost the next-run time that keeps it
+    // from firing on every tick. This is that exact input.
+    const existing = storedRichWorkflow({
+      trigger: { type: "schedule", config: { cronExpression: "0 9 * * *" } },
+      nextRunAt: "2026-10-04T09:00:00.000Z",
+    });
+
+    const updated = mergeRichWorkflowUpdate(existing, {
+      name: "renamed",
+      description: undefined,
+      isPublished: undefined,
+      visibility: undefined,
+      icon: undefined,
+      trigger: undefined,
+      nextRunAt: undefined,
+    });
+
+    expect(updated.name).toBe("renamed");
+    expect(updated.trigger).toEqual({
+      type: "schedule",
+      config: { cronExpression: "0 9 * * *" },
+    });
+    expect(updated.nextRunAt).toBe("2026-10-04T09:00:00.000Z");
+  });
 });
