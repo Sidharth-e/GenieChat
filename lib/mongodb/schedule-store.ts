@@ -18,13 +18,49 @@ import {
   SCHEDULE_LEASE_MS,
   SCHEDULE_RUN_RETENTION_DAYS,
 } from "@/constants/schedules";
-import type { Schedule, ScheduleRun } from "@/lib/types";
+import type { Schedule, ScheduleRun, TriggerTargetType } from "@/lib/types";
 
 /** What settling one attempt can mean. The three cases the tick has to tell apart. */
 export type SettleOutcome =
   | { status: "succeeded"; resultRef?: ScheduleRun["resultRef"] }
   | { status: "pending"; nextAttemptAt: string; error: ScheduleRun["error"] }
   | { status: "failed"; error: ScheduleRun["error"] };
+
+/**
+ * What `updateSchedule` may set.
+ *
+ * Narrower than `Partial<Schedule>` and the narrowing is the whole point:
+ * `Partial<Schedule>` admits `userId`, so a route that spread a parsed request
+ * body into it could hand a schedule to another tenant. `id`, `userId`,
+ * `createdAt` and the bookkeeping fields (`skippedRuns`, `lastRunAt`,
+ * `lastRunStatus`) are the store's -- only the tick writes those, through its own
+ * statements, and none of them is something a user sets.
+ *
+ * `nextRunAt` *is* here, because the schedules API recomputes it: resuming a
+ * paused schedule and changing a cadence are both writes a user makes.
+ */
+export type ScheduleUpdate = Partial<
+  Pick<
+    Schedule,
+    | "name"
+    | "description"
+    | "target"
+    | "input"
+    | "cadence"
+    | "enabled"
+    | "overlapPolicy"
+    | "catchUpPolicy"
+    | "maxAttempts"
+    | "nextRunAt"
+  >
+>;
+
+/** Which schedules a list read wants back. An absent field is not a filter. */
+export interface ScheduleListFilter {
+  enabled?: boolean;
+  targetType?: TriggerTargetType;
+  targetId?: string;
+}
 
 /**
  * Every read and write the scheduler makes against MongoDB.
@@ -66,9 +102,27 @@ export class ScheduleStore {
     return hydrateDocument(doc);
   }
 
-  async getSchedules(userId: string): Promise<Schedule[]> {
+  /**
+   * The caller's schedules, newest activity first.
+   *
+   * The filter is built by only including the keys that were asked for, because
+   * `{ enabled: undefined }` is not an absent filter in MongoDB -- it is a
+   * predicate that matches nothing but `undefined`, and the query would return
+   * an empty list for a user who has schedules.
+   */
+  async getSchedules(
+    userId: string,
+    filter: ScheduleListFilter = {},
+  ): Promise<Schedule[]> {
     const docs = await this.scheduleCollection
-      .find({ userId })
+      .find({
+        userId,
+        ...(filter.enabled === undefined ? {} : { enabled: filter.enabled }),
+        ...(filter.targetType === undefined
+          ? {}
+          : { "target.type": filter.targetType }),
+        ...(filter.targetId === undefined ? {} : { "target.id": filter.targetId }),
+      })
       .sort({ updatedAt: -1 })
       .toArray();
     return docs.map(hydrateDocument);
@@ -82,7 +136,7 @@ export class ScheduleStore {
   async updateSchedule(
     id: string,
     userId: string,
-    updates: Partial<Schedule>,
+    updates: ScheduleUpdate,
   ): Promise<Schedule | null> {
     const doc = await this.scheduleCollection.findOneAndUpdate(
       { _id: id, userId },
@@ -97,9 +151,25 @@ export class ScheduleStore {
     return doc ? hydrateDocument(doc) : null;
   }
 
+  /**
+   * Removes a schedule and its history.
+   *
+   * The cascade comes *after* the schedule's own delete, and `deletedCount` is
+   * the reason: a `scheduleId` belonging to somebody else matches no schedule for
+   * this `userId`, so returning early there is what stops this call from removing
+   * another tenant's runs through an id it does not own.
+   *
+   * A failure in the cascade leaves runs whose schedule is gone. That is the safe
+   * direction: every read is scoped by `scheduleId`, so they are unreachable
+   * immediately, and the `expiresAt` TTL index collects them within
+   * `SCHEDULE_RUN_RETENTION_DAYS` regardless.
+   */
   async deleteSchedule(id: string, userId: string): Promise<boolean> {
     const result = await this.scheduleCollection.deleteOne({ _id: id, userId });
-    return result.deletedCount > 0;
+    if (result.deletedCount === 0) return false;
+
+    await this.runCollection.deleteMany({ scheduleId: id, userId });
+    return true;
   }
 
   /**
@@ -237,6 +307,47 @@ export class ScheduleStore {
   }
 
   /**
+   * Claims one named run, for a caller that already knows which run it wants.
+   *
+   * Same flip as `claimDueRuns` -- `pending` to `running`, `$inc: attempt` -- with
+   * two differences, both deliberate:
+   *
+   * - No `nextAttemptAt` bound. This is the dispatch seam: "Run now" creates a run
+   *   and immediately hands it here, and an external worker is told exactly which
+   *   run to drive. Requiring the run to be due would make the caller wait for a
+   *   tick that may be a minute away.
+   * - `userId` is optional, because only one of the two callers has a session. The
+   *   cron-authenticated route has none, and scoping it to a user would make the
+   *   seam unroutable; the session-authenticated "Run now" route passes it, so a
+   *   user cannot dispatch somebody else's run by guessing an id.
+   *
+   * `returnDocument: "after"` for the same reason as `claimDueRuns`: the executor
+   * needs the incremented `attempt` to decide whether a retry is still permitted.
+   */
+  async claimRunById(
+    runId: string,
+    nowISO: string,
+    userId?: string,
+  ): Promise<ScheduleRun | null> {
+    const post = await this.runCollection.findOneAndUpdate(
+      { _id: runId, status: "pending", ...(userId === undefined ? {} : { userId }) },
+      {
+        $set: {
+          status: "running",
+          startedAt: nowISO,
+          leaseExpiresAt: new Date(
+            Date.parse(nowISO) + SCHEDULE_LEASE_MS,
+          ).toISOString(),
+          updatedAt: nowISO,
+        },
+        $inc: { attempt: 1 },
+      },
+      { returnDocument: "after" },
+    );
+    return post ? hydrateDocument(post) : null;
+  }
+
+  /**
    * Hands runs whose lease lapsed back for retry, or fails them once their
    * attempts are spent. Returns how many were reaped.
    *
@@ -328,13 +439,24 @@ export class ScheduleStore {
     scheduleId: string,
     userId: string,
     limit: number,
+    skip = 0,
   ): Promise<ScheduleRun[]> {
     const docs = await this.runCollection
       .find({ scheduleId, userId })
       .sort({ createdAt: -1 })
+      .skip(skip)
       .limit(limit)
       .toArray();
     return docs.map(hydrateDocument);
+  }
+
+  async countRuns(scheduleId: string, userId: string): Promise<number> {
+    return this.runCollection.countDocuments({ scheduleId, userId });
+  }
+
+  async getRun(runId: string, userId: string): Promise<ScheduleRun | null> {
+    const doc = await this.runCollection.findOne({ _id: runId, userId });
+    return doc ? hydrateDocument(doc) : null;
   }
 }
 

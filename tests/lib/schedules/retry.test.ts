@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   backoffMs,
+  isRunOpen,
   isTerminalErrorCode,
   nextAttemptDelayMs,
   reaperOutcome,
@@ -98,5 +99,21 @@ describe("reaperOutcome", () => {
     expect(reaperOutcome({ attempt: 3, maxAttempts: 3 }, NOW, mid).status).toBe(
       "failed",
     );
+  });
+});
+
+describe("isRunOpen", () => {
+  // Review: the UI polls while a run is open, and stops on a terminal status.
+  // `skipped` and `cancelled` are terminal too -- a run that will never execute
+  // must not keep a polling loop alive.
+  it("treats pending and running as open", () => {
+    expect(isRunOpen("pending")).toBe(true);
+    expect(isRunOpen("running")).toBe(true);
+  });
+
+  it("treats every settled status as closed", () => {
+    for (const status of ["succeeded", "failed", "skipped", "cancelled"] as const) {
+      expect(isRunOpen(status), status).toBe(false);
+    }
   });
 });

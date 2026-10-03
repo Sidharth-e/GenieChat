@@ -3,7 +3,7 @@ import {
   SCHEDULE_BACKOFF_CAP_MS,
   SCHEDULE_TERMINAL_ERROR_CODES,
 } from "@/constants/schedules";
-import type { ScheduleRun } from "@/lib/types";
+import type { ScheduleRun, ScheduleRunStatus } from "@/lib/types";
 
 /** Fraction of the nominal delay that jitter may add or remove. */
 const JITTER = 0.2;
@@ -91,4 +91,17 @@ export function reaperOutcome(
     ).toISOString(),
     error: LEASE_EXPIRED,
   };
+}
+
+/**
+ * Whether a run may still change on its own.
+ *
+ * The UI polls while this is true and stops when it is false, so the terminal
+ * set has to be complete: `skipped` and `cancelled` never execute, and a run the
+ * user cancelled that kept the poller alive would leave the page loading forever.
+ * It lives beside the retry curve because it is the same state machine read from
+ * the other end -- `reaperOutcome` decides which terminal state a run reaches.
+ */
+export function isRunOpen(status: ScheduleRunStatus): boolean {
+  return status === "pending" || status === "running";
 }

@@ -2,7 +2,10 @@ import { MongoClient, type Collection } from "mongodb";
 import { generateId } from "@/lib/utils";
 import { nextClaim } from "@/lib/schedules/cadence";
 import { reaperOutcome } from "@/lib/schedules/retry";
-import { SCHEDULE_RUN_RETENTION_DAYS } from "@/constants/schedules";
+import {
+  SCHEDULE_LEASE_MS,
+  SCHEDULE_RUN_RETENTION_DAYS,
+} from "@/constants/schedules";
 import type {
   ScheduleCadence,
   ScheduleRunStatus,
@@ -287,6 +290,69 @@ async function markSkipped(
 }
 
 /**
+ * The store's `claimRunById`, scoped to this run's `userId`.
+ *
+ * The filter is left exactly as the store writes it -- `status: "pending"` *is*
+ * the token, so a second claimer arriving after the first flip matches nothing.
+ * `returnDocument: "after"` because that is what the executor reads the
+ * incremented `attempt` from.
+ */
+async function claimRunById(
+  runs: Collection<RunRow>,
+  runId: string,
+  nowISO: string,
+): Promise<RunRow | null> {
+  return runs.findOneAndUpdate(
+    { _id: runId, userId: TEST_USER, status: "pending" },
+    {
+      $set: {
+        status: "running",
+        startedAt: nowISO,
+        leaseExpiresAt: new Date(
+          Date.parse(nowISO) + SCHEDULE_LEASE_MS,
+        ).toISOString(),
+        updatedAt: nowISO,
+      },
+      $inc: { attempt: 1 },
+    },
+    { returnDocument: "after" },
+  );
+}
+
+/**
+ * A run claimed by id twice executes once.
+ *
+ * "Run now" dispatches a run detached while the next tick's phase 4 is claiming
+ * due runs; both reach the same document through `findOneAndUpdate` with
+ * `status: "pending"` in the filter, so exactly one may win. Two winners would be
+ * two model calls for one click.
+ *
+ * The `attempt` assertion is the second half of the property: it is the increment
+ * the claim performs, so a run that somehow took both flips would read `2` even
+ * if the caller only counted one returned document.
+ */
+async function racesRunClaimById(runs: Collection<RunRow>): Promise<boolean> {
+  const runId = generateId();
+  await runs.insertOne(
+    makeRunDoc({
+      _id: runId,
+      scheduleId: generateId(),
+      trigger: "manual",
+      status: "pending",
+      nextAttemptAt: NOW_ISO,
+    }),
+  );
+
+  const [first, second] = await Promise.all([
+    claimRunById(runs, runId, NOW_ISO),
+    claimRunById(runs, runId, NOW_ISO),
+  ]);
+  const winners = [first, second].filter((doc) => doc !== null);
+
+  return winners.length === 1 && winners[0].attempt === 1;
+}
+
+/**
  * Two ticks racing one due schedule produce exactly one run — the property the
  * whole claim design exists for, and the one that cannot be asserted without a
  * database that actually serialises the two writes.
@@ -506,6 +572,10 @@ async function main() {
       await settlesIntoLastRunStatus(schedules, runs),
     );
     report("an overlap under skip inserts no row", await skipsOverlap(schedules, runs));
+    report(
+      "a run claimed by id twice executes once",
+      await racesRunClaimById(runs),
+    );
   } finally {
     // Scoped to TEST_USER, so a live database's own schedules are never touched.
     await schedules.deleteMany({ userId: TEST_USER });
