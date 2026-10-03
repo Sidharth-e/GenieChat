@@ -190,7 +190,7 @@ describe("dropUnsetNextRunAt", () => {
     );
   });
 
-  it("keeps an explicit null, which the update path relies on", () => {
+  it("keeps an explicit null, which the helper treats as a value, not a missing field", () => {
     // Not a tidy-up candidate: `null` is a value a caller chose to send, not a
     // missing field, and the due-window query treats it differently from an
     // absent key — a `null` satisfies neither `$exists: false` nor
