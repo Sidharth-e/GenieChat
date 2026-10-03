@@ -9,9 +9,14 @@ import {
 
 /**
  * The registry is pure — a `Map`, an accessor and a delegating lookup — so it is
- * unit-tested here rather than left to an integration suite. The executor that
- * phase 1 registers is not: it reaches MongoDB and the workflow service, and is
- * exercised against a live stack instead.
+ * unit-tested here rather than left to an integration suite. The executors are
+ * not: they reach MongoDB and the model, and are exercised against a live stack
+ * instead.
+ *
+ * This file imports `registry.ts` and never `executors.ts`, which is what makes
+ * the empty-map assertions below true: `executors.ts` is the module whose import
+ * side effects register the real executors, and this test deliberately skips it.
+ * That split is the reason both modules exist.
  *
  * Ordering matters in this file. The registry holds one process-global `Map`, so
  * the assertions about a type *not* being registered have to run before the
@@ -19,11 +24,11 @@ import {
  */
 
 /**
- * A stand-in executor for a type phase 1 deliberately leaves unregistered.
+ * A stand-in executor for a type nothing registers.
  *
- * `type: "tool"` is the choice that keeps the ordering note above honest — phase
- * 1 registers `workflow` only, so nothing else in the suite can be the thing
- * that put an entry under `tool`.
+ * `type: "tool"` is the choice that keeps the ordering note above honest: no
+ * executor exists for `tool`, so nothing else in the suite can be the thing that
+ * put an entry under it.
  */
 function fakeExecutor(overrides: Partial<TriggerExecutor> = {}): TriggerExecutor {
   return {
@@ -37,7 +42,7 @@ function fakeExecutor(overrides: Partial<TriggerExecutor> = {}): TriggerExecutor
 }
 
 describe("getExecutor before anything registers", () => {
-  it("returns null for the types phase 1 does not implement", () => {
+  it("returns null for the types it does not implement", () => {
     // Null, not a stub that throws later: this is the signal that makes a
     // schedule targeting an unimplemented kind fail at save time rather than at
     // 3am in a background tick.

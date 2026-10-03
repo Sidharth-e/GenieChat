@@ -1,12 +1,9 @@
-// Registers the workflow executor. A side-effect import rather than a call into
-// `registry.ts`, because `registry.ts` importing the executor would be a cycle —
-// the executor imports the registry. Without this line at the top of the tick's
-// module graph the registry is empty at runtime, every schedule answers
-// `invalid_target`, and neither the type-check nor the unit suite would notice.
-import "@/lib/schedules/executor-workflow";
 import { ScheduleStore, runExpiryFrom } from "@/lib/mongodb/schedule-store";
 import { nextAttemptDelayMs } from "@/lib/schedules/retry";
-import { getExecutor } from "@/lib/schedules/registry";
+// From `executors.ts`, not `registry.ts`: that module's imports are what register
+// the executors. Reading `getExecutor` off the pure registry here would compile,
+// pass the unit suite, and find an empty map at runtime.
+import { getExecutor } from "@/lib/schedules/executors";
 import {
   SCHEDULE_DEFAULT_MAX_ATTEMPTS,
   SCHEDULE_LEASE_MS,

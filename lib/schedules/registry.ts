@@ -36,9 +36,13 @@ export interface TriggerExecutor {
 /**
  * Registered executors by type.
  *
- * Phase 1 registers `workflow` only. `agent` and `tool` are absent rather than
- * stubbed: `getExecutor` returning `null` is what makes a schedule targeting
- * them answer `invalid_target` at save time instead of failing at 3am.
+ * `workflow` and `agent` are registered. `tool` is absent rather than stubbed:
+ * `getExecutor` returning `null` is what makes a schedule targeting it answer
+ * `invalid_target` at save time instead of failing at 3am.
+ *
+ * Nothing registers here. Importing this module gives a caller the map as it
+ * stands, so anything running at request time must import
+ * `lib/schedules/executors.ts` instead -- see the comment there.
  */
 const EXECUTORS = new Map<TriggerTargetType, TriggerExecutor>();
 
