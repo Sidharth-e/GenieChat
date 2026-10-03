@@ -102,7 +102,7 @@ export async function runTick(now: Date = new Date()): Promise<TickSummary> {
   for (let i = 0; i < runs.length; i += SCHEDULE_TICK_CONCURRENCY) {
     const batch = runs.slice(i, i + SCHEDULE_TICK_CONCURRENCY);
     const outcomes = await Promise.all(
-      batch.map((run) => executeOne(store, run, now)),
+      batch.map((run) => executeClaimedRun(store, run, now)),
     );
     for (const outcome of outcomes) summary[outcome] += 1;
   }
@@ -122,8 +122,13 @@ export async function runTick(now: Date = new Date()): Promise<TickSummary> {
  * The lease belongs to the tick, not the executor: renewal happens here and the
  * executor never learns leases exist, which is what keeps the registry interface
  * honest.
+ *
+ * Exported because it is the settlement path for *any* claimed run, not only one
+ * this pass claimed: `lib/schedules/dispatch.ts` hands it a run claimed by id.
+ * A second copy of the retry/exhaustion arithmetic in the dispatch path is the
+ * kind of drift that makes "Run now" behave unlike a scheduled run.
  */
-async function executeOne(
+export async function executeClaimedRun(
   store: ScheduleStore,
   run: ScheduleRun,
   now: Date,

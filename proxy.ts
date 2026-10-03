@@ -8,6 +8,9 @@ import { getToken } from "next-auth/jwt";
 // NextAuth session; it authenticates with a `CRON_SECRET` bearer instead, and
 // answers 401 when that secret is unset or wrong. Reachable is not the same as
 // unauthenticated — the route's own check is the whole gate.
+//
+// Entries are prefix-matched, which is why the dispatch seam gets its own
+// namespace below rather than a path under an existing one.
 const publicPaths = [
   "/login",
   "/api/auth",
@@ -15,6 +18,16 @@ const publicPaths = [
   "/api/auto/poll",
   "/api/auto/result",
   "/api/schedules/tick",
+  // The dispatch seam. Same caller as the tick — an external worker with a
+  // `CRON_SECRET` bearer and no session — and the same reasoning: reachable is
+  // not unauthenticated, and the guard in the route is the whole gate.
+  //
+  // The path is `/api/schedules/execute/...` rather than the spec's
+  // `/api/schedules/runs/.../execute` because this list is prefix-matched:
+  // exempting `/api/schedules/runs/` would also exempt the session-scoped
+  // `GET /api/schedules/runs/[runId]` beside it. A namespace created solely for
+  // the cron seam cannot accrete a session-scoped sibling.
+  "/api/schedules/execute",
 ];
 const STATIC_ASSET_PATH =
   /\/[^/]+\.(?:avif|bmp|css|csv|eot|gif|ico|jpeg|jpg|js|json|map|mp3|mp4|mjs|otf|pdf|png|svg|txt|wav|webm|webmanifest|webp|woff|woff2|xml)$/i;

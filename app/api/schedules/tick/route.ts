@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
-import crypto from "crypto";
-import { env } from "@/lib/env";
 import { api, handleError } from "@/lib/api-utils";
+import { checkCronSecret } from "@/lib/api/cron-guard";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
 import { runTick } from "@/lib/schedules/tick";
 
@@ -21,18 +20,8 @@ import { runTick } from "@/lib/schedules/tick";
  */
 async function handle(request: NextRequest) {
   try {
-    const cronSecret = env.CRON_SECRET;
-    if (!cronSecret) return api.unauthorized("Cron secret not configured");
-
-    const token =
-      request.headers.get("authorization")?.replace("Bearer ", "") ?? "";
-    // Length first, because `timingSafeEqual` throws on a length mismatch
-    // rather than returning false — and the constant-time compare is what keeps
-    // the secret from being recovered a byte at a time.
-    const secretsMatch =
-      token.length === cronSecret.length &&
-      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(cronSecret));
-    if (!secretsMatch) return api.unauthorized("Invalid cron secret");
+    const denied = checkCronSecret(request);
+    if (denied) return denied;
 
     if (!isDatabaseConfigured()) {
       return api.serviceUnavailable("Database not configured");
