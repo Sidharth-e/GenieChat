@@ -23,7 +23,7 @@ import { useTheme } from "@/components/providers/theme-provider";
 import { NodeKind, type UIEdge, type UINode, type WorkflowNodeData } from "@/lib/workflow/types";
 import type { RichWorkflow, RichWorkflowNode, RichWorkflowEdge } from "@/lib/types";
 import { createNodeData } from "@/lib/workflow/create-node";
-import { useWorkflowEditorStore } from "@/lib/stores/workflow-editor";
+import { useWorkflowEditorStore, selectWorkflowEditable } from "@/lib/stores/workflow-editor";
 import { DefaultNode } from "@/components/workflow/default-node";
 import { DefaultEdge } from "@/components/workflow/default-edge";
 import { NodeSelect } from "@/components/workflow/node-select";
@@ -93,7 +93,7 @@ function WorkflowCanvasInner({
   }, [selectedNode, hoveredNodeId]);
 
   // ---- Editability ----
-  const editable = !isProcessing && hasEditAccess && !workflow.isPublished;
+  const editable = useWorkflowEditorStore(selectWorkflowEditable);
 
   // ---- Init store ----
   useEffect(() => {

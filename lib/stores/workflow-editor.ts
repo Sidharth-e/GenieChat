@@ -14,6 +14,23 @@ export interface WorkflowEditorActions {
   addProcess: () => () => void;
 }
 
+/**
+ * Whether the canvas accepts edits. Derived from the store rather than passed
+ * down, because the canvas, a node's hover delete button and the node config
+ * panel all need the same answer — a second copy would drift from this one.
+ *
+ * `workflow !== undefined` matters: the canvas calls `init` from an effect, so
+ * before that runs the store has no workflow and nothing is editable yet.
+ */
+export function selectWorkflowEditable(state: WorkflowEditorState): boolean {
+  return (
+    state.hasEditAccess &&
+    state.processIds.length === 0 &&
+    state.workflow !== undefined &&
+    !state.workflow.isPublished
+  );
+}
+
 export const useWorkflowEditorStore = create<
   WorkflowEditorState & WorkflowEditorActions
 >((set) => ({
