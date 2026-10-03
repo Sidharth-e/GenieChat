@@ -506,7 +506,7 @@ function ResultTab({
   return (
     <div className="flex flex-col gap-3">
       {/* Node execution history */}
-      {histories.length === 0 && !isRunning && (
+      {histories.length === 0 && !isRunning && !result?.error && (
         <p className="text-sm text-muted-foreground">
           Run the workflow to see execution results.
         </p>
@@ -530,6 +530,16 @@ function ResultTab({
         </div>
       )}
 
+      {/* The run's failure reason. Deliberately outside the result section
+          below, because a run can fail before any node executes — compiling a
+          node with no inbound edge throws first — so there is no history to
+          gate on and the reason would otherwise never be drawn. */}
+      {result?.error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm text-destructive">{result.error}</p>
+        </div>
+      )}
+
       {/* Result section */}
       {(result || !isRunning) && histories.length > 0 && (
         <>
@@ -550,12 +560,6 @@ function ResultTab({
               )}
             </Button>
           </div>
-
-          {result?.error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-              <p className="text-sm text-destructive">{result.error}</p>
-            </div>
-          )}
 
           {result?.output != null && (
             <pre className="rounded-lg border bg-secondary/50 p-3 text-xs overflow-x-auto max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words">

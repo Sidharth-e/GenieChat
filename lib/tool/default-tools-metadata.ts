@@ -12,10 +12,14 @@ export interface ToolMetadata {
  * at all, and `use_skill` is constructed per agent from that agent's own skills.
  * `resolveDefaultTool` re-exports this beside itself, and a drift test asserts
  * every name here resolves.
+ *
+ * `knowledge_base_search` resolves but is deliberately absent: it needs the
+ * model to supply an `agentId`, which a workflow run has no context for, so it
+ * returns an error payload the node reports as a successful output. Offering it
+ * to a workflow advertises a tool that can only appear to work.
  */
 export const RESOLVABLE_DEFAULT_TOOLS: readonly string[] = [
   "web_search",
-  "knowledge_base_search",
   "code_sandbox",
 ];
 

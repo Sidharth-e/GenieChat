@@ -144,6 +144,16 @@ export function nextUpdatedAt(previous: string): string {
   return new Date(previousMs + 1).toISOString();
 }
 
+/**
+ * How many times a version-filtered write re-reads and retries before giving
+ * up. A version-filtered write is *meant* to lose occasionally — that is what
+ * makes it a compare-and-swap rather than a plain replace — and the caller's
+ * write is still intended, so a lost match retries instead of failing. Bounded,
+ * because a write that keeps losing is a live conflict rather than a race, and
+ * the caller should hear about it rather than spin.
+ */
+const RICH_WORKFLOW_WRITE_ATTEMPTS = 3;
+
 export class WorkflowStore {
   /**
    * Rich workflows live in the `workflows` collection and are accessed through
@@ -306,22 +316,37 @@ export class WorkflowStore {
     updates: RichWorkflowMetadataUpdate,
   ): Promise<RichWorkflow | null> {
     try {
-      const existingDoc = await this.getRichWorkflowDocument(workflowId);
-      if (!existingDoc) return null;
+      // Bounded by the throw on the final attempt; `attempt` counts toward it.
+      for (let attempt = 0; ; attempt++) {
+        const existingDoc = await this.getRichWorkflowDocument(workflowId);
+        if (!existingDoc) return null;
 
-      const updated = mergeRichWorkflowUpdate(existingDoc, updates);
+        const updated = mergeRichWorkflowUpdate(existingDoc, updates);
 
-      // The filter comes from the read, not the merge.
-      const { _id, ...rest } = updated;
-      const result = await this.richWorkflowCollection.replaceOne(
-        { _id: existingDoc._id },
-        rest,
-      );
-      if (result.matchedCount === 0) {
-        throw new Error(`Rich workflow not found: ${_id}`);
+        // The filter carries the version the read returned, so a write whose
+        // read went stale — a cron claim landing between the findOne and the
+        // replace, say — matches nothing instead of reverting the claim. The
+        // merge above is re-run against the next fresh read, not replayed, so
+        // the retry preserves what landed in the gap rather than the values the
+        // stale read still held.
+        const { _id, ...rest } = updated;
+        const result = await this.richWorkflowCollection.replaceOne(
+          { _id: existingDoc._id, updatedAt: existingDoc.updatedAt },
+          rest,
+        );
+        if (result.matchedCount > 0) {
+          return hydrateDocument(updated);
+        }
+
+        if (attempt >= RICH_WORKFLOW_WRITE_ATTEMPTS - 1) {
+          throw new Error(`Rich workflow not found: ${_id}`);
+        }
+
+        logger.info(
+          { workflowId, attempt },
+          "Rich workflow update lost the version race; retrying",
+        );
       }
-
-      return hydrateDocument(updated);
     } catch (error) {
       logger.error("Error updating rich workflow:", error);
       return null;
@@ -339,56 +364,70 @@ export class WorkflowStore {
     },
   ): Promise<RichWorkflow | null> {
     try {
-      const existingDoc = await this.getRichWorkflowDocument(workflowId);
-      if (!existingDoc) return null;
+      // Bounded by the throw on the final attempt; `attempt` counts toward it.
+      for (let attempt = 0; ; attempt++) {
+        const existingDoc = await this.getRichWorkflowDocument(workflowId);
+        if (!existingDoc) return null;
 
-      // Apply node updates/additions
-      const updatedNodes = existingDoc.nodes.filter(
-        (n) => !diff.deleteNodes.includes(n.id),
-      );
-      for (const node of diff.nodes) {
-        const idx = updatedNodes.findIndex((n) => n.id === node.id);
-        if (idx >= 0) {
-          updatedNodes[idx] = node;
-        } else {
-          updatedNodes.push(node);
+        // Apply node updates/additions
+        const updatedNodes = existingDoc.nodes.filter(
+          (n) => !diff.deleteNodes.includes(n.id),
+        );
+        for (const node of diff.nodes) {
+          const idx = updatedNodes.findIndex((n) => n.id === node.id);
+          if (idx >= 0) {
+            updatedNodes[idx] = node;
+          } else {
+            updatedNodes.push(node);
+          }
         }
-      }
 
-      // Apply edge updates/additions
-      const updatedEdges = existingDoc.edges.filter(
-        (e) => !diff.deleteEdges.includes(e.id),
-      );
-      for (const edge of diff.edges) {
-        const idx = updatedEdges.findIndex((e) => e.id === edge.id);
-        if (idx >= 0) {
-          updatedEdges[idx] = edge;
-        } else {
-          updatedEdges.push(edge);
+        // Apply edge updates/additions
+        const updatedEdges = existingDoc.edges.filter(
+          (e) => !diff.deleteEdges.includes(e.id),
+        );
+        for (const edge of diff.edges) {
+          const idx = updatedEdges.findIndex((e) => e.id === edge.id);
+          if (idx >= 0) {
+            updatedEdges[idx] = edge;
+          } else {
+            updatedEdges.push(edge);
+          }
         }
+
+        // Built from the document this attempt just read, so the fields this
+        // merge does not own — `lastRunAt`, `nextRunAt`, the trigger — carry a
+        // schedule claim that landed since the previous attempt, rather than
+        // the pre-claim values a stale read held.
+        const updated: WithMongoId<RichWorkflowDocument> = {
+          ...existingDoc,
+          nodes: updatedNodes,
+          edges: updatedEdges,
+          updatedAt: nextUpdatedAt(existingDoc.updatedAt),
+        };
+
+        // Deliberately left unfixed — unlike its sibling `updateRichWorkflow`
+        // above, every field in this merge after `...existingDoc` is computed
+        // here (`nodes`, `edges`, `updatedAt`), so no caller-supplied object
+        // reaches the filter and `_id` can only ever be `existingDoc._id`.
+        const { _id, ...rest } = updated;
+        const result = await this.richWorkflowCollection.replaceOne(
+          { _id, updatedAt: existingDoc.updatedAt },
+          rest,
+        );
+        if (result.matchedCount > 0) {
+          return hydrateDocument(updated);
+        }
+
+        if (attempt >= RICH_WORKFLOW_WRITE_ATTEMPTS - 1) {
+          throw new Error(`Rich workflow not found: ${_id}`);
+        }
+
+        logger.info(
+          { workflowId, attempt },
+          "Rich workflow structure update lost the version race; retrying",
+        );
       }
-
-      const updated: WithMongoId<RichWorkflowDocument> = {
-        ...existingDoc,
-        nodes: updatedNodes,
-        edges: updatedEdges,
-        updatedAt: nextUpdatedAt(existingDoc.updatedAt),
-      };
-
-      // Deliberately left unfixed — unlike its sibling `updateRichWorkflow`
-      // above, every field in this merge after `...existingDoc` is computed
-      // here (`nodes`, `edges`, `updatedAt`), so no caller-supplied object
-      // reaches the filter and `_id` can only ever be `existingDoc._id`.
-      const { _id, ...rest } = updated;
-      const result = await this.richWorkflowCollection.replaceOne(
-        { _id },
-        rest,
-      );
-      if (result.matchedCount === 0) {
-        throw new Error(`Rich workflow not found: ${_id}`);
-      }
-
-      return hydrateDocument(updated);
     } catch (error) {
       logger.error("Error updating rich workflow structure:", error);
       return null;
