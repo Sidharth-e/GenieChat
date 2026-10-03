@@ -1,4 +1,4 @@
-import { Workflow, RichWorkflow } from "@/lib/types";
+import type { RichWorkflow } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   GitBranch,
@@ -13,8 +13,8 @@ import Link from "next/link";
 import { formatRelativeTime } from "@/lib/relative-time";
 
 interface WorkflowListItemProps {
-  workflow: Workflow | RichWorkflow;
-  onExecute: (workflow: Workflow | RichWorkflow) => void;
+  workflow: RichWorkflow;
+  onExecute: (workflow: RichWorkflow) => void;
   onDelete: (workflowId: string) => void;
 }
 
@@ -23,14 +23,10 @@ export function WorkflowListItem({
   onExecute,
   onDelete,
 }: WorkflowListItemProps) {
-  const isNodeWorkflow = "nodes" in workflow;
-  const workflowType = isNodeWorkflow ? "node-workflow" : "agentic-workflow";
-  const viewHref = `/workflow/${workflow.id}/view/${workflowType}`;
-  const editHref = `/workflow/${workflow.id}/edit/${workflowType}`;
+  const viewHref = `/workflow/${workflow.id}/view/node-workflow`;
+  const editHref = `/workflow/${workflow.id}/edit/node-workflow`;
 
-  const nodeCountText = isNodeWorkflow
-    ? `${workflow.nodes.length} nodes`
-    : `${workflow.steps?.length || 0} steps`;
+  const nodeCountText = `${workflow.nodes.length} nodes`;
 
   const updatedTime = formatRelativeTime(
     workflow.updatedAt || workflow.createdAt,
@@ -55,14 +51,7 @@ export function WorkflowListItem({
           {workflow.name}
         </Link>
 
-        <span
-          className={cn(
-            "shrink-0",
-            isNodeWorkflow ? "pill-blue" : "pill-purple",
-          )}
-        >
-          {isNodeWorkflow ? "Node Workflow" : "Agentic Workflow"}
-        </span>
+        <span className="shrink-0 pill-blue">Node Workflow</span>
       </div>
 
       <p className="mt-2 line-clamp-2 pl-11 text-xs leading-relaxed text-text-secondary">

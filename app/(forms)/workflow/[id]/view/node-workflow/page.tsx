@@ -3,8 +3,8 @@
 import { logger } from "@/lib/logger";
 import { useEffect, useState, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Agent, RichWorkflow } from "@/lib/types";
-import { WorkflowEditor } from "@/components/workflow/workflow-editor";
+import WorkflowCanvas from "@/components/workflow/workflow-canvas";
+import { RichWorkflow } from "@/lib/types";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -19,37 +19,29 @@ export default function ViewNodeWorkflowPage({ params }: PageProps) {
     const searchParams = useSearchParams();
     const autoRun = searchParams.get("autoRun") === "true";
     const [richWorkflow, setRichWorkflow] = useState<RichWorkflow | null>(null);
-    const [agents, setAgents] = useState<Agent[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const fetchData = async () => {
+        const fetchWorkflow = async () => {
             try {
-                const [agentsRes, workflowRes] = await Promise.all([
-                    fetch(`/api/agents`),
-                    fetch(`/api/workflows/${id}`),
-                ]);
-
-                if (agentsRes.ok) {
-                    setAgents(await agentsRes.json());
-                }
+                const workflowRes = await fetch(`/api/workflows/${id}`);
 
                 if (workflowRes.ok) {
-                    setRichWorkflow(await workflowRes.json() as RichWorkflow);
+                    setRichWorkflow((await workflowRes.json()) as RichWorkflow);
                 } else {
-                    router.push("/workflow");
+                    router.push('/workflow');
                 }
             } catch (error) {
-                logger.error("Failed to fetch data:", error);
+                logger.error("Failed to fetch workflow:", error);
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchData();
+        fetchWorkflow();
     }, [id, router]);
 
-    if (isLoading || !richWorkflow) {
+    if (isLoading) {
         return (
             <div className="flex h-full items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-tertiary/50" />
@@ -57,16 +49,11 @@ export default function ViewNodeWorkflowPage({ params }: PageProps) {
         );
     }
 
+    if (!richWorkflow) return null;
+
     return (
         <div className="relative h-full w-full bg-background overflow-hidden">
-            <WorkflowEditor
-                workflow={null}
-                agents={agents}
-                richWorkflow={richWorkflow}
-                readonly={false}
-                autoRun={autoRun}
-            />
-
+            <WorkflowCanvas workflow={richWorkflow} autoRun={autoRun} />
             <div className="absolute bottom-6 right-6 z-20">
                 <Link href="/workflow">
                     <Button

@@ -36,7 +36,6 @@ export interface AgentCardProps {
   onToggleActive: (e: React.MouseEvent) => void;
   isUsedInOtherAgent?: boolean;
   isUsedInApiKey?: boolean;
-  isUsedInWorkflow?: boolean;
 }
 
 export function AgentCard({
@@ -50,18 +49,15 @@ export function AgentCard({
   onToggleActive,
   isUsedInOtherAgent,
   isUsedInApiKey,
-  isUsedInWorkflow,
 }: AgentCardProps) {
   const [apiDialogOpen, setApiDialogOpen] = useState(false);
 
-  const cannotDelete = isUsedInOtherAgent || isUsedInApiKey || isUsedInWorkflow;
-  const deleteTooltip = isUsedInWorkflow
-    ? "Used in a workflow"
-    : isUsedInOtherAgent
-      ? "Used as a sub-agent"
-      : isUsedInApiKey
-        ? "Has active API key"
-        : "";
+  const cannotDelete = isUsedInOtherAgent || isUsedInApiKey;
+  const deleteTooltip = isUsedInOtherAgent
+    ? "Used as a sub-agent"
+    : isUsedInApiKey
+      ? "Has active API key"
+      : "";
 
   const cannotDisable = isUsedInOtherAgent && agent.active;
   const isOrchestrator = (agent.subAgents?.length ?? 0) > 0;

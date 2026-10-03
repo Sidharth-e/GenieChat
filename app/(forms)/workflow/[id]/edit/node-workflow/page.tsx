@@ -3,8 +3,8 @@
 import { logger } from "@/lib/logger";
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { WorkflowEditor } from "@/components/workflow/workflow-editor";
-import { Agent, RichWorkflow } from "@/lib/types";
+import WorkflowCanvas from "@/components/workflow/workflow-canvas";
+import { RichWorkflow } from "@/lib/types";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -17,35 +17,26 @@ export default function EditNodeWorkflowPage({ params }: PageProps) {
     const { id } = use(params);
     const router = useRouter();
     const [richWorkflow, setRichWorkflow] = useState<RichWorkflow | null>(null);
-    const [agents, setAgents] = useState<Agent[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const fetchData = async () => {
+        const fetchWorkflow = async () => {
             try {
-                const [agentsRes, workflowRes] = await Promise.all([
-                    fetch(`/api/agents`),
-                    fetch(`/api/workflows/${id}`)
-                ]);
-
-                if (agentsRes.ok) {
-                    setAgents(await agentsRes.json());
-                }
+                const workflowRes = await fetch(`/api/workflows/${id}`);
 
                 if (workflowRes.ok) {
-                    const data = await workflowRes.json();
-                    setRichWorkflow(data as RichWorkflow);
+                    setRichWorkflow((await workflowRes.json()) as RichWorkflow);
                 } else {
                     router.push('/workflow');
                 }
             } catch (error) {
-                logger.error("Failed to fetch data:", error);
+                logger.error("Failed to fetch workflow:", error);
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchData();
+        fetchWorkflow();
     }, [id, router]);
 
     if (isLoading) {
@@ -60,12 +51,7 @@ export default function EditNodeWorkflowPage({ params }: PageProps) {
 
     return (
         <div className="relative h-full w-full bg-background overflow-hidden">
-            <WorkflowEditor
-                workflow={null}
-                agents={agents}
-                richWorkflow={richWorkflow}
-                readonly={false}
-            />
+            <WorkflowCanvas workflow={richWorkflow} hasEditAccess />
             <div className="absolute bottom-6 right-6 z-20">
                 <Link href="/workflow">
                     <Button

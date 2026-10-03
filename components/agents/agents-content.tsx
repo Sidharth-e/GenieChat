@@ -17,7 +17,6 @@ import {
   useToggleActiveAgent,
 } from "@/hooks/use-agents-queries";
 import { useApiKeys } from "@/hooks/use-api-keys-queries";
-import { useWorkflows } from "@/hooks/use-workflows-queries";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Agent } from "@/lib/types";
 import { AgentCard } from "@/components/agents/agent-card";
@@ -49,7 +48,6 @@ export function AgentsContent({ initialAgents }: AgentsContentProps) {
     error,
   } = useAgents(initialAgents);
   const { data: apiKeys = [] } = useApiKeys();
-  const { data: workflows = [] } = useWorkflows();
   const deleteAgentMutation = useDeleteAgent();
   const toggleFavoriteMutation = useToggleFavoriteAgent();
   const toggleActiveMutation = useToggleActiveAgent();
@@ -312,9 +310,6 @@ export function AgentsContent({ initialAgents }: AgentsContentProps) {
             const isUsedInApiKey = apiKeys.some(
               (k) => !k.revoked && k.scopes?.includes(agent.id),
             );
-            const isUsedInWorkflow = workflows.some((w) =>
-              w.steps?.some((step) => step.agentId === agent.id),
-            );
 
             return (
               <AgentCard
@@ -341,7 +336,6 @@ export function AgentsContent({ initialAgents }: AgentsContentProps) {
                 }}
                 isUsedInOtherAgent={isUsedInOtherAgent}
                 isUsedInApiKey={isUsedInApiKey}
-                isUsedInWorkflow={isUsedInWorkflow}
               />
             );
           })}
