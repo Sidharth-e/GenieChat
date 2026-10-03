@@ -11,6 +11,7 @@ import type { RichWorkflowNode, ToolCall } from "@/lib/types";
 import { WORKFLOW_HTTP_TIMEOUT_MS } from "@/constants/workflow";
 import {
   NodeKind,
+  type CodeNodeData,
   type ConditionNodeData,
   type HttpNodeData,
   type LLMNodeData,
@@ -96,6 +97,9 @@ export async function runNode(
       // edge in build-graph, so the conditions are evaluated exactly once.
       return { output: routeCondition(data.branches, state.outputs) };
     }
+
+    case NodeKind.Code:
+      return executeCodeNode(node, deps);
 
     default:
       throw new Error(
@@ -217,4 +221,77 @@ async function executeHTTPNode(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** The shape `code_sandbox` returns, parsed from its JSON string. */
+type CodeSandboxResult = {
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number | null;
+  files?: string[];
+  error?: string;
+};
+
+/**
+ * Run the node's script in the sandbox and surface its result as the node's
+ * output. A non-zero exit is a failure, not a success with a non-zero field:
+ * a workflow whose script broke should stop where it broke.
+ */
+async function executeCodeNode(
+  node: RichWorkflowNode,
+  deps: WorkflowDeps,
+): Promise<NodeResult> {
+  const label = node.name || node.id;
+  const data = node.data as CodeNodeData;
+
+  if (!data.code?.trim()) {
+    throw new Error(`Code node "${label}" has no code to run.`);
+  }
+
+  const tool = await deps.loadTool({
+    id: "code_sandbox",
+    description: "",
+    type: "app-tool",
+  });
+  if (!tool) {
+    throw new Error(
+      `Code node "${label}": the code sandbox is not available. Check the deployment's sandbox configuration.`,
+    );
+  }
+
+  const raw = await tool.invoke({
+    code: data.code,
+    language: data.language ?? "python",
+  });
+
+  let parsed: CodeSandboxResult;
+  try {
+    parsed = (typeof raw === "string" ? JSON.parse(raw) : raw) as CodeSandboxResult;
+  } catch {
+    throw new Error(`Code node "${label}": the sandbox returned an unreadable result.`);
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`Code node "${label}": the sandbox returned an unreadable result.`);
+  }
+
+  if (parsed.error) {
+    throw new Error(`Code node "${label}" failed: ${parsed.error}`);
+  }
+
+  const exitCode = parsed.exit_code ?? 0;
+  if (exitCode !== 0) {
+    const detail = (parsed.stderr || parsed.stdout || "").trim();
+    throw new Error(
+      `Code node "${label}" exited with code ${exitCode}${detail ? `: ${detail}` : ""}`,
+    );
+  }
+
+  return {
+    output: {
+      stdout: parsed.stdout ?? "",
+      stderr: parsed.stderr ?? "",
+      exit_code: exitCode,
+      files: parsed.files ?? [],
+    },
+  };
 }

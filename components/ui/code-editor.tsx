@@ -124,6 +124,23 @@ function formatJavaScript(code: string): string {
 }
 
 /**
+ * The languages `formatCode` can actually format. Everything else — Python,
+ * Bash, and anything a future node kind adds — must be returned untouched:
+ * the fallback `formatJavaScript` does not throw on foreign input, it silently
+ * re-indents it, and Python's significant indentation makes that a silent
+ * change of meaning rather than a visible failure.
+ */
+const FORMATTABLE_LANGUAGES = new Set([
+  "javascript",
+  "js",
+  "jsx",
+  "typescript",
+  "ts",
+  "tsx",
+  "json",
+]);
+
+/**
  * Textarea-based code editor with syntax highlighting using @uiw/react-textarea-code-editor
  */
 export function CodeEditor({
@@ -154,6 +171,8 @@ export function CodeEditor({
 
   const formatCode = useCallback(() => {
     if (!value) return;
+
+    if (!FORMATTABLE_LANGUAGES.has(language)) return;
 
     if (language === "json") {
       try {

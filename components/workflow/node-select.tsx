@@ -18,7 +18,7 @@ const NODE_DESCRIPTIONS: Record<NodeKind, string> = {
   [NodeKind.Tool]: "Execute a connector or app tool",
   [NodeKind.Http]: "Make HTTP requests to external APIs",
   [NodeKind.Template]: "Compose text with variable references",
-  [NodeKind.Code]: "Run custom code (coming soon)",
+  [NodeKind.Code]: "Run a script in the sandboxed container",
   [NodeKind.Output]: "Define the workflow output",
 };
 
@@ -73,12 +73,9 @@ export function NodeSelectContent({
       onPointerDown={(e) => e.stopPropagation()}
     >
       {SELECTABLE_KINDS.map((kind) => {
-        const disabled = kind === NodeKind.Code;
-
         return (
           <DropdownMenuItem
             key={kind}
-            disabled={disabled}
             onSelect={() => onChange(kind)}
             className="flex items-center gap-2.5 py-2"
           >
@@ -86,11 +83,6 @@ export function NodeSelectContent({
             <div className="flex flex-col min-w-0">
               <span className="text-sm font-medium truncate">
                 {DISPLAY_NAMES[kind]}
-                {disabled && (
-                  <span className="ml-1.5 text-xs text-muted-foreground">
-                    Soon...
-                  </span>
-                )}
               </span>
               <span className="text-xs text-muted-foreground truncate">
                 {NODE_DESCRIPTIONS[kind]}

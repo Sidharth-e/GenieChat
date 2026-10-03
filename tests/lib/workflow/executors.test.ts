@@ -186,3 +186,66 @@ describe("runNode — unsupported kinds", () => {
     );
   });
 });
+
+describe("runNode — Code", () => {
+  const codeNode = (data: Record<string, unknown> = {}) =>
+    node("code", NodeKind.Code, { code: "print(1)", language: "python", ...data });
+
+  const depsReturning = (result: unknown): WorkflowDeps => ({
+    getModel: unusedDeps.getModel,
+    loadTool: async () => ({ invoke: async () => result }) as never,
+  });
+
+  it("runs the sandbox and maps its result to the node output", async () => {
+    const deps = depsReturning(
+      JSON.stringify({ stdout: "1\n", stderr: "", exit_code: 0, files: ["a.txt"] }),
+    );
+    const result = await runNode(codeNode(), input(), deps);
+    expect(result.output).toEqual({
+      stdout: "1\n",
+      stderr: "",
+      exit_code: 0,
+      files: ["a.txt"],
+    });
+  });
+
+  it("passes the node's code and language to the tool", async () => {
+    const invoke = vi.fn(async () => JSON.stringify({ stdout: "", exit_code: 0 }));
+    const deps: WorkflowDeps = {
+      getModel: unusedDeps.getModel,
+      loadTool: async () => ({ invoke }) as never,
+    };
+    await runNode(codeNode({ code: "echo hi", language: "bash" }), input(), deps);
+    expect(invoke).toHaveBeenCalledWith({ code: "echo hi", language: "bash" });
+  });
+
+  it("fails naming the node when there is no code", async () => {
+    await expect(runNode(codeNode({ code: "  " }), input(), unusedDeps)).rejects.toThrow(
+      /Code node "code" has no code to run/,
+    );
+  });
+
+  it("fails when the sandbox reports an error", async () => {
+    const deps = depsReturning(
+      JSON.stringify({ stdout: "", exit_code: 0, error: "container unavailable" }),
+    );
+    await expect(runNode(codeNode(), input(), deps)).rejects.toThrow(
+      /Code node "code" failed: container unavailable/,
+    );
+  });
+
+  it("fails on a non-zero exit code rather than passing a broken script downstream", async () => {
+    const deps = depsReturning(
+      JSON.stringify({ stdout: "", stderr: "boom", exit_code: 1 }),
+    );
+    await expect(runNode(codeNode(), input(), deps)).rejects.toThrow(
+      /Code node "code" exited with code 1: boom/,
+    );
+  });
+
+  it("fails when the sandbox returns an unreadable result", async () => {
+    await expect(runNode(codeNode(), input(), depsReturning("not json"))).rejects.toThrow(
+      /returned an unreadable result/,
+    );
+  });
+});
