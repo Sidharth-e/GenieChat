@@ -1,9 +1,9 @@
 "use client";
 
 import { logger } from "@/lib/logger";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { useMCPStore } from "@/lib/stores";
+import { useMCPServers, useUpdateMCPServer } from "@/hooks/use-mcp-queries";
 import { MCPForm, type MCPFormData } from "@/components/mcp/mcp-form";
 import { Server, Loader2 } from "lucide-react";
 
@@ -12,21 +12,16 @@ export default function EditMCPPage() {
     const params = useParams();
     const serverId = params.id as string;
 
-    const { servers, updateServer, isLoading, fetchServers } = useMCPStore();
+    const { data: servers = [], isLoading } = useMCPServers();
+    const { mutateAsync: updateServer } = useUpdateMCPServer();
     const [isSaving, setIsSaving] = useState(false);
-
-    useEffect(() => {
-        if (servers.length === 0) {
-            fetchServers();
-        }
-    }, [servers.length, fetchServers]);
 
     const server = servers.find((s) => s.id === serverId);
 
     const handleSave = async (serverData: MCPFormData) => {
         setIsSaving(true);
         try {
-            await updateServer(serverId, serverData);
+            await updateServer({ id: serverId, updates: serverData });
             router.push("/mcp");
         } catch (error) {
             logger.error("Failed to update MCP server:", error);

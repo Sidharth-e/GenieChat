@@ -10,7 +10,6 @@ import {
   Trash2,
   Pencil,
   MoreVertical,
-  Share2,
   Users,
   Bot,
   MessageSquare,
@@ -24,7 +23,6 @@ interface ThreadItemProps {
   onDelete: (threadId: string) => void;
   onToggleBookmark: (threadId: string) => void;
   onRename?: (threadId: string, title: string) => void;
-  onShare?: (threadId: string) => void;
 }
 
 export function ThreadItem({
@@ -32,7 +30,6 @@ export function ThreadItem({
   onDelete,
   onToggleBookmark,
   onRename,
-  onShare,
 }: ThreadItemProps) {
   const pathname = usePathname();
   const threadUrl = thread.isSwarm
@@ -189,19 +186,6 @@ export function ThreadItem({
               {thread.isBookmarked
                 ? "Remove from Favorites"
                 : "Add to Favorites"}
-            </button>
-
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onShare?.(thread.id);
-                setIsMenuOpen(false);
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-tertiary/80 hover:bg-tertiary/5 whitespace-nowrap"
-            >
-              <Share2 className="h-4 w-4 text-tertiary/50" />
-              Share
             </button>
 
             <div className="my-1 h-px bg-tertiary/5" />

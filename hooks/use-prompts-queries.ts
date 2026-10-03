@@ -57,7 +57,6 @@ export function useCreatePrompt() {
       title: string;
       content: string;
       tags?: string[];
-      isShared?: boolean;
     }) => {
       const response = await fetch("/api/prompts", {
         method: "POST",
@@ -154,51 +153,6 @@ export function useDeletePrompt() {
       queryClient.setQueryData<Prompt[]>(promptKeys.lists(), (old) =>
         old?.filter((prompt) => prompt.id !== deletedId),
       );
-    },
-  });
-}
-
-/**
- * Shares or unshares a prompt.
- */
-export function useSharePrompt() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      promptId,
-      enable,
-      shareMode,
-      sharedWith,
-    }: {
-      promptId: string;
-      enable: boolean;
-      shareMode?: "public" | "specific";
-      sharedWith?: { id: string; displayName: string; email: string }[];
-    }) => {
-      const response = await fetch(`/api/prompts/${promptId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: enable ? "share" : "unshare",
-          shareMode,
-          sharedWith,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to update sharing status");
-      }
-
-      return response.json() as Promise<Prompt>;
-    },
-    onSuccess: (updatedPrompt) => {
-      queryClient.setQueryData<Prompt[]>(promptKeys.lists(), (old) =>
-        old?.map((p) => (p.id === updatedPrompt.id ? updatedPrompt : p)),
-      );
-      queryClient.invalidateQueries({
-        queryKey: promptKeys.detail(updatedPrompt.id),
-      });
     },
   });
 }

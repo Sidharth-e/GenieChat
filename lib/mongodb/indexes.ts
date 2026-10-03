@@ -92,8 +92,8 @@ const MAX_HEX_BYTES = 16;
 /**
  * A canonical string for a value whose object key order carries no meaning, so
  * two spellings of the same filter compare equal. Recursive, because a partial
- * filter can nest (`{ sharedWith: { $elemMatch: { id } } }` is the shape this
- * guards against).
+ * filter can nest (`{ tags: { $all: ["a", "b"] } }` is the shape this guards
+ * against).
  *
  * Keeping *distinct* values distinct is the property that matters -- reporting
  * two different filters as equivalent is the dangerous direction, because the
@@ -439,23 +439,17 @@ function formatKeys(entries: [string, unknown][]): string {
  *    traverses an index in either direction, which is why `auto_tasks`'
  *    ascending `getPendingTask` shares the descending shape.
  *
- * 3. **Three queries that filter on something other than the partition key**
+ * 3. **Two queries that filter on something other than the partition key**
  *    (R62) and so could not use a `{ userId: 1 }` index at all:
  *    `tools.tools_keyhash` (the API-key auth path, reached on every
- *    API-key-authenticated request), `users.users_listing` (the admin listing)
- *    and `prompt.prompts_shareId` (the public share-link lookup).
+ *    API-key-authenticated request) and `users.users_listing` (the admin listing).
  *
- * Two rows deserve a note because they are weaker than the rule above:
+ * One row deserves a note because it is weaker than the rule above:
  *
- * - `prompt.prompts_userId_updatedAt` serves only the first branch of
- *   `PromptStore.getPrompts`' three-branch `$or`. The other two branches are
- *   public and explicitly-shared prompts, which by definition are not the
- *   caller's own, so no `userId`-prefixed index can serve them. It is built
- *   anyway: it is a strict superset of the `{ userId: 1 }` the table was
- *   already going to create, so it costs nothing. A `{ type: 1, updatedAt: -1 }`
- *   index would serve the leading equality across all three branches, but that
- *   is an *additional* index and therefore an R62-class argument this task does
- *   not make. Do not add it.
+ * - `prompt.prompts_userId_updatedAt` backs `PromptStore.getPrompts`, which
+ *   filters on `type` and `userId` and sorts newest-first. It is a strict
+ *   superset of the `{ userId: 1 }` the table was already going to create, so it
+ *   costs nothing.
  *
  * - `documents.documents_userId` is a bare `{ userId: 1 }`, the one deliberate
  *   exception. No user-scoped document listing exists or is planned: every
@@ -472,15 +466,6 @@ export const INDEX_SPECS: IndexSpec[] = [
     keys: { userId: 1, lastMessageAt: -1 },
     name: "threads_userId_lastMessageAt",
   },
-  // Public share pages look a thread up by `shareId` and require `isShared: true`,
-  // so the partial filter covers every document that lookup can return.
-  {
-    collection: NAMES.threads,
-    keys: { shareId: 1 },
-    options: { partialFilterExpression: { isShared: true } },
-    name: "threads_shareId",
-  },
-
   // --- history -------------------------------------------------------------
   // The message list for a thread, in conversational order.
   {
@@ -612,27 +597,18 @@ export const INDEX_SPECS: IndexSpec[] = [
     },
     name: "tools_keyhash",
   },
-  // The admin listing `getAllUsers`, and `UserStore.searchUsers` -- the share
-  // picker's directory match -- which filters on the same `type` and sorts the
-  // same way, so both share this ordering. Nothing queries users by `userId` --
-  // `_id` carries the id -- so this indexes a query that exists rather than one
-  // that does not.
+  // The admin user listing, `getAllUsers` -- unfiltered by user and unbounded,
+  // which is why it sits behind an RBAC gate rather than a query constraint.
+  // Nothing queries users by `userId` -- `_id` carries the id -- so this indexes
+  // a query that exists rather than one that does not.
   {
     collection: NAMES.users,
     keys: { type: 1, lastLoginAt: -1 },
     name: "users_listing",
   },
-  // `PromptStore.getPromptByShareId`, the public share-link lookup. Mirrors the
-  // identical query shape already indexed on `threads`.
-  {
-    collection: NAMES.prompts,
-    keys: { shareId: 1 },
-    options: { partialFilterExpression: { isShared: true } },
-    name: "prompts_shareId",
-  },
   // The scheduler tick's due query, on every tick. Partial rather than leading
-  // with `enabled`, matching `tools_keyhash` and `prompts_shareId`: a disabled
-  // schedule is never looked up this way, so indexing it is dead weight.
+  // with `enabled`, matching `tools_keyhash`: a disabled schedule is never
+  // looked up this way, so indexing it is dead weight.
   {
     collection: NAMES.schedules,
     keys: { nextRunAt: 1 },

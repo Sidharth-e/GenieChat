@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { NavRail } from "@/components/layout/nav-rail";
 import { Header } from "@/components/chat/header";
 import { QuickActionsModal } from "@/components/chat/quick-actions-modal";
-import { AnnouncementDialog } from "@/components/common/announcement-dialog";
 import { CanvasPanel } from "@/components/chat/canvas-panel";
 import { MachineStatePanel } from "@/components/chat/machine-state-panel";
 import { cn } from "@/lib/utils";
@@ -50,7 +49,6 @@ export function MainShell({ children, showHeader = true }: MainShellProps) {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
       />
-      <AnnouncementDialog />
     </div>
   );
 }

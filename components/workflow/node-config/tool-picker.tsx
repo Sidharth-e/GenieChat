@@ -13,7 +13,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useMCPStore, type MCPToolInfo } from "@/lib/stores";
+import { useMCPServers, useMCPToolsByServer } from "@/hooks/use-mcp-queries";
+import type { MCPToolInfo } from "@/lib/types";
 import {
   DEFAULT_TOOLS_METADATA,
   RESOLVABLE_DEFAULT_TOOLS,
@@ -26,13 +27,19 @@ interface ToolPickerProps {
 }
 
 export function ToolPicker({ value, onChange }: ToolPickerProps) {
-  const { servers, tools, fetchServers, fetchTools } = useMCPStore();
-
-  React.useEffect(() => {
-    void fetchServers();
-  }, [fetchServers]);
-
+  const { data: servers = [] } = useMCPServers();
   const enabledServers = servers.filter((server) => server.enabled);
+
+  // Discovery is lazy — the picker is opened far more often than a server's
+  // tools are actually wanted — so a server's query only turns on once its
+  // submenu has been pointed at.
+  const [requestedServerIds, setRequestedServerIds] = React.useState<
+    ReadonlySet<string>
+  >(new Set());
+  const { tools } = useMCPToolsByServer(
+    enabledServers.map((server) => server.id),
+    requestedServerIds,
+  );
 
   const pickAppTool = (id: string, description: string) =>
     onChange({ id, description, type: "app-tool" });
@@ -90,9 +97,10 @@ export function ToolPicker({ value, onChange }: ToolPickerProps) {
                 <DropdownMenuSub key={server.id}>
                   <DropdownMenuSubTrigger
                     onPointerEnter={() => {
-                      // Discover lazily — the picker is opened far more often
-                      // than a server's tools are actually wanted.
-                      if (!tools[server.id]) void fetchTools(server.id);
+                      setRequestedServerIds((previous) => {
+                        if (previous.has(server.id)) return previous;
+                        return new Set(previous).add(server.id);
+                      });
                     }}
                     className="flex items-center gap-2"
                   >

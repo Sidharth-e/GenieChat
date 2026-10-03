@@ -1,7 +1,7 @@
 import { logger } from "@/lib/logger";
 import { Collection, type WithId } from "mongodb";
 import { getUsersCollection } from "./client";
-import { UserDocument, buildSearchFilter } from "./common";
+import { UserDocument } from "./common";
 import { Role } from "../rbac/types";
 
 export interface UserRecord {
@@ -109,29 +109,6 @@ export class UserStore {
     const docs = await this.userCollection
       .find({ type: "user" })
       .sort({ lastLoginAt: -1 })
-      .toArray();
-
-    return docs.map((doc) => toUserRecord(doc));
-  }
-
-  /**
-   * Directory search for the share picker. Unlike `getAllUsers` -- the
-   * unfiltered admin listing, which belongs behind an RBAC gate -- this matches
-   * in the database and returns at most `limit` rows rather than the whole
-   * collection, so a two-character query cannot pull the directory across the
-   * wire. Ordered as `getAllUsers` is, so the picker shows the most recently
-   * active matches first rather than an arbitrary subset. Deliberately not
-   * scoped by `userId`: a directory search is cross-user by definition, and the
-   * caller bounds what it can return.
-   */
-  async searchUsers(term: string, limit: number): Promise<UserRecord[]> {
-    const filter: Record<string, unknown> = { type: "user" };
-    Object.assign(filter, buildSearchFilter(term, ["name", "email"]));
-
-    const docs = await this.userCollection
-      .find(filter)
-      .sort({ lastLoginAt: -1 })
-      .limit(limit)
       .toArray();
 
     return docs.map((doc) => toUserRecord(doc));

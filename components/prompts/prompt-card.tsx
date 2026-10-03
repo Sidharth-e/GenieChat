@@ -4,12 +4,10 @@ import {
   Copy,
   Trash2,
   Pencil,
-  Share2,
   Heart,
   FileText,
   EllipsisVertical,
   Tags,
-  Globe,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -29,7 +27,6 @@ interface PromptCardProps {
   onEdit: (e: MouseEvent) => void;
   onCopy: (e: MouseEvent) => void;
   onDelete: (e: MouseEvent) => void;
-  onShare: (e: MouseEvent) => void;
   onFavoriteToggle: (e: MouseEvent) => void;
 }
 
@@ -41,7 +38,6 @@ export function PromptCard({
   onEdit,
   onCopy,
   onDelete,
-  onShare,
   onFavoriteToggle,
 }: PromptCardProps) {
   return (
@@ -61,27 +57,13 @@ export function PromptCard({
       )}
     >
       <div className="flex items-center gap-2">
-        <div
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
-            prompt.isShared
-              ? "bg-primary/10 text-primary"
-              : "bg-primary/10 text-primary",
-          )}
-        >
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
           <FileText className="h-3.5 w-3.5" />
         </div>
 
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-foreground">
           {prompt.title}
         </h3>
-
-        {prompt.isShared && (
-          <span className="flex shrink-0 items-center gap-0.5 rounded bg-primary/8 px-1 py-px text-[10px] font-medium text-primary">
-            <Globe className="h-2.5 w-2.5" />
-            Shared
-          </span>
-        )}
 
         {showQuickActions && (
           <button
@@ -161,18 +143,6 @@ export function PromptCard({
                 >
                   <Copy className="h-3.5 w-3.5 text-text-secondary" />
                   Copy content
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2 text-xs"
-                  onClick={(e) => onShare(e)}
-                >
-                  <Share2
-                    className={cn(
-                      "h-3.5 w-3.5",
-                      prompt.isShared ? "text-primary" : "text-text-secondary",
-                    )}
-                  />
-                  {prompt.isShared ? "Manage sharing" : "Share prompt"}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

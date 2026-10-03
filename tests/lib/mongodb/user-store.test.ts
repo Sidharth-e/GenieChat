@@ -111,8 +111,8 @@ describe("toUserRecord", () => {
 
   it("returns a record shaped like UserRecord for every read path", () => {
     // The mapping is the sole producer of `UserRecord` in the store --
-    // `upsertUser` (both branches), `getUser`, `getAllUsers`, `searchUsers`
-    // and `updateUserRole` all funnel through it -- so its contract is fixed
+    // `upsertUser` (both branches), `getUser`, `getAllUsers` and
+    // `updateUserRole` all funnel through it -- so its contract is fixed
     // here.
     const doc = userDoc();
     const record: UserRecord = toUserRecord(doc);

@@ -158,8 +158,8 @@ async function updateLeaderboard(
   let leaderboard: ConfigDocument | null = null;
   try {
     // The Cosmos partition key becomes the `userId` predicate, and `type`
-    // keeps an announcement document sharing this mixed-type collection out of
-    // the read. `findOne` returns `null` where `item().read()` threw.
+    // keeps whatever else the shared `config` collection holds out of the
+    // read. `findOne` returns `null` where `item().read()` threw.
     const raw = await collection.findOne({
       _id: leaderboardId,
       userId,

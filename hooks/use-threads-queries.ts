@@ -3,19 +3,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Thread, Message } from "@/lib/types";
 
-interface SharedUser {
-    id: string;
-    displayName: string;
-    email: string;
-}
-
-interface ShareResult {
-    isShared: boolean;
-    shareId?: string;
-    shareMode?: "public" | "specific";
-    sharedWith?: SharedUser[];
-}
-
 export const threadKeys = {
     all: ["threads"] as const,
     lists: () => [...threadKeys.all, "list"] as const,
@@ -204,58 +191,6 @@ export function useRenameThread() {
         },
         onSettled: () => {
             queryClient.invalidateQueries({ queryKey: threadKeys.lists() });
-        },
-    });
-}
-
-/**
- * Shares a thread with cache invalidation.
- */
-export function useShareThread() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async ({
-            threadId,
-            enable,
-            shareMode,
-            sharedWith,
-        }: {
-            threadId: string;
-            enable?: boolean;
-            shareMode?: "public" | "specific";
-            sharedWith?: SharedUser[];
-        }): Promise<ShareResult> => {
-            const response = await fetch("/api/chat/threads", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    threadId,
-                    action: "share",
-                    data: { enable, shareMode, sharedWith },
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error("Failed to share thread");
-            }
-
-            return response.json();
-        },
-        onSuccess: (data, { threadId }) => {
-            queryClient.setQueryData<Thread[]>(threadKeys.lists(), (old) =>
-                old?.map((thread) =>
-                    thread.id === threadId
-                        ? {
-                              ...thread,
-                              isShared: data.isShared,
-                              shareId: data.shareId,
-                              shareMode: data.shareMode,
-                              sharedWith: data.sharedWith,
-                          }
-                        : thread
-                )
-            );
         },
     });
 }

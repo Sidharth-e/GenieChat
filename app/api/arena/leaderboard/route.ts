@@ -20,9 +20,9 @@ export async function GET() {
     try {
       // Cosmos addressed this document by `(id, partition key)`; the partition
       // key becomes the `userId` equality predicate it always was, and the
-      // `type` conjunct keeps an announcement document sharing this mixed-type
-      // collection from being read as a leaderboard. `findOne` returns `null`
-      // where `item().read()` threw, so absence arrives as a value below.
+      // `type` conjunct keeps whatever else the shared `config` collection
+      // holds from being read as a leaderboard. `findOne` returns `null` where
+      // `item().read()` threw, so absence arrives as a value below.
       const raw = await collection.findOne({
         _id: leaderboardId,
         userId: user.id,

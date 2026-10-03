@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { title, content, tags, isShared } = body;
+        const { title, content, tags } = body;
 
         if (!title || !content) return api.badRequest("Title and content are required");
 
@@ -54,7 +54,6 @@ export async function POST(request: NextRequest) {
             title,
             content,
             variables,
-            isShared: isShared || false,
             tags: tags || [],
         });
 

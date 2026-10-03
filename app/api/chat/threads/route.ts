@@ -108,24 +108,6 @@ export async function PATCH(req: NextRequest) {
                 await store.deleteThread(threadId);
                 break;
 
-            case "share":
-                const shareResult = await store.toggleShareThread(
-                    threadId,
-                    data?.enable,
-                    data?.shareMode,
-                    data?.sharedWith
-                );
-                if (shareResult) {
-                    return api.success({
-                        success: true,
-                        isShared: shareResult.isShared,
-                        shareId: shareResult.shareId,
-                        shareMode: shareResult.shareMode,
-                        sharedWith: shareResult.sharedWith,
-                    });
-                }
-                return api.serverError("Failed to toggle share");
-
             default:
                 return api.badRequest("Invalid action");
         }

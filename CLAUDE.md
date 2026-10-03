@@ -50,7 +50,7 @@ Package manager is **pnpm** (v11.1.2, `node-linker=hoisted`). Node >= 20 require
 - `app/(forms)/` — form-based CRUD pages: agents, tools, MCP, webhooks, workflow (separate layout, no chat sidebar)
 - `app/api/` — API routes for chat streaming, agents, workflows, arena, secrets, storage, etc.
 - `app/login/` — login page
-- `app/preview/`, `app/share/` — standalone views
+- `app/preview/` — standalone views
 
 Prompts are the exception to the page-per-entity rule: they have no route of their own. The chat input's `PromptLibraryModal` (`components/chat/prompt-library-modal.tsx`) is the only surface, and it has two modes. The library — header, tabs, card grid, and a right pane previewing the selected prompt — and, when you press New Prompt or Edit, the editor (`components/prompts/prompt-editor.tsx`), which takes over the whole modal: the library blocks are guarded by `!editorState` rather than nested in a branch, so the editor is a sibling and the list keeps its indentation and its state. The editor's own header carries back (to the list) and close (the library), the AI Assist button (the shared `PromptDialog`, parameterised for prompt copy rather than agent instructions), and Cancel/Save in the footer. One modal, so there is no second page, no nested overlay, and no second header to keep in sync.
 
@@ -78,7 +78,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/auth/` — NextAuth.js config with the GitHub provider, role resolution from the `GITHUB_*_USERNAMES` allowlists (`role-resolution.ts`), and no token refresh — the session carries no provider tokens.
 - `lib/tool/` — Tool system: `default-tools.ts` (built-in tools), `custom-tool-converter.ts` (user-defined tools).
 - `lib/stores/` — Zustand client-side stores (agents, threads, chat settings, sidebar, workflows, etc.).
-- `lib/ai-actions/` — Server actions for agents, prompts, tools, and user search (`user-actions.ts`).
+- `lib/ai-actions/` — Server actions for agents, prompts, and tools.
 - `lib/artifacts/` — the Artifacts store's writers. `save.ts` holds `saveToolArtifact`, which every type but one reaches through a tool-result envelope; `scancode.ts` is the exception, saving from the message text instead. See [Scan Codes (```scancode)](#scan-codes-scancode).
 - `lib/conversation.ts` — pure helpers shared by the four conversation surfaces: last-assistant detection, the standalone loading-message builder and its predicate. Unit-tested; see [Conversation Surfaces](#conversation-surfaces).
 
@@ -116,7 +116,7 @@ Middleware in `proxy.ts` (not `middleware.ts`) protects all routes except `/logi
 
 ### Removed With the Provider Change
 
-The switch to GitHub OAuth deleted the Microsoft Graph integration and the workspace surface built on it: inbox mail, meetings, reminders, DevOps, repo-context, CrossLayer, and AD-group-based sharing. The AI header notification feed (its store, the header bell and its settings block) and the sidebar entries pointing at the deleted routes went with them. User-to-user sharing survives, via `lib/ai-actions/user-actions.ts`, as do chat, agents, prompts, tools, webhooks, workflows, memories, notes and deep research.
+The switch to GitHub OAuth deleted the Microsoft Graph integration and the workspace surface built on it: inbox mail, meetings, reminders, DevOps, repo-context, CrossLayer, and AD-group-based sharing. The AI header notification feed (its store, the header bell and its settings block) and the sidebar entries pointing at the deleted routes went with them. Chat, agents, prompts, tools, webhooks, workflows, memories, notes and deep research remain.
 
 ### Environment Variables
 

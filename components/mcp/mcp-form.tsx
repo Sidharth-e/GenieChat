@@ -18,7 +18,7 @@ import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { MCPServerConfig, MCPTransportType } from "@/lib/types";
 import { useRouter } from "next/navigation";
-import { useMCPStore } from "@/lib/stores/mcp";
+import { useMCPServers } from "@/hooks/use-mcp-queries";
 import { useTools } from "@/hooks/use-tools-queries";
 import { useSecrets } from "@/hooks/use-secrets-queries";
 import { SecretListDialog } from "@/components/tools/secret-list-dialog";
@@ -181,17 +181,11 @@ export function MCPForm({
   const [nameError, setNameError] = useState<string | null>(null);
 
   // Fetch installed servers for validation
-  const { servers: installedServers, fetchServers } = useMCPStore();
+  const { data: installedServers = [] } = useMCPServers();
 
   // Fetch custom tools for validation
   const { data: customTools } = useTools();
   const { data: secrets = [], isLoading: isLoadingSecrets } = useSecrets();
-
-  useEffect(() => {
-    if (installedServers.length === 0) {
-      fetchServers();
-    }
-  }, [fetchServers, installedServers.length]);
 
   const validateServerName = (serverName: string): string | null => {
     const normalizedName = serverName.trim();

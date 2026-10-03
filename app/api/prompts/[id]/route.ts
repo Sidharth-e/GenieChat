@@ -54,15 +54,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const body = await request.json();
 
-    // Handle favorite actions (allowed for any prompt visible to the user)
+    // Handle favorite actions
     if (body.action === "favorite" || body.action === "unfavorite") {
-      const canAccessPrompt =
-        existingPrompt.userId === user.id ||
-        existingPrompt.shareMode === "public" ||
-        (existingPrompt.sharedWith ?? []).some(
-          (sharedUser) => sharedUser.id === user.id,
-        );
-      if (!canAccessPrompt) return api.forbidden();
+      if (existingPrompt.userId !== user.id) return api.forbidden();
 
       const updatedPrompt = await promptStore.setPromptFavorite(
         id,
@@ -72,20 +66,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       if (!updatedPrompt) return api.serverError("Failed to update favorite");
 
       return api.success(updatedPrompt);
-    }
-
-    // Handle sharing actions
-    if (body.action === "share" || body.action === "unshare") {
-      if (existingPrompt.userId !== user.id) return api.forbidden();
-
-      const result = await promptStore.toggleSharePrompt(
-        id,
-        body.action === "share",
-        body.shareMode,
-        body.sharedWith,
-      );
-      if (!result) return api.serverError("Failed to update prompt sharing");
-      return api.success(result);
     }
 
     if (existingPrompt.userId !== user.id) return api.forbidden();

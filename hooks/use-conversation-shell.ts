@@ -246,7 +246,6 @@ export function useConversationShell(
         updatedAt: now,
         lastMessageAt: now,
         messageCount: 0,
-        isShared: false,
         ...threadDefaults,
       });
     }

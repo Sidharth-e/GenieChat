@@ -31,10 +31,6 @@ export interface Thread {
   imageCount?: number;
   attachmentCount?: number;
   model: string;
-  isShared: boolean;
-  shareId?: string;
-  shareMode?: "public" | "specific";
-  sharedWith?: { id: string; displayName: string; email: string }[];
   agentId?: string;
   isMultiAgent?: boolean;
   isSwarm?: boolean;
@@ -172,10 +168,6 @@ export interface Prompt {
   content: string;
   variables: string[];
   isFavorite?: boolean;
-  isShared: boolean;
-  shareId?: string;
-  shareMode?: "public" | "specific";
-  sharedWith?: { id: string; displayName: string; email: string }[];
   tags: string[];
   usageCount: number;
   createdAt: string;
@@ -337,6 +329,19 @@ export interface StreamToken {
 
 // MCP Server Configuration types
 export type MCPTransportType = "http" | "sse";
+
+/**
+ * A tool discovered on an MCP server, as `GET /api/mcp/[id]/tools` returns it.
+ * Structurally the same shape the server-side client in
+ * `lib/langchain/langchain-mcp.ts` produces; this is the client's copy, so the
+ * query hooks do not have to reach into the LangChain layer for a type.
+ */
+export interface MCPToolInfo {
+  name: string;
+  description: string;
+  serverName: string;
+  inputSchema?: Record<string, unknown>;
+}
 
 export interface MCPServerConfig {
   id: string;

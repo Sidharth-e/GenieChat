@@ -59,7 +59,6 @@ export class PromptStore {
       // while `id` keeps the `lib/types.ts` shape intact.
       _id: id,
       type: "prompt",
-      isShared: prompt.isShared ?? false,
       tags: prompt.tags ?? [],
       variables: prompt.variables ?? [],
       favoriteUserIds: [],
@@ -73,21 +72,13 @@ export class PromptStore {
   }
 
   async getPrompts(userId: string): Promise<Prompt[]> {
-    // The `$or` is the port of Cosmos's owner-or-public-or-shared predicate.
-    // `shareMode: "public"` is the visibility flag, not `isShared`: a prompt can
-    // be shared with specific people only, and `isShared` is true for those too.
-    // `$elemMatch` is the Mongo equivalent of the Cosmos
-    // `EXISTS(SELECT VALUE s FROM s IN c.sharedWith WHERE s.id = @userId)`
-    // subquery — the same predicate as a bare `{ "sharedWith.id": userId }`,
-    // but it expresses the "an element of the array matches" intent directly.
+    // The `userId` equality is the authorization boundary, not a convenience
+    // filter: a prompt carries no visibility flag of its own, so a listing is
+    // exactly the prompts its reader owns.
     const docs = await this.promptCollection
       .find({
         type: "prompt",
-        $or: [
-          { userId },
-          { shareMode: "public" },
-          { sharedWith: { $elemMatch: { id: userId } } },
-        ],
+        userId,
       })
       .sort({ updatedAt: -1 })
       .toArray();
@@ -102,24 +93,6 @@ export class PromptStore {
     const prompt = await this.getPromptDocument(promptId);
     if (!prompt) return null;
     return this.mapPromptDocument(prompt, viewerUserId);
-  }
-
-  async getPromptByShareId(
-    shareId: string,
-    viewerUserId?: string,
-  ): Promise<Prompt | null> {
-    try {
-      const doc = await this.promptCollection.findOne({
-        shareId,
-        isShared: true,
-        type: "prompt",
-      });
-
-      return doc ? this.mapPromptDocument(doc, viewerUserId) : null;
-    } catch (error) {
-      logger.error("Error getting prompt by shareId:", error);
-      return null;
-    }
   }
 
   async updatePrompt(
@@ -217,44 +190,5 @@ export class PromptStore {
       logger.error("Error setting prompt favorite:", error);
       return null;
     }
-  }
-
-  async toggleSharePrompt(
-    promptId: string,
-    enable?: boolean,
-    shareMode?: "public" | "specific",
-    sharedWith?: { id: string; displayName: string; email: string }[],
-  ): Promise<{
-    isShared: boolean;
-    shareId: string | null;
-    shareMode?: "public" | "specific";
-    sharedWith?: { id: string; displayName: string; email: string }[];
-  } | null> {
-    const prompt = await this.getPrompt(promptId);
-    if (!prompt) return null;
-
-    const newIsShared = enable !== undefined ? enable : !prompt.isShared;
-    const newShareId = newIsShared
-      ? prompt.shareId || generateId()
-      : prompt.shareId;
-    const newShareMode = shareMode ?? prompt.shareMode ?? "public";
-    const newSharedWith = sharedWith ?? prompt.sharedWith ?? [];
-
-    // The result is deliberately discarded: this pre-existing behaviour reports
-    // the intended share state even when the write failed, and the port keeps it
-    // as-is rather than changing what callers observe.
-    await this.updatePrompt(promptId, {
-      isShared: newIsShared,
-      shareId: newShareId,
-      shareMode: newShareMode,
-      sharedWith: newSharedWith,
-    });
-
-    return {
-      isShared: newIsShared,
-      shareId: newShareId || null,
-      shareMode: newShareMode,
-      sharedWith: newSharedWith,
-    };
   }
 }

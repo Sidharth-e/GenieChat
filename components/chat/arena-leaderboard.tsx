@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
-import type { ArenaLeaderboardEntry } from "@/lib/types";
+import { useArenaLeaderboard } from "@/hooks/use-arena-queries";
 import { GoogleIcon, OllamaIcon, OpenRouterIcon } from "../common/custom-icons";
 
 const providerIcons: Record<string, React.ReactNode> = {
@@ -72,24 +72,13 @@ export function ArenaLeaderboard({
   open,
   onOpenChange,
 }: ArenaLeaderboardProps) {
-  const [entries, setEntries] = React.useState<ArenaLeaderboardEntry[]>([]);
-  const [isLoading, setIsLoading] = React.useState(false);
+  const { data, isLoading } = useArenaLeaderboard(open);
+  const entries = data?.entries ?? [];
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
     setMounted(true);
   }, []);
-
-  React.useEffect(() => {
-    if (!open) return;
-
-    setIsLoading(true);
-    fetch("/api/arena/leaderboard")
-      .then((res) => res.json())
-      .then((data) => setEntries(data.entries || []))
-      .catch(() => setEntries([]))
-      .finally(() => setIsLoading(false));
-  }, [open]);
 
   React.useEffect(() => {
     if (!open) return;

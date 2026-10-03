@@ -101,14 +101,6 @@ describe("INDEX_SPECS", () => {
         collection: config.mongodb.collections.threads,
         keys: { userId: 1, lastMessageAt: -1 },
       },
-      // Public share pages look a thread up by `shareId` and require
-      // `isShared: true`, so the partial filter covers every document that
-      // lookup can return.
-      threads_shareId: {
-        collection: config.mongodb.collections.threads,
-        keys: { shareId: 1 },
-        options: { partialFilterExpression: { isShared: true } },
-      },
       // The message list for a thread, in conversational order.
       history_threadId_createdAt: {
         collection: config.mongodb.collections.history,
@@ -182,14 +174,10 @@ describe("INDEX_SPECS", () => {
         keys: { userId: 1, createdAt: -1 },
       },
       prompts_userId_updatedAt: {
-        // Serves only the first branch of `PromptStore.getPrompts`' three-branch
-        // `$or`. The other two are public and explicitly-shared prompts, which
-        // by definition are not the caller's own, so no `userId`-prefixed index
-        // can serve them. Built anyway: it is a strict superset of the
-        // `{ userId: 1 }` the table was already going to create, so it costs
-        // nothing. A `{ type: 1, updatedAt: -1 }` index would serve the leading
-        // equality across all three branches, but that is an *additional* index
-        // and therefore an R62-class argument this task does not make.
+        // Backs `PromptStore.getPrompts`, which filters on the owner and the
+        // `prompt` type and sorts newest-first. Built as a strict superset of
+        // the `{ userId: 1 }` the table was already going to create, so it
+        // costs nothing.
         collection: config.mongodb.collections.prompts,
         keys: { userId: 1, updatedAt: -1 },
       },
@@ -245,13 +233,6 @@ describe("INDEX_SPECS", () => {
       users_listing: {
         collection: config.mongodb.collections.users,
         keys: { type: 1, lastLoginAt: -1 },
-      },
-      // `PromptStore.getPromptByShareId`, the public share-link lookup. Mirrors
-      // the identical query shape already indexed on `threads`.
-      prompts_shareId: {
-        collection: config.mongodb.collections.prompts,
-        keys: { shareId: 1 },
-        options: { partialFilterExpression: { isShared: true } },
       },
       // The scheduler tick's due query, on every tick. Partial rather than
       // leading with `enabled`, matching `tools_keyhash`: a disabled schedule is
@@ -333,10 +314,10 @@ describe("INDEX_SPECS", () => {
   it("has no two specs with an identical shape in the same collection", () => {
     // MongoDB does NOT treat two differently-named indexes with identical keys
     // and an identical filter as duplicates: it creates both, and every write
-    // then maintains both. This is the hazard the plan's `prompt_shareid` name
-    // created -- an operator applying both that name and the built
-    // `prompts_shareId` would have produced exactly this duplicate. There is
-    // none today; this test keeps one from being introduced later.
+    // then maintains both. This is the hazard a differently-cased spelling of
+    // one of these names would create -- an operator applying such a name
+    // alongside the built one would have produced exactly this duplicate. There
+    // is none today; this test keeps one from being introduced later.
     const seen = new Set<string>();
     for (const spec of INDEX_SPECS) {
       const shape = [
@@ -545,22 +526,22 @@ describe("describeIndexMismatch", () => {
     // to ignore a warning that is also the only signal of a genuinely wrong
     // index.
     const nestedSpec: IndexSpec = {
-      collection: "prompt",
-      keys: { shareId: 1 },
+      collection: "documents",
+      keys: { chatThreadId: 1 },
       options: {
         partialFilterExpression: {
-          sharedWith: { $elemMatch: { id: "user-1", role: "editor" } },
+          metadata: { $elemMatch: { kind: "image", format: "png" } },
         },
       },
-      name: "prompts_shareId",
+      name: "documents_metadata",
     };
 
     expect(
       describeIndexMismatch(
         {
-          key: { shareId: 1 },
+          key: { chatThreadId: 1 },
           partialFilterExpression: {
-            sharedWith: { $elemMatch: { role: "editor", id: "user-1" } },
+            metadata: { $elemMatch: { format: "png", kind: "image" } },
           },
         },
         nestedSpec,
@@ -572,9 +553,9 @@ describe("describeIndexMismatch", () => {
     expect(
       describeIndexMismatch(
         {
-          key: { shareId: 1 },
+          key: { chatThreadId: 1 },
           partialFilterExpression: {
-            sharedWith: { $elemMatch: { role: "viewer", id: "user-1" } },
+            metadata: { $elemMatch: { format: "jpeg", kind: "image" } },
           },
         },
         nestedSpec,
@@ -592,15 +573,15 @@ describe("describeIndexMismatch", () => {
     // direction: `index exists:` printed over an index whose filter is not the
     // declared one.
     const arraySpec: IndexSpec = {
-      collection: "prompt",
-      keys: { shareId: 1 },
+      collection: "documents",
+      keys: { chatThreadId: 1 },
       options: { partialFilterExpression: { tags: { $all: ["a", "b"] } } },
-      name: "prompts_shareId",
+      name: "documents_tags",
     };
 
     expect(
       describeIndexMismatch(
-        { key: { shareId: 1 }, partialFilterExpression: { tags: { $all: ["b", "a"] } } },
+        { key: { chatThreadId: 1 }, partialFilterExpression: { tags: { $all: ["b", "a"] } } },
         arraySpec,
       ),
     ).toContain("partialFilterExpression differs");
@@ -609,7 +590,7 @@ describe("describeIndexMismatch", () => {
     // reporting the order rather than reporting every array.
     expect(
       describeIndexMismatch(
-        { key: { shareId: 1 }, partialFilterExpression: { tags: { $all: ["a", "b"] } } },
+        { key: { chatThreadId: 1 }, partialFilterExpression: { tags: { $all: ["a", "b"] } } },
         arraySpec,
       ),
     ).toBeNull();

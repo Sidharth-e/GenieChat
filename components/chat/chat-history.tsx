@@ -5,7 +5,6 @@ import { useQueries } from "@tanstack/react-query";
 import {
   useThreads,
   useDeleteThread,
-  useShareThread,
   useToggleBookmark,
 } from "@/hooks/use-threads-queries";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -18,7 +17,6 @@ import {
   Calendar,
   Bookmark as BookmarkIcon,
   Trash2,
-  Share2,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -27,7 +25,6 @@ import { isToday, isYesterday, format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Message, Thread } from "@/lib/types";
 import { getThreadRoute } from "@/constants/nav-routes";
-import { ShareModal } from "@/components/share/share-modal";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 import { ContentLayout } from "@/components/common/content-layout";
 import {
@@ -63,11 +60,9 @@ export function ChatHistory() {
     React.useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
   const [currentPage, setCurrentPage] = React.useState(1);
   const [isPageSwitching, setIsPageSwitching] = React.useState(false);
-  const [sharingThread, setSharingThread] = React.useState<Thread | null>(null);
   const [threadToDelete, setThreadToDelete] = React.useState<Thread | null>(
     null,
   );
-  const { mutateAsync: shareThread } = useShareThread();
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const normalizedSearchQuery = debouncedSearchQuery.trim().toLowerCase();
@@ -254,26 +249,6 @@ export function ChatHistory() {
     router.push(getThreadRoute(thread));
   };
 
-  const handleToggleShare = async (
-    enable: boolean,
-    shareMode?: "public" | "specific",
-    sharedWith?: { id: string; displayName: string; email: string }[],
-  ) => {
-    if (!sharingThread) return;
-    await shareThread({
-      threadId: sharingThread.id,
-      enable,
-      shareMode,
-      sharedWith,
-    });
-    setSharingThread(null);
-  };
-
-  const getShareUrl = (thread: Thread): string | null =>
-    typeof window === "undefined" || !thread.shareId
-      ? null
-      : `${window.location.origin}/share/${thread.shareId}`;
-
   const handleConfirmDelete = async () => {
     if (!threadToDelete) return;
     await deleteThread(threadToDelete.id);
@@ -392,7 +367,6 @@ export function ChatHistory() {
                 preview={previewByThreadId[thread.id]}
                 isPreviewLoading={previewLoadingByThreadId[thread.id]}
                 onClick={() => handleThreadClick(thread)}
-                onShare={() => setSharingThread(thread)}
                 onDelete={() => setThreadToDelete(thread)}
               />
             ))}
@@ -444,18 +418,6 @@ export function ChatHistory() {
         </div>
       )}
 
-      {sharingThread && (
-        <ShareModal
-          isOpen={true}
-          onClose={() => setSharingThread(null)}
-          isShared={sharingThread.isShared}
-          shareUrl={sharingThread.shareId ? getShareUrl(sharingThread) : null}
-          shareMode={sharingThread.shareMode}
-          sharedWith={sharingThread.sharedWith}
-          onToggleShare={handleToggleShare}
-        />
-      )}
-
       <DeleteConfirmationModal
         isOpen={!!threadToDelete}
         onClose={() => setThreadToDelete(null)}
@@ -471,14 +433,12 @@ export function ChatHistory() {
 function ThreadCard({
   thread,
   onClick,
-  onShare,
   onDelete,
   preview,
   isPreviewLoading,
 }: {
   thread: Thread;
   onClick: () => void;
-  onShare: () => void;
   onDelete: () => void;
   preview?: string;
   isPreviewLoading?: boolean;
@@ -493,11 +453,6 @@ function ThreadCard({
   const handleBookmark = (e: React.MouseEvent) => {
     e.stopPropagation();
     toggleBookmark(thread.id);
-  };
-
-  const handleShare = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onShare();
   };
 
   const formattedTime =
@@ -525,14 +480,6 @@ function ThreadCard({
             <BookmarkIcon
               className={cn("w-3.5 h-3.5", thread.isBookmarked && "fill-current")}
             />
-          </button>
-          <button
-            onClick={handleShare}
-            className="rounded-sm p-1 text-tertiary/40 transition-colors hover:text-foreground cursor-pointer"
-            title="Share"
-            aria-label="Share"
-          >
-            <Share2 className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={handleDelete}

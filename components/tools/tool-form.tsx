@@ -23,7 +23,7 @@ import { ToolGeneratorDialog } from "./tool-generator-dialog";
 import { Wand2 } from "lucide-react";
 import { DEFAULT_TOOLS_METADATA } from "@/lib/tool/default-tools-metadata";
 import { useTools } from "@/hooks/use-tools-queries";
-import { useMCPStore } from "@/lib/stores/mcp";
+import { useMCPServers } from "@/hooks/use-mcp-queries";
 import { useSecrets } from "@/hooks/use-secrets-queries";
 import { SecretListDialog } from "./secret-list-dialog";
 import { AI_NAME } from "@/constants/main";
@@ -81,13 +81,7 @@ export function ToolForm({
   const { data: secrets = [], isLoading: isLoadingSecrets } = useSecrets();
 
   // Fetch installed MCP servers for validation
-  const { servers: installedMcpServers, fetchServers } = useMCPStore();
-
-  useEffect(() => {
-    if (installedMcpServers.length === 0) {
-      fetchServers();
-    }
-  }, [fetchServers, installedMcpServers.length]);
+  const { data: installedMcpServers = [] } = useMCPServers();
 
   const validateToolName = (toolName: string): string | null => {
     const normalizedName = toolName.trim();

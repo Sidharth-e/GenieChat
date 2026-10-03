@@ -17,7 +17,6 @@ interface ThreadListProps {
   onDelete?: (threadId: string) => void;
   onToggleBookmark?: (threadId: string) => void;
   onRename?: (threadId: string, title: string) => void;
-  onShare?: (threadId: string) => void;
   limit?: number;
   showViewAll?: boolean;
 }
@@ -28,7 +27,6 @@ interface ThreadGroupProps {
   defaultOpen?: boolean;
   onDelete: (id: string) => void;
   onToggleBookmark: (id: string) => void;
-  onShare?: (id: string) => void;
 }
 
 function ThreadGroup({
@@ -37,7 +35,6 @@ function ThreadGroup({
   defaultOpen = true,
   onDelete,
   onToggleBookmark,
-  onShare,
 }: ThreadGroupProps) {
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
 
@@ -68,7 +65,6 @@ function ThreadGroup({
               thread={thread}
               onDelete={onDelete}
               onToggleBookmark={onToggleBookmark}
-              onShare={onShare}
             />
           ))}
         </div>
@@ -82,7 +78,6 @@ export function ThreadList({
   isLoading,
   onDelete,
   onToggleBookmark,
-  onShare,
   limit,
   showViewAll = false,
 }: ThreadListProps) {
@@ -201,28 +196,24 @@ export function ThreadList({
         items={limitedThreads.bookmarked}
         onDelete={onDelete!}
         onToggleBookmark={onToggleBookmark!}
-        onShare={onShare}
       />
       <ThreadGroup
         title="Today"
         items={limitedThreads.today}
         onDelete={onDelete!}
         onToggleBookmark={onToggleBookmark!}
-        onShare={onShare}
       />
       <ThreadGroup
         title="Yesterday"
         items={limitedThreads.yesterday}
         onDelete={onDelete!}
         onToggleBookmark={onToggleBookmark!}
-        onShare={onShare}
       />
       <ThreadGroup
         title="Previous 7 Days"
         items={limitedThreads.thisWeek}
         onDelete={onDelete!}
         onToggleBookmark={onToggleBookmark!}
-        onShare={onShare}
       />
       <ThreadGroup
         title="Older"
@@ -230,7 +221,6 @@ export function ThreadList({
         defaultOpen={false}
         onDelete={onDelete!}
         onToggleBookmark={onToggleBookmark!}
-        onShare={onShare}
       />
 
       {showViewAll && totalCount > displayedCount && (

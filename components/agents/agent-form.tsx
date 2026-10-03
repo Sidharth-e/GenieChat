@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Agent, AgentDocument, AgentSkill } from "@/lib/types";
-import { useMCPStore } from "@/lib/stores";
+import { useMCPServers, useMCPToolsByServer } from "@/hooks/use-mcp-queries";
 import { useTools } from "@/hooks/use-tools-queries";
 import { TargetSchedules } from "@/components/schedules/target-schedules";
 import { DocumentUploadSection } from "./document-upload-section";
@@ -77,13 +77,10 @@ export function AgentForm({
   const router = useRouter();
   const { data: customTools = [], isLoading: isLoadingCustomTools } =
     useTools();
-  const {
-    servers,
-    tools: mcpTools,
-    isLoading: isLoadingMCP,
-    fetchServers,
-    fetchTools,
-  } = useMCPStore();
+  const { data: servers = [], isLoading: isLoadingMCP } = useMCPServers();
+  const { tools: mcpTools } = useMCPToolsByServer(
+    servers.map((server) => server.id),
+  );
 
   const [name, setName] = useState(initialData?.name || "");
   const [description, setDescription] = useState(
@@ -185,23 +182,6 @@ export function AgentForm({
   };
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const loadData = async () => {
-      await fetchServers();
-    };
-    loadData();
-  }, [fetchServers]);
-
-  useEffect(() => {
-    if (servers.length > 0) {
-      servers.forEach((server) => {
-        if (!mcpTools[server.id]) {
-          fetchTools(server.id);
-        }
-      });
-    }
-  }, [servers, fetchTools, mcpTools]);
 
   // Sync form state when initialData changes (e.g., after fetch completes or cache updates)
   useEffect(() => {

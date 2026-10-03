@@ -1,5 +1,4 @@
 export { useChatSettings } from "./chat-settings";
-export { useMCPStore, type MCPToolInfo } from "./mcp";
 export { usePendingMessageStore } from "./pending-message";
 export { useDraftStore } from "./draft-inputs";
 export { useThreadsStore } from "./threads";

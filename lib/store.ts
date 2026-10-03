@@ -145,12 +145,6 @@ export interface IStore {
     getPrompts(userId: string): Promise<Prompt[]>;
     updatePrompt(promptId: string, updates: Partial<Prompt>): Promise<Prompt | null>;
     deletePrompt(promptId: string): Promise<boolean>;
-    toggleShareThread(
-        threadId: string,
-        enable?: boolean,
-        shareMode?: "public" | "specific",
-        sharedWith?: { id: string; displayName: string; email: string }[]
-    ): Promise<{ isShared: boolean; shareId: string | null; shareMode?: "public" | "specific"; sharedWith?: { id: string; displayName: string; email: string }[] } | null>;
     updateMessageActiveVersion(
         threadId: string,
         messageId: string,
@@ -237,14 +231,6 @@ class CompositeDatabaseStore implements IStore {
     deletePrompt(promptId: string) {
         return this.promptStore.deletePrompt(promptId);
     }
-    toggleShareThread(
-        threadId: string,
-        enable?: boolean,
-        shareMode?: "public" | "specific",
-        sharedWith?: { id: string; displayName: string; email: string }[]
-    ) {
-        return this.chatHistoryStore.toggleShareThread(threadId, enable, shareMode, sharedWith);
-    }
     updateMessageActiveVersion(
         threadId: string,
         messageId: string,
@@ -285,7 +271,6 @@ class InMemoryStore implements IStore {
             lastMessageAt: now,
             messageCount: 0,
             model,
-            isShared: false,
             agentId,
             isMultiAgent,
             isSwarm: options?.isSwarm,
@@ -506,34 +491,6 @@ class InMemoryStore implements IStore {
 
     async deletePrompt(promptId: string): Promise<boolean> {
         return this.prompts.delete(promptId);
-    }
-
-    async toggleShareThread(
-        threadId: string,
-        enable?: boolean,
-        shareMode?: "public" | "specific",
-        sharedWith?: { id: string; displayName: string; email: string }[]
-    ): Promise<{ isShared: boolean; shareId: string | null; shareMode?: "public" | "specific"; sharedWith?: { id: string; displayName: string; email: string }[] } | null> {
-        const thread = this.threads.get(threadId);
-        if (!thread) return null;
-
-        const newIsShared = enable !== undefined ? enable : !thread.isShared;
-        const newShareId = newIsShared ? (thread.shareId || generateId()) : thread.shareId;
-        const newShareMode = shareMode ?? thread.shareMode ?? "public";
-        const newSharedWith = sharedWith ?? thread.sharedWith ?? [];
-
-        thread.isShared = newIsShared;
-        thread.shareId = newShareId;
-        thread.shareMode = newShareMode;
-        thread.sharedWith = newSharedWith;
-        this.threads.set(threadId, thread);
-
-        return {
-            isShared: newIsShared,
-            shareId: newShareId || null,
-            shareMode: newShareMode,
-            sharedWith: newSharedWith,
-        };
     }
 }
 

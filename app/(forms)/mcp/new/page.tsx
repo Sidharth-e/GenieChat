@@ -3,15 +3,15 @@
 import { logger } from "@/lib/logger";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMCPStore } from "@/lib/stores";
+import { useCreateMCPServer, type MCPServerInput } from "@/hooks/use-mcp-queries";
 import { MCPForm } from "@/components/mcp/mcp-form";
 
 export default function NewMCPPage() {
     const router = useRouter();
-    const { createServer } = useMCPStore();
+    const { mutateAsync: createServer } = useCreateMCPServer();
     const [isSaving, setIsSaving] = useState(false);
 
-    const handleSave = async (serverData: Parameters<typeof createServer>[0]) => {
+    const handleSave = async (serverData: MCPServerInput) => {
         setIsSaving(true);
         try {
             await createServer(serverData);

@@ -262,14 +262,10 @@ export interface AutoTaskDocument {
 export type AutoTaskStatus = "pending" | "running" | "completed" | "failed";
 
 /**
- * The `config` collection is mixed-type: announcement state and arena
- * leaderboard documents share it, discriminated by `type`. This is a base
- * interface rather than a union of the two shapes because the driver's
- * `replaceOne` replacement parameter is `WithoutId<T>` — i.e. `Omit<T, "_id">` —
- * and `Omit` over a union collapses to the members' *shared* keys, so an
- * announcement upsert would fail its excess-property check. Carrying the fields
- * the queries touch keeps both the announcement and the arena read/write paths
- * compiling with no narrowing step.
+ * The `config` collection. The arena leaderboard keeps one document per user
+ * here, discriminated by `type`; carrying the fields the queries touch as a
+ * base interface keeps every read and write path compiling with no narrowing
+ * step.
  *
  * No index signature: it would make `LacksMongoId` resolve to `never` and break
  * every `hydrateDocument` call on this collection.
@@ -279,10 +275,7 @@ export interface ConfigDocument {
   userId: string;
   type: string;
   updatedAt: string;
-  /** Absent on arena leaderboard documents. */
   createdAt?: string;
-  /** `announcement_state` documents. */
-  seenAnnouncementIds?: string[];
   /** `arena_leaderboard` documents. */
   entries?: Record<string, ArenaLeaderboardEntry>;
 }

@@ -1,8 +1,6 @@
 import { logger } from "@/lib/logger";
 import { Collection } from "mongodb";
-import { getServerSession } from "next-auth";
 import { getThreadCollection, getHistoryCollection } from "./client";
-import { authOptions } from "@/lib/auth/config";
 import { Thread, Message, MessageVersion, ThreadType, ArenaMetadata } from "../types";
 import { generateId } from "../utils";
 import {
@@ -33,11 +31,6 @@ type MessageCreateInput = Omit<
 type MessageVersionInput = Omit<MessageVersion, "versionId" | "createdAt"> & {
   versionId?: string;
   createdAt?: string;
-};
-
-type SharedThreadAccessResult = {
-  thread: Thread | null;
-  accessDenied: boolean;
 };
 
 function seedVersionsFromMessage(message: Message & Partial<Pick<MessageVersion, 'versionId' | 'pairedUserVersionId' | 'pairedAssistantVersionId'>>): Message["versions"] {
@@ -260,7 +253,6 @@ export class ChatHistoryStore {
       lastMessageAt: now,
       messageCount: 0,
       model,
-      isShared: false,
 
       agentId,
       isMultiAgent,
@@ -287,8 +279,7 @@ export class ChatHistoryStore {
 
     const projection = {
       _id: 1, title: 1, lastMessageAt: 1, agentId: 1, isMultiAgent: 1, isSwarm: 1,
-      isBookmarked: 1, isShared: 1, shareId: 1, shareMode: 1, sharedWith: 1,
-      userId: 1, type: 1, createdAt: 1,
+      isBookmarked: 1, userId: 1, type: 1, createdAt: 1,
     } as const;
 
     const cursor = this.threadCollection
@@ -493,113 +484,6 @@ export class ChatHistoryStore {
       });
       return null;
     }
-  }
-
-  // Get thread by shareId (for public share pages)
-  async getThreadByShareId(shareId: string): Promise<Thread | null> {
-    try {
-      logger.info("Looking for thread with shareId:", shareId);
-
-      const thread = await this.threadCollection.findOne({
-        shareId,
-        isShared: true,
-        type: "thread",
-      });
-
-      logger.info("Found threads:", {
-        count: thread ? 1 : 0,
-        threads: thread
-          ? [{ id: thread.id, shareId: thread.shareId, isShared: thread.isShared }]
-          : [],
-      });
-
-      return thread ? hydrateDocument(thread) : null;
-    } catch (error) {
-      logger.error("Error getting thread by shareId:", error);
-      return null;
-    }
-  }
-
-  async getThreadByShareIdWithAccess(
-    shareId: string,
-  ): Promise<SharedThreadAccessResult> {
-    const thread = await this.getThreadByShareId(shareId);
-
-    if (!thread) {
-      return { thread: null, accessDenied: false };
-    }
-
-    if (thread.shareMode !== "specific") {
-      return { thread, accessDenied: false };
-    }
-
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return { thread, accessDenied: true };
-    }
-
-    if (thread.userId === session.user.id) {
-      return { thread, accessDenied: false };
-    }
-
-    const userEmail = session.user.email.toLowerCase();
-    const hasUserAccess =
-      thread.sharedWith?.some(
-        (user) => user.email.toLowerCase() === userEmail,
-      ) ?? false;
-
-    return { thread, accessDenied: !hasUserAccess };
-  }
-
-  // Toggle share status for a thread (or set explicitly with enable parameter)
-  async toggleShareThread(
-    threadId: string,
-    enable?: boolean,
-    shareMode?: "public" | "specific",
-    sharedWith?: { id: string; displayName: string; email: string }[],
-  ): Promise<{
-    isShared: boolean;
-    shareId: string | null;
-    shareMode?: "public" | "specific";
-    sharedWith?: { id: string; displayName: string; email: string }[];
-  } | null> {
-    const thread = await this.getThread(threadId);
-    if (!thread) return null;
-
-    const newIsShared = enable !== undefined ? enable : !thread.isShared;
-    const newShareId = newIsShared
-      ? thread.shareId || generateId()
-      : thread.shareId;
-    const newShareMode = shareMode ?? thread.shareMode ?? "public";
-    const newSharedWith = sharedWith ?? thread.sharedWith ?? [];
-
-    logger.info("Toggle share:", {
-      threadId,
-      oldIsShared: thread.isShared,
-      newIsShared,
-      shareMode: newShareMode,
-    });
-
-    await this.updateThread(threadId, {
-      isShared: newIsShared,
-      shareId: newShareId,
-      shareMode: newShareMode,
-      sharedWith: newSharedWith,
-    });
-
-    const updatedThread = await this.getThread(threadId);
-    logger.info("Updated thread:", {
-      isShared: updatedThread?.isShared,
-      shareId: updatedThread?.shareId,
-      shareMode: updatedThread?.shareMode,
-    });
-
-    return {
-      isShared: newIsShared,
-      shareId: newShareId || null,
-      shareMode: newShareMode,
-      sharedWith: newSharedWith,
-    };
   }
 
   // Update message feedback (like/dislike)

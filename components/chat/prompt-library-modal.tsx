@@ -17,13 +17,11 @@ import {
   type PromptEditorData,
 } from "@/components/prompts/prompt-editor";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
-import { ShareModal } from "@/components/share/share-modal";
 import {
   usePrompts,
   useCreatePrompt,
   useUpdatePrompt,
   useDeletePrompt,
-  useSharePrompt,
   useToggleFavoritePrompt,
 } from "@/hooks/use-prompts-queries";
 import { Prompt } from "@/lib/types";
@@ -37,7 +35,7 @@ interface PromptLibraryModalProps {
   animationOrigin?: { x: number; y: number } | null;
 }
 
-type PromptTab = "favorites" | "discover" | "public" | "custom";
+type PromptTab = "favorites" | "discover";
 
 type EditorState = { mode: "create" } | { mode: "edit"; prompt: Prompt };
 
@@ -51,7 +49,6 @@ export function PromptLibraryModal({
   const createPromptMutation = useCreatePrompt();
   const updatePromptMutation = useUpdatePrompt();
   const deletePromptMutation = useDeletePrompt();
-  const sharePromptMutation = useSharePrompt();
   const favoritePromptMutation = useToggleFavoritePrompt();
 
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -72,12 +69,9 @@ export function PromptLibraryModal({
   const [promptToDelete, setPromptToDelete] = React.useState<Prompt | null>(
     null,
   );
-  const [sharingPrompt, setSharingPrompt] = React.useState<Prompt | null>(null);
 
   const tabFilteredPrompts = prompts.filter((prompt) => {
     if (activeTab === "favorites") return !!prompt.isFavorite;
-    if (activeTab === "public") return !!prompt.isShared;
-    if (activeTab === "custom") return !prompt.isShared;
     return true;
   });
 
@@ -104,7 +98,6 @@ export function PromptLibraryModal({
       setEditorState(null);
       setEditorError(null);
       setPromptToDelete(null);
-      setSharingPrompt(null);
     }
   }, [open]);
 
@@ -238,31 +231,6 @@ export function PromptLibraryModal({
     });
   };
 
-  const handleToggleShare = async (
-    enable: boolean,
-    shareMode?: "public" | "specific",
-    sharedWith?: { id: string; displayName: string; email: string }[],
-  ) => {
-    if (!sharingPrompt) return;
-
-    try {
-      await sharePromptMutation.mutateAsync({
-        promptId: sharingPrompt.id,
-        enable,
-        shareMode,
-        sharedWith,
-      });
-      setSharingPrompt(null);
-    } catch (error) {
-      logger.error({ error }, "Failed to update prompt sharing");
-    }
-  };
-
-  const getShareUrl = (prompt: Prompt) =>
-    typeof window !== "undefined" && prompt.shareId
-      ? `${window.location.origin}/share/prompts/${prompt.shareId}`
-      : null;
-
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => {
     setMounted(true);
@@ -271,9 +239,6 @@ export function PromptLibraryModal({
   React.useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      // ShareModal wraps its own Dialog, which closes itself on Escape — the
-      // library must not close with it.
-      if (sharingPrompt) return;
       if (promptToDelete) {
         setPromptToDelete(null);
         return;
@@ -295,15 +260,12 @@ export function PromptLibraryModal({
       document.removeEventListener("keydown", handleEscape);
       document.body.style.overflow = "";
     };
-    // `sharingPrompt` re-asserts the scroll lock ShareModal drops when it closes.
-  }, [open, onOpenChange, sharingPrompt, promptToDelete, editorState]);
+  }, [open, onOpenChange, promptToDelete, editorState]);
 
   const favoriteCount = prompts.filter((prompt) => !!prompt.isFavorite).length;
   const tabs: { key: PromptTab; label: string; count?: number }[] = [
     { key: "favorites", label: "Favorites", count: favoriteCount },
     { key: "discover", label: "Discover" },
-    { key: "public", label: "Public" },
-    { key: "custom", label: "Custom" },
   ];
 
   const isPaneOpen = !!selectedPrompt;
@@ -479,21 +441,17 @@ export function PromptLibraryModal({
                               ? "Try a different search keyword."
                               : activeTab === "favorites"
                                 ? "Favorite prompts will show up here."
-                                : activeTab === "public"
-                                  ? "Prompts you share will show up here."
-                                  : "Create a prompt to start building your library."}
+                                : "Create a prompt to start building your library."}
                           </p>
-                          {!searchQuery &&
-                            (activeTab === "discover" ||
-                              activeTab === "custom") && (
-                              <Button
-                                onClick={handleStartCreate}
-                                className="mt-4 h-9 rounded-full px-4 shadow-none hover:scale-100"
-                              >
-                                <Plus className="h-4 w-4" />
-                                Create Prompt
-                              </Button>
-                            )}
+                          {!searchQuery && activeTab === "discover" && (
+                            <Button
+                              onClick={handleStartCreate}
+                              className="mt-4 h-9 rounded-full px-4 shadow-none hover:scale-100"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Create Prompt
+                            </Button>
+                          )}
                         </div>
                       ) : (
                         <LayoutGroup id="prompt-modal-cards">
@@ -535,10 +493,6 @@ export function PromptLibraryModal({
                                   onDelete={(e) => {
                                     e.stopPropagation();
                                     setPromptToDelete(prompt);
-                                  }}
-                                  onShare={(e) => {
-                                    e.stopPropagation();
-                                    setSharingPrompt(prompt);
                                   }}
                                   onFavoriteToggle={(e) =>
                                     handleToggleFavorite(prompt, e)
@@ -699,25 +653,6 @@ export function PromptLibraryModal({
                   description="Are you sure you want to delete this prompt? This action cannot be undone."
                   dialogClassName="border border-card-border"
                 />
-
-                {(() => {
-                  if (!sharingPrompt) return null;
-                  const latestPrompt =
-                    prompts.find((p) => p.id === sharingPrompt.id) ||
-                    sharingPrompt;
-                  return (
-                    <ShareModal
-                      isOpen={true}
-                      onClose={() => setSharingPrompt(null)}
-                      isShared={latestPrompt.isShared}
-                      shareUrl={getShareUrl(latestPrompt)}
-                      shareMode={latestPrompt.shareMode}
-                      sharedWith={latestPrompt.sharedWith}
-                      allowPublic={false}
-                      onToggleShare={handleToggleShare}
-                    />
-                  );
-                })()}
               </motion.div>
             </motion.div>
           </div>

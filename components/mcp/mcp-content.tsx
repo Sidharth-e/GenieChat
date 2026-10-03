@@ -4,7 +4,12 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Plus, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useMCPStore } from "@/lib/stores";
+import {
+  useMCPServers,
+  useMCPToolsByServer,
+  useDeleteMCPServer,
+  useUpdateMCPServer,
+} from "@/hooks/use-mcp-queries";
 import { useAgents } from "@/hooks/use-agents-queries";
 import { MCPServerConfig } from "@/lib/types";
 import { ServerCard } from "@/components/mcp/server-card";
@@ -19,19 +24,12 @@ interface MCPContentProps {
 
 export function MCPContent({ initialServers = [] }: MCPContentProps) {
   const {
-    servers,
+    data: servers = [],
     isLoading,
     error,
-    tools,
-    loadingServerTools,
-    setServers,
-    deleteServer,
-    toggleServer,
-    fetchServers,
-    toolsError,
-    fetchTools,
-    getToolsForServer,
-  } = useMCPStore();
+  } = useMCPServers(initialServers);
+  const { mutateAsync: deleteServer } = useDeleteMCPServer();
+  const { mutateAsync: updateServer } = useUpdateMCPServer();
   const { data: agents = [] } = useAgents();
 
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -44,31 +42,15 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
   >(null);
   const router = useRouter();
 
-  React.useEffect(() => {
-    if (initialServers.length > 0 && servers.length === 0) {
-      setServers(initialServers);
-    }
-  }, [initialServers, servers.length, setServers]);
-
-  React.useEffect(() => {
-    if (servers.length === 0 && !isLoading && initialServers.length === 0) {
-      fetchServers();
-    }
-  }, [servers.length, isLoading, initialServers.length, fetchServers]);
-
-  const displayServers = servers.length > 0 ? servers : initialServers;
-
-  React.useEffect(() => {
-    displayServers.forEach((server) => {
-      if (
-        server.enabled &&
-        tools[server.id] === undefined &&
-        !loadingServerTools[server.id]
-      ) {
-        fetchTools(server.id);
-      }
-    });
-  }, [displayServers, tools, loadingServerTools, fetchTools]);
+  // Tools are discovered for every enabled connector — the count on each card
+  // is what tells the reader whether the connector is working.
+  const enabledServerIds = React.useMemo(
+    () =>
+      servers.filter((server) => server.enabled).map((server) => server.id),
+    [servers],
+  );
+  const { tools, isLoadingServerTools, toolsError, refreshTools } =
+    useMCPToolsByServer(enabledServerIds);
 
   const handleEdit = (server: MCPServerConfig) => {
     router.push(`/mcp/${server.id}/edit`);
@@ -90,18 +72,15 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
     e?: React.MouseEvent,
   ) => {
     e?.stopPropagation();
-    await toggleServer(server.id);
+    await updateServer({ id: server.id, updates: { enabled: !server.enabled } });
   };
 
   const handleViewTools = (server: MCPServerConfig) => {
     setSelectedServer(server);
     setIsToolsDialogOpen(true);
-    if (!tools[server.id] && server.enabled) {
-      fetchTools(server.id);
-    }
   };
 
-  const filteredServers = displayServers.filter((server) => {
+  const filteredServers = servers.filter((server) => {
     const query = searchQuery.toLowerCase();
     return server.name.toLowerCase().includes(query);
   });
@@ -128,7 +107,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
         </Button>
       }
     >
-      {isLoading && displayServers.length === 0 ? (
+      {isLoading && servers.length === 0 ? (
         <div className="border border-card-border rounded-sm p-4 bg-card-bg animate-pulse">
           <div className="mb-2 h-4 w-2/3 rounded bg-hover-bg" />
           <div className="mb-1.5 h-3 w-full rounded bg-hover-bg" />
@@ -137,7 +116,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
       ) : error ? (
         <div className="mb-4 flex items-center gap-2 rounded-sm border border-[var(--red-border)] bg-[var(--red-bg)] p-3 text-sm text-[var(--red)]">
           <AlertCircle className="h-4 w-4" />
-          <span>{error}</span>
+          <span>{error.message}</span>
         </div>
       ) : filteredServers.length === 0 ? (
         <div className="rounded-sm border border-dashed border-card-border bg-card-bg p-10 text-center">
@@ -173,11 +152,8 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
                 key={server.id}
                 server={server}
                 index={i}
-                toolCount={getToolsForServer(server.id).length}
-                isLoadingTools={
-                  loadingServerTools[server.id] ||
-                  (server.enabled && tools[server.id] === undefined)
-                }
+                toolCount={(tools[server.id] ?? []).length}
+                isLoadingTools={isLoadingServerTools[server.id]}
                 onToggle={(e) => handleToggle(server, e)}
                 onEdit={(e) => {
                   e.stopPropagation();
@@ -207,12 +183,12 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
         isOpen={isToolsDialogOpen}
         onClose={() => setIsToolsDialogOpen(false)}
         server={selectedServer}
-        tools={selectedServer ? getToolsForServer(selectedServer.id) : []}
+        tools={selectedServer ? tools[selectedServer.id] ?? [] : []}
         isLoadingTools={
-          selectedServer ? !!loadingServerTools[selectedServer.id] : false
+          selectedServer ? !!isLoadingServerTools[selectedServer.id] : false
         }
-        toolsError={toolsError}
-        onRefresh={fetchTools}
+        toolsError={selectedServer ? toolsError[selectedServer.id] ?? null : null}
+        onRefresh={refreshTools}
         onToggle={(server) => handleToggle(server)}
       />
 
