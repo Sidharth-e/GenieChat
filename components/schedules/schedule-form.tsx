@@ -132,7 +132,11 @@ export function ScheduleForm({ scheduleId, defaultTarget }: ScheduleFormProps) {
 
     const body = {
       name: name.trim(),
-      description: description.trim() || undefined,
+      // Sent even when empty, so clearing the box reaches the API as `""` -- the
+      // spelling `parseSchedulePatch` reads as "erase it". Sending `undefined`
+      // here dropped the key in `JSON.stringify`, which made the patch silent
+      // about the field and left the old text in place on save.
+      description: description.trim(),
       target: { type: targetType, id: targetId },
       input: coerced.value,
       cadence,

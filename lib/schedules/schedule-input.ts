@@ -34,6 +34,18 @@ export interface ScheduleDraft {
   maxAttempts: number;
 }
 
+/**
+ * A draft, with the one field a patch can also *clear*.
+ *
+ * `description: null` is how a caller erases it. A create cannot express that --
+ * there is nothing on an unsaved document to erase -- so the two paths get
+ * different types rather than one type with a null the insert would have to
+ * remember to strip.
+ */
+export type SchedulePatch = Partial<Omit<ScheduleDraft, "description">> & {
+  description?: string | null;
+};
+
 export type ParseResult<T> =
   | { ok: true; value: T }
   | { ok: false; message: string };
@@ -70,11 +82,20 @@ function parseName(value: unknown): ParseResult<string> {
   return { ok: true, value: name };
 }
 
-function parseDescription(value: unknown): ParseResult<string | undefined> {
-  if (value === undefined || value === null) return { ok: true, value: undefined };
+/**
+ * A description, or `null` for "erase it".
+ *
+ * `undefined` is a caller saying nothing about the field; `null` is a caller
+ * saying to remove it. The two spellings mean the same thing on a create -- there
+ * is nothing to erase on a document that does not exist yet -- so
+ * `parseScheduleDraft` maps both back to `undefined`, while `parseSchedulePatch`
+ * keeps the `null` for the store to act on.
+ */
+function parseDescription(value: unknown): ParseResult<string | null> {
+  if (value === undefined || value === null) return { ok: true, value: null };
   if (typeof value !== "string") return fail("A description must be text.");
   const description = value.trim();
-  if (!description) return { ok: true, value: undefined };
+  if (!description) return { ok: true, value: null };
   if (description.length > MAX_DESCRIPTION_LENGTH) {
     return fail(`A description can be at most ${MAX_DESCRIPTION_LENGTH} characters.`);
   }
@@ -214,7 +235,9 @@ export function parseScheduleDraft(
     ok: true,
     value: {
       name: name.value,
-      description: description.value,
+      // `null` here is "the caller cleared it", which on an insert is simply no
+      // description; the store would otherwise be handed a null to store.
+      description: description.value ?? undefined,
       target: target.value,
       input: body.input === undefined ? {} : body.input,
       cadence: cadence.value,
@@ -242,10 +265,10 @@ export function parseScheduleDraft(
 export function parseSchedulePatch(
   body: unknown,
   now: Date,
-): ParseResult<Partial<ScheduleDraft>> {
+): ParseResult<SchedulePatch> {
   if (!isRecord(body)) return fail("Expected a JSON object.");
 
-  const patch: Partial<ScheduleDraft> = {};
+  const patch: SchedulePatch = {};
 
   const fields = [
     "name",
@@ -334,7 +357,7 @@ export function parseSchedulePatch(
 export function nextRunAtAfterPatch(
   now: Date,
   current: Schedule,
-  patch: Partial<ScheduleDraft>,
+  patch: SchedulePatch,
 ): { update: boolean; nextRunAt: string | null } {
   const cadence = patch.cadence ?? current.cadence;
   const resuming = patch.enabled === true && !current.enabled;

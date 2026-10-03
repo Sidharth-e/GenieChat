@@ -76,6 +76,34 @@ export function dropUndefinedFields<T extends object>(doc: T): T {
 }
 
 /**
+ * Splits a partial update into what to `$set` and what to `$unset`.
+ *
+ * There are three instructions and a bare `$set` carries only two: `undefined` means
+ * "leave this field alone", a value means "store this", and `null` means "remove
+ * the field". Setting `null` instead would store a null, and an optional field
+ * that a user cleared has to read as *absent* -- which is the shape the readers
+ * on these collections test for, and the reason `dropUndefinedFields` exists.
+ *
+ * Only exact `null` is an erasure; `false` and `0` are values a caller chose.
+ *
+ * Lives beside `dropUndefinedFields` for the same reason it does: every store
+ * that lets a caller clear an optional field needs the same rule, and a store
+ * importing it from a sibling store would couple two features that share nothing.
+ */
+export function splitNullFields<T extends object>(
+  doc: T,
+): { set: Record<string, unknown>; unset: Record<string, ""> } {
+  const set: Record<string, unknown> = {};
+  const unset: Record<string, ""> = {};
+  for (const [key, value] of Object.entries(doc)) {
+    if (value === undefined) continue;
+    if (value === null) unset[key] = "";
+    else set[key] = value;
+  }
+  return { set, unset };
+}
+
+/**
  * Escape a user-supplied string so it can be used as a literal inside a
  * RegExp. Cosmos `CONTAINS` matched literally; `$regex` does not, so
  * unescaped input like "a+b" would match the wrong thing or throw.

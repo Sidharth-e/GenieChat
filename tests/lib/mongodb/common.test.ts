@@ -3,6 +3,7 @@ import {
   hydrateDocument,
   escapeRegex,
   buildSearchFilter,
+  splitNullFields,
 } from "@/lib/mongodb/common";
 
 describe("hydrateDocument", () => {
@@ -86,6 +87,42 @@ describe("escapeRegex", () => {
       // token, including "^", "$", "]" and "\".
       expect(escapeRegex(char)).toBe(`\\${char}`);
     }
+  });
+});
+
+describe("splitNullFields", () => {
+  it("keeps ordinary values in the set half", () => {
+    expect(splitNullFields({ name: "Renamed", enabled: false })).toEqual({
+      set: { name: "Renamed", enabled: false },
+      unset: {},
+    });
+  });
+
+  it("drops undefined rather than setting or unsetting it", () => {
+    // Undefined means "leave this field alone" -- a third instruction: not a value
+    // to store, and not a field to remove.
+    expect(splitNullFields({ name: "Renamed", description: undefined })).toEqual({
+      set: { name: "Renamed" },
+      unset: {},
+    });
+  });
+
+  it("moves a null field to the unset half", () => {
+    // Setting null stores a null; the readers on these collections test for the
+    // absent key, so an erasure has to remove it rather than blank it.
+    expect(splitNullFields({ description: null })).toEqual({
+      set: {},
+      unset: { description: "" },
+    });
+  });
+
+  it("keeps false and 0 as values, not as erasures", () => {
+    // Guard against a falsy check: `enabled: false` and `maxAttempts: 0` are
+    // values a caller chose, and only exact `null` is an erasure.
+    expect(splitNullFields({ enabled: false, maxAttempts: 0 })).toEqual({
+      set: { enabled: false, maxAttempts: 0 },
+      unset: {},
+    });
   });
 });
 

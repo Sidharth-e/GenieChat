@@ -1,5 +1,6 @@
 import { MongoClient, type Collection } from "mongodb";
 import { generateId } from "@/lib/utils";
+import { splitNullFields } from "@/lib/mongodb/common";
 import { nextClaim } from "@/lib/schedules/cadence";
 import { reaperOutcome } from "@/lib/schedules/retry";
 import {
@@ -13,9 +14,11 @@ import type {
 } from "@/lib/types";
 
 /**
- * Exercises the four scheduling properties that are concurrency properties, and
- * so cannot be unit-tested: a claim that races itself, a lease whose owner died,
- * spent attempts, and an overlap under `skip`.
+ * Exercises the scheduling properties that are properties of the *store*, and so
+ * cannot be unit-tested: a claim that races itself, a run claimed by id racing
+ * itself, a lease whose owner died, spent attempts, the last-run status a settle
+ * writes, an overlap under `skip`, and a cleared description leaving the document
+ * with no key at all.
  *
  * Two deliberate choices, both forced by the module layout:
  *
@@ -55,6 +58,7 @@ interface ScheduleRow {
   id: string;
   userId: string;
   name: string;
+  description?: string;
   target: TriggerTarget;
   input: unknown;
   cadence: ScheduleCadence;
@@ -513,6 +517,38 @@ async function skipsOverlap(
   return after?.skippedRuns === 1 && rows === 1;
 }
 
+/**
+ * A description set once can be removed again.
+ *
+ * The only write here whose *absence* is the observable: clearing a description
+ * has to leave the document with no such key, not with a stored null, or every
+ * reader that tests for the key sees a description that is still set. It is
+ * checked through the store's own `splitNullFields` rather than a copy of it --
+ * `lib/mongodb/common.ts` imports nothing `server-only`, which is what makes that
+ * possible where `ScheduleStore` itself is out of reach.
+ */
+async function erasesAClearedDescription(
+  schedules: Collection<ScheduleRow>,
+): Promise<boolean> {
+  const scheduleId = generateId();
+  await schedules.insertOne(
+    makeScheduleDoc({ _id: scheduleId, description: "Set once" }),
+  );
+
+  // Exactly what `updateSchedule` builds for a `description: null` update.
+  const { set, unset } = splitNullFields({
+    description: null,
+    updatedAt: NOW_ISO,
+  });
+  await schedules.findOneAndUpdate(
+    { _id: scheduleId, userId: TEST_USER },
+    { $set: set, $unset: unset },
+  );
+
+  const after = await schedules.findOne({ _id: scheduleId });
+  return after !== null && !("description" in after);
+}
+
 async function main() {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
@@ -575,6 +611,10 @@ async function main() {
     report(
       "a run claimed by id twice executes once",
       await racesRunClaimById(runs),
+    );
+    report(
+      "a cleared description leaves no key behind",
+      await erasesAClearedDescription(schedules),
     );
   } finally {
     // Scoped to TEST_USER, so a live database's own schedules are never touched.

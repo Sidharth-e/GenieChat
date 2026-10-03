@@ -7,6 +7,7 @@ import {
 import {
   dropUndefinedFields,
   hydrateDocument,
+  splitNullFields,
   type ScheduleDocument,
   type ScheduleRunDocument,
   type WithMongoId,
@@ -43,7 +44,6 @@ export type ScheduleUpdate = Partial<
   Pick<
     Schedule,
     | "name"
-    | "description"
     | "target"
     | "input"
     | "cadence"
@@ -53,7 +53,14 @@ export type ScheduleUpdate = Partial<
     | "maxAttempts"
     | "nextRunAt"
   >
->;
+> & {
+  /**
+   * `null` clears it. A description is the one optional field a user can remove
+   * after setting it, and "remove" has to be tellable apart from "leave alone" --
+   * which `undefined` already means, and which the `Pick` above can only say.
+   */
+  description?: string | null;
+};
 
 /** Which schedules a list read wants back. An absent field is not a filter. */
 export interface ScheduleListFilter {
@@ -138,14 +145,17 @@ export class ScheduleStore {
     userId: string,
     updates: ScheduleUpdate,
   ): Promise<Schedule | null> {
+    // A cleared description arrives as `null` and has to leave the document as an
+    // absent key rather than a stored null, so the update is split rather than
+    // `$set` wholesale.
+    const { set, unset } = splitNullFields({
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    });
+
     const doc = await this.scheduleCollection.findOneAndUpdate(
       { _id: id, userId },
-      {
-        $set: dropUndefinedFields({
-          ...updates,
-          updatedAt: new Date().toISOString(),
-        }),
-      },
+      Object.keys(unset).length > 0 ? { $set: set, $unset: unset } : { $set: set },
       { returnDocument: "after" },
     );
     return doc ? hydrateDocument(doc) : null;

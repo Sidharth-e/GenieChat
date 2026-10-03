@@ -164,6 +164,16 @@ describe("parseScheduleDraft", () => {
     expect(parseScheduleDraft({ ...validBody(), enabled: "yes" }, NOW).ok).toBe(false);
   });
 
+  it("carries no description for a create that cleared it", () => {
+    // Erasure is a patch-only idea: a create has nothing to erase, so the empty
+    // spelling has to come out as "no description at all" rather than as a null
+    // the insert would store.
+    const result = parseScheduleDraft({ ...validBody(), description: "" }, NOW);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.description).toBeUndefined();
+  });
+
   // The runtime lists and the unions in lib/types.ts are two spellings of one
   // fact; this is the test that fails when they drift.
   it("agrees with the unions it mirrors", () => {
@@ -207,6 +217,46 @@ describe("parseSchedulePatch", () => {
 
   it("rejects an explicitly undefined field rather than accepting it as a set", () => {
     expect(parseSchedulePatch({ name: undefined }, NOW).ok).toBe(false);
+  });
+
+  // A description was settable but not erasable. The editor sent `undefined` for a
+  // cleared field, `JSON.stringify` dropped the key, and the patch never mentioned
+  // it -- so clearing the box and saving left the old text in place. An erasure
+  // now travels as `null`, which is a value the store can act on and `undefined`
+  // cannot be, since `undefined` already means "absent".
+  it("erases a description cleared to an empty string", () => {
+    expect(parseSchedulePatch({ description: "" }, NOW)).toEqual({
+      ok: true,
+      value: { description: null },
+    });
+  });
+
+  it("erases a whitespace-only description", () => {
+    expect(parseSchedulePatch({ description: "   " }, NOW)).toEqual({
+      ok: true,
+      value: { description: null },
+    });
+  });
+
+  it("erases a description sent as null", () => {
+    expect(parseSchedulePatch({ description: null }, NOW)).toEqual({
+      ok: true,
+      value: { description: null },
+    });
+  });
+
+  it("keeps a real description, trimmed", () => {
+    expect(parseSchedulePatch({ description: "  Keep me  " }, NOW)).toEqual({
+      ok: true,
+      value: { description: "Keep me" },
+    });
+  });
+
+  it("leaves an absent description absent rather than erasing it", () => {
+    const result = parseSchedulePatch({ name: "Renamed" }, NOW);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("description" in result.value).toBe(false);
   });
 });
 
