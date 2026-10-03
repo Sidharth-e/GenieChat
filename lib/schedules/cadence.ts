@@ -192,3 +192,69 @@ export function describeCadence(cadence: ScheduleCadence): string {
 
   return `${cadence.expression} (${cadence.timezone})`;
 }
+
+/**
+ * Where a saved schedule's `nextRunAt` goes.
+ *
+ * A one-liner over `nextOccurrence`, named because it is the write path's whole
+ * arithmetic and because its two callers -- create, and resume-after-pause --
+ * have to agree on it. `null` is reachable only from a cadence that never
+ * validated, and the caller stores it as `null` rather than fabricating one: a
+ * `once` already in the past stored with a real instant would fire the moment
+ * it was saved.
+ */
+export function nextRunAtISO(
+  cadence: ScheduleCadence,
+  from: Date,
+): string | null {
+  return nextOccurrence(cadence, from)?.toISOString() ?? null;
+}
+
+export type CadencePreview =
+  | { ok: true; runs: Date[] }
+  | { ok: false; message: string };
+
+/**
+ * The editor's "next runs" preview.
+ *
+ * Validates before it enumerates, because `nextOccurrences` throws on an
+ * unparseable expression and this runs on every keystroke of an expression the
+ * user has not finished typing. Validating first turns a half-typed field into a
+ * message under it instead of an error boundary -- and it is the same
+ * `validateCadence` the save path calls, so the preview can never promise a
+ * schedule that saving would reject.
+ */
+export function cadencePreview(
+  cadence: ScheduleCadence,
+  from: Date,
+  count = 3,
+): CadencePreview {
+  const valid = validateCadence(cadence, from);
+  if (!valid.ok) return { ok: false, message: valid.message };
+  return { ok: true, runs: nextOccurrences(cadence, from, count) };
+}
+
+/**
+ * The zone a cadence's instants should be read in. A cron cadence carries its
+ * own; a `once` cadence is an absolute instant and has none, so it renders in
+ * UTC rather than in whatever zone the rendering process happens to be in.
+ */
+export function cadenceTimezone(cadence: ScheduleCadence): string {
+  return cadence.kind === "cron" ? cadence.timezone : "UTC";
+}
+
+/**
+ * An instant in a fixed zone.
+ *
+ * The zone is always passed in rather than defaulted, because a component
+ * renders once on the server and again on the client: `toLocaleString()` with a
+ * locale-default zone renders in each process's own zone and hydrates against
+ * itself with a mismatch. Every caller has a zone from the cadence.
+ */
+export function formatInstant(iso: string, timezone: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(iso));
+}

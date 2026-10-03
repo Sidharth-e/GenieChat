@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  cadencePreview,
+  cadenceTimezone,
   describeCadence,
+  formatInstant,
   nextClaim,
   nextOccurrence,
   nextOccurrences,
+  nextRunAtISO,
   validateCadence,
 } from "@/lib/schedules/cadence";
 import type { ScheduleCadence } from "@/lib/types";
@@ -178,5 +182,114 @@ describe("describeCadence", () => {
     expect(
       describeCadence({ kind: "once", runAt: "2026-10-05T09:00:00.000Z" }),
     ).toContain("2026");
+  });
+});
+
+describe("nextRunAtISO", () => {
+  it("returns the next occurrence of a cron cadence as ISO", () => {
+    const from = new Date("2026-10-05T06:00:00.000Z");
+    expect(nextRunAtISO(cron("0 9 * * 1-5"), from)).toBe(
+      "2026-10-05T09:00:00.000Z",
+    );
+  });
+
+  // Review Focus 1's sibling: a spent `once` has nowhere to go, and fabricating
+  // an instant here would store a schedule that fires the moment it is saved.
+  it("returns null for a once cadence whose instant has passed", () => {
+    const from = new Date("2026-10-05T12:00:00.000Z");
+    expect(
+      nextRunAtISO({ kind: "once", runAt: "2026-10-05T09:00:00.000Z" }, from),
+    ).toBeNull();
+  });
+
+  it("returns the instant itself for a future once cadence", () => {
+    const from = new Date("2026-10-05T06:00:00.000Z");
+    expect(
+      nextRunAtISO({ kind: "once", runAt: "2026-10-05T09:00:00.000Z" }, from),
+    ).toBe("2026-10-05T09:00:00.000Z");
+  });
+});
+
+describe("cadencePreview", () => {
+  const from = new Date("2026-10-05T06:00:00.000Z");
+
+  it("returns three strictly increasing occurrences", () => {
+    const result = cadencePreview(cron("0 9 * * 1-5"), from);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.runs.map((d) => d.toISOString())).toEqual([
+      "2026-10-05T09:00:00.000Z",
+      "2026-10-06T09:00:00.000Z",
+      "2026-10-07T09:00:00.000Z",
+    ]);
+  });
+
+  // Review Focus 3: the preview runs on every keystroke, so a half-typed
+  // expression must be a message, not a throw. `nextOccurrences` throws on an
+  // unparseable expression; validating first is what stops that reaching React.
+  it("reports a message instead of throwing for an expression that does not parse", () => {
+    const result = cadencePreview(cron("every so often"), from);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toBeTruthy();
+  });
+
+  it("reports a message for an expression that parses but never fires", () => {
+    const result = cadencePreview(cron("0 0 30 2 *"), from);
+    expect(result.ok).toBe(false);
+  });
+
+  // Review Focus 4: the preview must show the instant the schedule will use.
+  // `from` is 06:00Z, already past 03:30Z the same day -- Kolkata 09:00 is 03:30
+  // UTC, so the next one is the 6th.
+  it("previews in the cadence's zone, not the process zone", () => {
+    const result = cadencePreview(cron("0 9 * * *", "Asia/Kolkata"), from);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.runs[0].toISOString()).toBe("2026-10-06T03:30:00.000Z");
+  });
+
+  it("yields the single remaining occurrence of a once cadence", () => {
+    const result = cadencePreview(
+      { kind: "once", runAt: "2026-10-05T09:00:00.000Z" },
+      from,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.runs).toHaveLength(1);
+  });
+
+  it("returns no runs when asked for none", () => {
+    const result = cadencePreview(cron("0 9 * * *"), from, 0);
+    expect(result).toEqual({ ok: true, runs: [] });
+  });
+});
+
+describe("cadenceTimezone", () => {
+  it("is the cadence's own zone for a cron cadence", () => {
+    expect(cadenceTimezone(cron("0 9 * * *", "Asia/Kolkata"))).toBe(
+      "Asia/Kolkata",
+    );
+  });
+
+  it("falls back to UTC for a once cadence, which has no zone", () => {
+    expect(
+      cadenceTimezone({ kind: "once", runAt: "2026-10-05T09:00:00.000Z" }),
+    ).toBe("UTC");
+  });
+});
+
+describe("formatInstant", () => {
+  // Review Focus 4, user-visible half: a fixed zone makes this deterministic, so
+  // it renders identically on the server and on the client -- a locale-default
+  // `toLocaleString()` would hydrate against a different zone than it rendered.
+  it("renders an instant in the given zone", () => {
+    expect(formatInstant("2026-10-05T09:00:00.000Z", "UTC")).toContain("09:00");
+  });
+
+  it("renders the same instant differently in a shifted zone", () => {
+    expect(formatInstant("2026-10-05T09:00:00.000Z", "Asia/Kolkata")).toContain(
+      "14:30",
+    );
   });
 });
