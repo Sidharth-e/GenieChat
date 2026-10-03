@@ -38,7 +38,7 @@ function scheduleDoc(nextRunAt?: string): { nextRunAt?: string } {
 }
 
 /**
- * The same carrier holding an explicit `null`, which `dropUndefinedFields` must
+ * The same carrier holding an explicit `null`, which `dropUnsetNextRunAt` must
  * retain: `null` is a value a caller chose to send, not a missing field, and the
  * helper's contract is to drop exact `undefined` only.
  *
@@ -170,9 +170,9 @@ describe("dropUnsetNextRunAt", () => {
 
     const result = dropUnsetNextRunAt(doc);
 
-    // Cosmos dropped the undefined key on serialisation and read it back as
-    // absent; the Mongo driver would store it as `null`. The due schedule
-    // depends on the absent shape, so the key must go.
+    // The driver stores an own `undefined` as `null`, but the due-schedule query
+    // tests `$exists: false`, so the key must be deleted rather than written as
+    // `null`.
     expect(Object.prototype.hasOwnProperty.call(result, "nextRunAt")).toBe(
       false,
     );
@@ -191,11 +191,10 @@ describe("dropUnsetNextRunAt", () => {
   });
 
   it("keeps an explicit null, which the update path relies on", () => {
-    // Not a tidy-up candidate: `app/api/workflows/[id]/route.ts` writes an
-    // explicit `null` when a trigger stops being a schedule, and `null` is
-    // `IS_DEFINED`-true and never `<=` an ISO string in either store, so it
-    // deliberately stays a stored value rather than an absent key. Deleting it
-    // would silently change that path.
+    // Not a tidy-up candidate: `null` is a value a caller chose to send, not a
+    // missing field, and the due-window query treats it differently from an
+    // absent key — a `null` satisfies neither `$exists: false` nor
+    // `$lte: <iso>` — so it deliberately stays a stored value.
     const doc = scheduleDocWithNull();
 
     const result = dropUnsetNextRunAt(doc);

@@ -19,21 +19,22 @@ import {
 } from "./common";
 
 /**
- * Cosmos stored documents as JSON, so an `undefined` `nextRunAt` was dropped
- * from the stored document and read back as absent (`IS_DEFINED(c.nextRunAt) =
- * false`). The Mongo driver would write it as `null` instead, and the two are
- * not interchangeable to `getScheduledRichWorkflows`: a workflow that has never run
+ * Deletes `nextRunAt` when it is `undefined`, so the stored document has an
+ * absent key rather than an explicit `null`.
+ *
+ * The driver stores an own `undefined` as `null`, and the two are not
+ * interchangeable to `getScheduledRichWorkflows`: a workflow that has never run
  * is due through its `{ nextRunAt: { $exists: false } }` branch, and `$lte`
  * does not compare across BSON types, so a stored `null` is never `<=` an ISO
  * string. Deleting the key keeps the stored shape — and therefore the due
- * schedule — identical to Cosmos.
+ * schedule — intact.
  *
  * Measured, not assumed: with a `null`-valued `nextRunAt` document and an
  * absent-key document side by side, `{ nextRunAt: { $lte: <iso> } }` returns
  * only the document that holds a comparable string (a `null` never matches
- * it), and `$exists: false` returns only the absent-key one. The driver also
- * stores an explicit `undefined` as `null`, so this helper — not the driver —
- * is what preserves the Cosmos shape.
+ * it), and `$exists: false` returns only the absent-key one. The driver stores
+ * an explicit `undefined` as `null`, so this helper — not the driver — is what
+ * produces the absent shape the query needs.
  */
 export function dropUnsetNextRunAt<T extends { nextRunAt?: string }>(doc: T): T {
   if (doc.nextRunAt === undefined) delete doc.nextRunAt;
@@ -116,8 +117,8 @@ export function mergeRichWorkflowUpdate(
  * differs.
  *
  * `claimRichWorkflowSchedule` claims a due run with a compare-and-swap on
- * `updatedAt` (Mongo has no Cosmos `_etag`), so it only detects a competing
- * writer if a write always *changes* `updatedAt`. An ISO string has
+ * `updatedAt`, so it only detects a competing writer if a write always *changes*
+ * `updatedAt`. An ISO string has
  * millisecond resolution, so two writes inside one millisecond would otherwise
  * store a byte-identical value, leave the loser's filter matching, and let both
  * claimers run the workflow. Every write this store makes to a workflow
@@ -178,11 +179,10 @@ export class WorkflowStore {
 
   async updateExecution(
     executionId: string,
-    // `workflowId` is kept only for signature compatibility with the Cosmos
-    // store, where it fed the partition-key fallback replaces: `_id` is a
-    // globally unique uuidv7, so the update no longer needs it. No eslint-disable
-    // directive is needed: the rule's default `after-used` option only reports
-    // arguments *after* the last one that is used.
+    // `workflowId` is kept only for signature compatibility with this method's
+    // callers: `_id` is a globally unique uuidv7, so the update no longer needs
+    // it. No eslint-disable directive is needed: the rule's default `after-used`
+    // option only reports arguments *after* the last one that is used.
     workflowId: string,
     updates: Partial<WorkflowExecution>,
   ): Promise<WorkflowExecution | null> {
