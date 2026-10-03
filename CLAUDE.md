@@ -64,7 +64,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/embeddings/` — Ollama embeddings. `text.ts` is pure (token estimation, normalization, head/tail truncation, context-length retry parsing) and unit-tested; `dimensions.ts` holds `EmbeddingDimensionError` plus `assertEmbeddingDimensions` / `isEmbeddingDimensionError` and is pure and unit-tested — a typed error rather than message-matching, because the predicate has to recognise the provider's wording while this one is ours; `index.ts` is the `"server-only"` provider that calls both and re-exports them. `constants/embeddings.ts` holds `EMBEDDING_DIMENSIONS`, the index contract every vector store must match.
 - `lib/neo4j/` — the Neo4j driver. `config.ts` reads `config.neo4j` and is pure, returning null unless the URI *and* a password are present; `client.ts` is the `"server-only"` layer holding one lazily-built `Driver` plus `isNeo4jConfigured()`, so every caller degrades rather than throws.
 - `lib/memory/` — the memory graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore`; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same SQL the store does; `extract.ts`, `recall.ts`, `text.ts` and `update.ts` are pure and unit-tested; `enrichment-schema.ts` and `llm-extraction.ts` hold the model contract and the call, and `enrichment-write.ts` and `enrich.ts` write what it returns. `graph-view.ts` assembles the four graph reads into the drawn node/edge set and `graph-layout.ts` positions it — both pure and unit-tested, and both deliberately unaware of React Flow, so the decisions worth testing (which entities survive the cap, what an edge is called, what "degree" means, where a node lands) need no browser. `constants/memory.ts` holds the edge types, weights and limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
-- `lib/schedules/` — the scheduling subsystem. `cadence.ts` (cron and `once` next-occurrence) and `retry.ts` (backoff, terminal error classes, the reaper's outcome) are pure and unit-tested; `registry.ts` holds the `TriggerExecutor` map every target kind registers into; `executor-workflow.ts` is the workflow executor and the only one registered in phase 1; `tick.ts` is the I/O layer that runs one pass. Execution is **at-least-once**: a claimed run holds a lease, and a run whose process died is handed back by the reaper rather than being lost. `constants/schedules.ts` holds the lease length, the retry curve and the tick's bounds. See [Scheduling](#scheduling).
+- `lib/schedules/` — the scheduling subsystem. `cadence.ts` (cron and `once` next-occurrence), `retry.ts` (backoff, terminal error classes, the reaper's outcome and `isRunOpen`), `schedule-input.ts` (draft and patch parsing, and the next-run-after-patch rule), `input-form.ts` (a Zod schema into form fields, and the string-to-value coercer) and `input-schemas.ts` (the per-target input schemas) are pure and unit-tested. `registry.ts` holds the `TriggerExecutor` map every target kind registers into and registers nothing itself; `executors.ts` performs the executor imports and re-exports the registry, and is the module request-time consumers import from — importing `getExecutor` from `registry.ts` instead yields an empty registry that answers `invalid_target` for every target while the type-check and the unit suite stay green. `executor-workflow.ts` and `executor-agent.ts` are the two registered executors (`tool` is deliberately absent); `run-agent.ts` is the headless agent run the `agent` executor and the webhook service share; `dispatch.ts` runs one named run; `tick.ts` is the I/O layer that runs one pass. `lib/api/cron-guard.ts` is the `CRON_SECRET` bearer check the tick and the dispatch seam share. Execution is **at-least-once**: a claimed run holds a lease, and a run whose process died is handed back by the reaper rather than being lost. `constants/schedules.ts` holds the lease length, the retry curve and the tick's bounds. See [Scheduling](#scheduling).
 - `lib/redis-client.ts` — Shared ioredis connections, one per named consumer, with a per-consumer circuit breaker. `getRedisClient(name, options)` returns a discriminated result (`ready` / `unconfigured` / `circuit-open`) so each caller picks its own degradation policy. See [Redis](#redis).
 - `lib/mongodb/` — MongoDB data layer using the official `mongodb` driver. `client.ts` provides synchronous collection accessors that connect lazily on first use. Most `*-store.ts` files hold exactly one document shape, but some span more — `workflow-store.ts` spans workflows, rich workflows and executions — and one collection can back several stores — `tools` backs `tool-store.ts`, `secret-store.ts` and `api-key-store.ts`.
 - `lib/langchain/` — LLM orchestration layer:
@@ -296,13 +296,49 @@ run may execute twice.
 target is.** Executors register by `TriggerTargetType`; the tick asks for one and
 never branches on the kind. `getExecutor` returning `null` is what makes an
 unimplemented kind answer `invalid_target` at save time rather than at 3am.
-`executor-workflow.ts` is the only executor registered in phase 1 — `agent` and
-`tool` are types the model already admits and executors that do not exist yet,
-which is deliberate. The registry is a module-level `Map`, so a consumer must
-import the module that registers the executor it wants; `tick.ts` imports
-`executor-workflow.ts` at the top for exactly that reason, and without it every
-schedule would answer `invalid_target` while both the type-check and the unit
-suite stayed green.
+`workflow` and `agent` are registered; `tool` is a type the model already admits
+and an executor that does not exist yet, which is deliberate.
+
+**The registry is a module-level `Map`, so the side-effect import that fills it is
+load-bearing — and it lives in one module.** `registry.ts` registers nothing
+itself, so a consumer that imports `getExecutor` from it gets an empty registry
+and every target answers `invalid_target` while both the type-check and the unit
+suite stay green. Request-time consumers therefore import
+`getExecutor`/`validateTarget` from `lib/schedules/executors.ts`, which performs
+the executor imports and re-exports the registry's surface; `registry.ts` stays
+pure so its unit test can register fake executors without the real ones in the
+way.
+
+**The API is CRUD over the two documents, plus two execution seams.**
+`GET`/`POST /api/schedules` is the list and the create; `GET`/`PATCH`/`DELETE
+/api/schedules/[id]` is one schedule; `POST /api/schedules/[id]/run` is "Run now";
+`GET /api/schedules/[id]/runs` and `GET /api/schedules/[id]/runs/[runId]` are the
+history; `POST /api/schedules/execute/[runId]` is the dispatch seam. Every route
+but the seam is session-scoped, and the seam carries the `CRON_SECRET` bearer
+check in `lib/api/cron-guard.ts` — the credential the tick already uses, because
+its caller is a worker rather than a browser.
+
+**The dispatch seam's path is `/api/schedules/execute/[runId]`, not the spec's
+`/api/schedules/runs/[runId]/execute`.** `proxy.ts`'s `publicPaths` is
+prefix-matched, so exempting `/api/schedules/runs/` would also have exempted the
+session-scoped `GET /api/schedules/runs/[runId]` beside it; a namespace created
+solely for the cron seam cannot accrete a session-scoped sibling.
+
+**`lib/schedules/run-agent.ts` holds the ownership check that
+`AgentStore.getAgent` cannot.** That accessor is addressed by an unguessable id
+and ignores its `userId` argument — the convention [Key
+Conventions](#key-conventions) records — so the scheduler's agent run re-checks
+`agent.userId !== userId` itself, and the webhook service's `executeAgentTarget`
+reaches the agent through the same helper rather than keeping a second copy.
+
+**The UI is three surfaces over that API.** `/schedules` is the list, built on
+`ContentLayout` + `ContentFilterPills` like every other list page. The editor is
+`app/(forms)/schedules/new` and `app/(forms)/schedules/[id]/edit`, and its live
+"next runs" preview is `cadencePreview` — which validates before it enumerates,
+and that is what lets it run on every keystroke of an expression the user has not
+finished typing without throwing. `TargetSchedules` puts a target's own schedules
+on the agent form in edit mode, and the edit page carries the run history, whose
+"Run now" polls the one run it created until `isRunOpen` turns false.
 
 **`expiresAt` on a run is a real `Date`, not an ISO string** — it backs a TTL
 index, and MongoDB's comparison is type-bracketed, so a string bound would select
@@ -311,11 +347,11 @@ exception [Key Conventions](#key-conventions) records for the webhook-invocation
 `expiresAt`.
 
 `pnpm db:setup` creates both collections and their indexes; `pnpm
-schedules:check` exercises the four properties that are concurrency properties
-and so cannot be unit-tested (a claim racing itself, an expired lease, spent
-attempts, an overlap under `skip`); `pnpm schedules:migrate` is a one-off that
-converts legacy workflow cron triggers into `schedules`. See
-[Server-Side Core](#server-side-core-lib) for the module layout.
+schedules:check` exercises the five properties that are concurrency properties
+and so cannot be unit-tested (a claim racing itself, a run claimed by id racing
+itself, an expired lease, spent attempts, an overlap under `skip`); `pnpm
+schedules:migrate` is a one-off that converts legacy workflow cron triggers into
+`schedules`. See [Server-Side Core](#server-side-core-lib) for the module layout.
 
 ### Document Parsing (Docling)
 
