@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 /**
- * Unit tests for the two pure helpers in `lib/mongodb/workflow-store.ts`.
+ * Unit tests for the pure helpers in `lib/mongodb/workflow-store.ts`.
  *
- * Scope is deliberately these two functions only. The store's own methods are
+ * Scope is deliberately these functions only. The store's own methods are
  * I/O-bound (`findOne`/`replaceOne` against Mongo), which CLAUDE.md classifies
  * as an integration-test candidate rather than something to unit-test with
  * mocks; the concurrency guarantee of `updateWorkflowSchedule` is exercised
@@ -18,7 +18,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 // hoisted above this file's body, hence the dynamic import below.
 process.env.MONGODB_URI ??= "mongodb://test.invalid:27017";
 
-const { nextUpdatedAt, dropUnsetNextRunAt } = await import(
+const { nextUpdatedAt, dropUnsetNextRunAt, dropUndefinedFields } = await import(
   "@/lib/mongodb/workflow-store"
 );
 
@@ -208,5 +208,70 @@ describe("dropUnsetNextRunAt", () => {
     const doc = scheduleDoc(undefined);
 
     expect(dropUnsetNextRunAt(doc)).toBe(doc);
+  });
+});
+
+describe("dropUndefinedFields", () => {
+  /**
+   * A partial update as the routes build one: the fields the caller sent, plus
+   * the fields it did not, present-with-`undefined` because the route passes
+   * every body key through as a shorthand property. Factored so the mixed shape
+   * lives in one place.
+   */
+  function partialDoc(): Record<string, unknown> {
+    return {
+      name: "weekly report",
+      trigger: undefined,
+      lastRunAt: undefined,
+      isPublished: false,
+      description: "",
+      priority: 0,
+      nextRunAt: null,
+    };
+  }
+
+  it("removes every undefined-valued key, leaving an absent key", () => {
+    const doc = partialDoc();
+    // Present-with-undefined before the call: that own key is exactly what
+    // displaces the stored value in a merge-over-read followed by replaceOne.
+    expect("trigger" in doc).toBe(true);
+    expect("lastRunAt" in doc).toBe(true);
+
+    const result = dropUndefinedFields(doc);
+
+    // `in` (and hasOwnProperty), not a falsy check: `undefined` and `null` are
+    // both falsy, and only one of them is the hole this helper removes.
+    expect("trigger" in result).toBe(false);
+    expect("lastRunAt" in result).toBe(false);
+    expect(result).not.toHaveProperty("trigger");
+    expect(result).not.toHaveProperty("lastRunAt");
+  });
+
+  it("keeps an explicit null, which is a value the caller chose", () => {
+    const doc = partialDoc();
+
+    const result = dropUndefinedFields(doc);
+
+    expect("nextRunAt" in result).toBe(true);
+    expect(result.nextRunAt).toBeNull();
+  });
+
+  it("keeps defined falsy values", () => {
+    const doc = partialDoc();
+
+    const result = dropUndefinedFields(doc);
+
+    expect("isPublished" in result).toBe(true);
+    expect(result.isPublished).toBe(false);
+    expect("description" in result).toBe(true);
+    expect(result.description).toBe("");
+    expect("priority" in result).toBe(true);
+    expect(result.priority).toBe(0);
+  });
+
+  it("returns the same object it was given", () => {
+    const doc = partialDoc();
+
+    expect(dropUndefinedFields(doc)).toBe(doc);
   });
 });

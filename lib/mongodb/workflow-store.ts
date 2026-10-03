@@ -44,6 +44,31 @@ export function dropUnsetNextRunAt<T extends { nextRunAt?: string }>(doc: T): T 
 }
 
 /**
+ * Deletes every key whose value is exactly `undefined`, in place.
+ *
+ * A partial update is built as `{ ...stored, ...updates }` and written back
+ * with `replaceOne`, so an `undefined` in `updates` is not "leave this field
+ * alone": it is an own key that displaces the stored value, and the driver
+ * stores it as `null` rather than dropping it. A caller that sends only the
+ * fields it means to change — a rename, or a later client sending `{ trigger }`
+ * alone — would otherwise erase every field it did not mention: a `null` trigger
+ * stops a scheduled workflow being scheduled and drops a webhook's secret. The
+ * same applies on insert, where an omitted optional field would be stored as
+ * `null` in a document whose absent-key shape is what the readers test for.
+ *
+ * `null` is kept deliberately. It is a value a caller chose to send — the legacy
+ * schedule path writes it to mean "no longer on a schedule" — not a missing
+ * field. Only exact `undefined` is a hole.
+ */
+export function dropUndefinedFields<T extends object>(doc: T): T {
+  const record = doc as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (record[key] === undefined) delete record[key];
+  }
+  return doc;
+}
+
+/**
  * The `updatedAt` to store on a workflow document whose current value is
  * `previous`: the wall clock, unless the write lands in the same millisecond as
  * `previous`, in which case it is advanced to the next millisecond so it still
@@ -420,6 +445,7 @@ export class WorkflowStore {
       createdAt: now,
       updatedAt: now,
     };
+    dropUndefinedFields(doc);
 
     await this.richWorkflowCollection.insertOne(doc);
     return hydrateDocument(doc);
@@ -481,7 +507,7 @@ export class WorkflowStore {
         createdAt: existingDoc.createdAt,
         updatedAt: nextUpdatedAt(existingDoc.updatedAt),
       };
-      dropUnsetNextRunAt(updated);
+      dropUndefinedFields(updated);
 
       // The filter comes from the read, not the merge.
       const { _id, ...rest } = updated;
