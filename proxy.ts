@@ -3,7 +3,19 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
 // Paths that don't require authentication
-const publicPaths = ["/login", "/api/auth", "/api/agents/v1", "/api/auto/poll", "/api/auto/result"];
+//
+// The schedule tick is here because its caller is an external cron with no
+// NextAuth session; it authenticates with a `CRON_SECRET` bearer instead, and
+// answers 401 when that secret is unset or wrong. Reachable is not the same as
+// unauthenticated — the route's own check is the whole gate.
+const publicPaths = [
+  "/login",
+  "/api/auth",
+  "/api/agents/v1",
+  "/api/auto/poll",
+  "/api/auto/result",
+  "/api/schedules/tick",
+];
 const STATIC_ASSET_PATH =
   /\/[^/]+\.(?:avif|bmp|css|csv|eot|gif|ico|jpeg|jpg|js|json|map|mp3|mp4|mjs|otf|pdf|png|svg|txt|wav|webm|webmanifest|webp|woff|woff2|xml)$/i;
 
