@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import type { RichWorkflowMetadataUpdate } from "@/lib/mongodb/workflow-store";
 
 /**
  * Unit tests for the pure helpers in `lib/mongodb/workflow-store.ts`.
@@ -18,9 +19,11 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 // hoisted above this file's body, hence the dynamic import below.
 process.env.MONGODB_URI ??= "mongodb://test.invalid:27017";
 
-const { nextUpdatedAt, dropUnsetNextRunAt, dropUndefinedFields } = await import(
-  "@/lib/mongodb/workflow-store"
-);
+const { nextUpdatedAt, dropUnsetNextRunAt, dropUndefinedFields, mergeRichWorkflowUpdate } =
+  await import("@/lib/mongodb/workflow-store");
+
+/** The stored-document shape `mergeRichWorkflowUpdate` takes, taken from the helper itself. */
+type StoredRichWorkflow = Parameters<typeof mergeRichWorkflowUpdate>[0];
 
 /** A canonical UTC ISO instant, as `Date#toISOString` produces it. */
 const CANONICAL_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -273,5 +276,106 @@ describe("dropUndefinedFields", () => {
     const doc = partialDoc();
 
     expect(dropUndefinedFields(doc)).toBe(doc);
+  });
+});
+
+describe("mergeRichWorkflowUpdate", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * A stored rich-workflow document as the database returns it. Built by a
+   * factory so the full shape lives in one place; `overrides` supplies the
+   * field under test.
+   */
+  function storedRichWorkflow(
+    overrides: Partial<StoredRichWorkflow> = {},
+  ): StoredRichWorkflow {
+    return {
+      id: "wf_1",
+      _id: "wf_1",
+      userId: "user_1",
+      userName: "Ada",
+      userEmail: "ada@example.com",
+      type: "rich_workflow",
+      name: "nightly",
+      nodes: [],
+      edges: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  const SCHEDULE_TRIGGER = {
+    type: "schedule" as const,
+    config: { cronExpression: "0 9 * * *" },
+  };
+
+  it("keeps a stored trigger and nextRunAt through a metadata-only rename", () => {
+    // The round-1 regression, directly: round 1's helper tests all passed while
+    // this sequence clobbered the trigger, because none of them exercised the
+    // merge. A rename must not un-schedule the workflow it never mentioned.
+    const existing = storedRichWorkflow({
+      trigger: SCHEDULE_TRIGGER,
+      nextRunAt: "2026-10-04T09:00:00.000Z",
+    });
+
+    const result = mergeRichWorkflowUpdate(existing, { name: "renamed" });
+
+    expect(result.name).toBe("renamed");
+    expect(result.trigger).toEqual(SCHEDULE_TRIGGER);
+    expect(result.nextRunAt).toBe("2026-10-04T09:00:00.000Z");
+  });
+
+  it("treats a present-but-undefined key as unchanged, not as erasure", () => {
+    const existing = storedRichWorkflow({ trigger: SCHEDULE_TRIGGER });
+
+    const result = mergeRichWorkflowUpdate(existing, { trigger: undefined });
+
+    expect(result.trigger).toEqual(SCHEDULE_TRIGGER);
+  });
+
+  it("cannot be re-owned by the caller's updates", () => {
+    const existing = storedRichWorkflow();
+
+    const result = mergeRichWorkflowUpdate(existing, {
+      name: "x",
+      userId: "someone-else",
+      type: "workflow",
+      createdAt: "1999-01-01T00:00:00.000Z",
+    } as RichWorkflowMetadataUpdate);
+
+    expect(result.userId).toBe("user_1");
+    expect(result.type).toBe("rich_workflow");
+    expect(result.createdAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(result.name).toBe("x");
+  });
+
+  it("advances updatedAt, even in the same millisecond", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const existing = storedRichWorkflow({
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const result = mergeRichWorkflowUpdate(existing, { name: "x" });
+
+    expect(result.updatedAt).not.toBe(existing.updatedAt);
+    expect(result.updatedAt > existing.updatedAt).toBe(true);
+  });
+
+  it("does not mutate the caller's updates object", () => {
+    const existing = storedRichWorkflow();
+    const updates: RichWorkflowMetadataUpdate = {
+      name: "x",
+      trigger: undefined,
+    };
+
+    mergeRichWorkflowUpdate(existing, updates);
+
+    // The helper copies before deleting; the caller's own key must survive.
+    expect("trigger" in updates).toBe(true);
   });
 });

@@ -68,6 +68,51 @@ export function dropUndefinedFields<T extends object>(doc: T): T {
   return doc;
 }
 
+/** The fields a metadata write may change. Anything else on the document — `userId`, `type`, `createdAt`, `nodes`, `edges` — is not the caller's to set here. */
+export type RichWorkflowMetadataUpdate = Partial<
+  Pick<
+    RichWorkflow,
+    | "name"
+    | "description"
+    | "isPublished"
+    | "visibility"
+    | "icon"
+    | "trigger"
+    | "lastRunAt"
+    | "nextRunAt"
+  >
+>;
+
+/**
+ * The document an `updateRichWorkflow` write should store: the stored document
+ * with the caller's changed fields laid over it.
+ *
+ * `undefined` keys are stripped from `updates` **before** the spread, and that
+ * order is the whole point. An own `undefined` key is not "leave this field
+ * alone": it displaces the stored value, and the driver then stores it as
+ * `null`. A metadata-only PATCH — a rename — would therefore erase the trigger
+ * and `nextRunAt` it never mentioned, silently un-scheduling a workflow.
+ * Dropping the keys *afterwards* cannot undo that, because the spread has
+ * already overwritten the field; the value is gone, not hidden.
+ *
+ * The four identity fields are re-asserted after the spread so a caller cannot
+ * re-own the workflow or move it in a listing.
+ */
+export function mergeRichWorkflowUpdate(
+  existingDoc: WithMongoId<RichWorkflowDocument>,
+  updates: RichWorkflowMetadataUpdate,
+): WithMongoId<RichWorkflowDocument> {
+  const changed = dropUndefinedFields({ ...updates });
+  return {
+    ...existingDoc,
+    ...changed,
+    userId: existingDoc.userId,
+    type: "rich_workflow",
+    createdAt: existingDoc.createdAt,
+    updatedAt: nextUpdatedAt(existingDoc.updatedAt),
+  };
+}
+
 /**
  * The `updatedAt` to store on a workflow document whose current value is
  * `previous`: the wall clock, unless the write lands in the same millisecond as
@@ -479,35 +524,13 @@ export class WorkflowStore {
   // Update rich workflow metadata (name, description, published state)
   async updateRichWorkflow(
     workflowId: string,
-    updates: Partial<
-      Pick<
-        RichWorkflow,
-        | "name"
-        | "description"
-        | "isPublished"
-        | "visibility"
-        | "icon"
-        | "trigger"
-        | "lastRunAt"
-        | "nextRunAt"
-      >
-    >,
+    updates: RichWorkflowMetadataUpdate,
   ): Promise<RichWorkflow | null> {
     try {
       const existingDoc = await this.getRichWorkflowDocument(workflowId);
       if (!existingDoc) return null;
 
-      const updated: WithMongoId<RichWorkflowDocument> = {
-        ...existingDoc,
-        ...updates,
-        // Re-asserted after the caller's spread, so a body cannot re-own the
-        // workflow or move it in a listing.
-        userId: existingDoc.userId,
-        type: "rich_workflow",
-        createdAt: existingDoc.createdAt,
-        updatedAt: nextUpdatedAt(existingDoc.updatedAt),
-      };
-      dropUndefinedFields(updated);
+      const updated = mergeRichWorkflowUpdate(existingDoc, updates);
 
       // The filter comes from the read, not the merge.
       const { _id, ...rest } = updated;
