@@ -456,7 +456,14 @@ export class WorkflowStore {
     updates: Partial<
       Pick<
         RichWorkflow,
-        "name" | "description" | "isPublished" | "visibility" | "icon"
+        | "name"
+        | "description"
+        | "isPublished"
+        | "visibility"
+        | "icon"
+        | "trigger"
+        | "lastRunAt"
+        | "nextRunAt"
       >
     >,
   ): Promise<RichWorkflow | null> {
@@ -474,6 +481,7 @@ export class WorkflowStore {
         createdAt: existingDoc.createdAt,
         updatedAt: nextUpdatedAt(existingDoc.updatedAt),
       };
+      dropUnsetNextRunAt(updated);
 
       // The filter comes from the read, not the merge.
       const { _id, ...rest } = updated;
@@ -571,6 +579,69 @@ export class WorkflowStore {
       logger.error("Error deleting rich workflow:", error);
       return false;
     }
+  }
+
+  /**
+   * The schedule driver's read. Identical due-window semantics to
+   * `getScheduledWorkflows`, but over the rich collection: a workflow is due
+   * when it is on a schedule and either has never run or its next fire time has
+   * passed. `$exists: false` is why `dropUnsetNextRunAt` has to run on every
+   * write — an explicit `null` would match neither arm.
+   */
+  async getScheduledRichWorkflows(nowISO: string): Promise<RichWorkflow[]> {
+    const docs = await this.richWorkflowCollection
+      .find({
+        type: "rich_workflow",
+        "trigger.type": "schedule",
+        $or: [
+          { nextRunAt: { $exists: false } },
+          { nextRunAt: { $lte: nowISO } },
+        ],
+      })
+      .toArray();
+
+    return docs.map((doc) => hydrateDocument(doc));
+  }
+
+  /**
+   * Claims one due run by compare-and-swap on `updatedAt`: the filter carries
+   * the version this runner read, so of two runners evaluating the same tick
+   * exactly one matches and the other is told it lost. Returns false rather than
+   * throwing — losing a race is an ordinary outcome, not an error.
+   */
+  async claimRichWorkflowSchedule(
+    workflowId: string,
+    userId: string,
+    lastRunAt: string,
+    nextRunAt: string | undefined,
+  ): Promise<boolean> {
+    const existingDoc = await this.richWorkflowCollection.findOne({
+      _id: workflowId,
+      userId,
+    });
+    if (!existingDoc) return false;
+
+    const updated = dropUnsetNextRunAt({
+      ...existingDoc,
+      lastRunAt,
+      nextRunAt,
+      updatedAt: nextUpdatedAt(existingDoc.updatedAt),
+    });
+
+    const result = await this.richWorkflowCollection.replaceOne(
+      { _id: workflowId, updatedAt: existingDoc.updatedAt },
+      updated,
+    );
+
+    if (result.matchedCount === 0) {
+      logger.info(
+        { workflowId },
+        "Rich workflow schedule already claimed by another runner",
+      );
+      return false;
+    }
+
+    return true;
   }
 
   // Get raw rich workflow document for update/delete

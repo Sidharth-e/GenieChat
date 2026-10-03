@@ -727,6 +727,13 @@ export interface RichWorkflow {
   icon?: { value?: string; style?: { backgroundColor?: string } };
   isPublished?: boolean;
   visibility?: "private" | "public";
+  /**
+   * How the workflow starts. Manual is the default and needs no driver;
+   * `schedule` is polled by the cron route and `webhook` by the trigger route.
+   */
+  trigger?: WorkflowTrigger;
+  lastRunAt?: string;
+  nextRunAt?: string;
   nodes: RichWorkflowNode[];
   edges: RichWorkflowEdge[];
   createdAt: string;
