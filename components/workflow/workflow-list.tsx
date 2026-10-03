@@ -1,10 +1,10 @@
 
-import { Workflow, RichWorkflow } from "@/lib/types";
+import type { RichWorkflow } from "@/lib/types";
 import { WorkflowListItem } from "./workflow-list-item";
 
 interface WorkflowListProps {
-    workflows: (Workflow | RichWorkflow)[];
-    onExecute: (workflow: Workflow | RichWorkflow) => void;
+    workflows: RichWorkflow[];
+    onExecute: (workflow: RichWorkflow) => void;
     onDelete: (workflowId: string) => void;
 }
 

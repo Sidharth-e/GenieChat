@@ -17,9 +17,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         if (!workflowStore) return api.serviceUnavailable("Database not configured");
 
         const { id } = await params;
-        const workflow =
-            await workflowStore.getWorkflow(id) ??
-            await workflowStore.getRichWorkflow(id);
+        const workflow = await workflowStore.getRichWorkflow(id);
 
         if (!workflow) return api.notFound("Workflow");
         if (workflow.userId !== user.id) return api.forbidden();

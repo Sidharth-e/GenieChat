@@ -101,6 +101,23 @@ export function createNodeData(
           required: ["text"],
         },
       };
+    case NodeKind.Code:
+      return {
+        ...base,
+        kind: NodeKind.Code,
+        code: "",
+        language: "python",
+        outputSchema: {
+          type: "object",
+          properties: {
+            stdout: { type: "string" },
+            stderr: { type: "string" },
+            exit_code: { type: "number" },
+            files: { type: "array", items: { type: "string" } },
+          },
+          required: ["stdout"],
+        },
+      };
     default:
       return { ...base, kind: NodeKind.Note };
   }

@@ -2,21 +2,13 @@ import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { logger } from "@/lib/logger";
 import { WorkflowStore } from "@/lib/mongodb/workflow-store";
-import { AgentStore } from "@/lib/mongodb/agent-store";
-import { MCPStore } from "@/lib/mongodb/mcp-store";
-import { SecretStore } from "@/lib/mongodb/secret-store";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
 import { workflowExecutionService } from "@/lib/langchain/workflow-execution-service";
-import { Agent, ToolSecret } from "@/lib/types";
 import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
-import { resolveMCPServerSecrets } from "@/lib/mcp/resolve-mcp-secrets";
-import { validateWorkflowSteps } from "@/lib/workflow/validation";
 
 const workflowStore = isDatabaseConfigured() ? new WorkflowStore() : null;
-const agentStore = isDatabaseConfigured() ? new AgentStore() : null;
-const mcpStore = isDatabaseConfigured() ? new MCPStore() : null;
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -24,7 +16,7 @@ interface RouteParams {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!workflowStore || !agentStore || !mcpStore) {
+    if (!workflowStore) {
       return api.serviceUnavailable("Database not configured");
     }
 
@@ -40,14 +32,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
-    const workflow = await workflowStore.getWorkflow(id);
+    const workflow = await workflowStore.getRichWorkflow(id);
 
     if (!workflow) return api.notFound("Workflow");
-
-    const validation = validateWorkflowSteps(workflow.steps);
-    if (!validation.valid) {
-      return api.badRequest(validation.errors[0]);
-    }
 
     // Validate trigger
     if (!workflow.trigger || workflow.trigger.type !== "webhook") {
@@ -84,76 +71,44 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // body is not JSON, use default message
     }
 
-    const userId = workflow.userId;
-
-    const agentMap = new Map<string, Agent>();
-    for (const step of workflow.steps) {
-      const stepAgentId = step.agentId?.trim();
-      if (!stepAgentId) {
-        return api.badRequest(`Agent step "${step.name}" is missing an agent.`);
-      }
-
-      if (!agentMap.has(stepAgentId)) {
-        const agent = await agentStore.getAgent(stepAgentId);
-        if (!agent) {
-          return api.badRequest(
-            `Agent "${stepAgentId}" was not found for step "${step.name}".`,
-          );
-        }
-        agentMap.set(stepAgentId, agent);
-      }
-    }
-
-    const allMcpServers = await mcpStore.getMCPServers(userId);
-    const mcpServers = allMcpServers.filter((server) => server.enabled);
-    let userSecrets: ToolSecret[] = [];
-    if (isDatabaseConfigured()) {
-      const secretStore = new SecretStore();
-      userSecrets = await secretStore.getSecrets(userId);
-    }
-
-    const secretMap = userSecrets.reduce(
-      (acc, secret) => {
-        acc[secret.name] = secret.value;
-        return acc;
-      },
-      {} as Record<string, string>,
-    );
-    const resolvedMcpServers = resolveMCPServerSecrets(mcpServers, secretMap);
-
-    // Start execution
-    const eventGenerator = workflowExecutionService.executeWorkflow({
-      workflowId: workflow.id,
-      workflowName: workflow.name,
-      userId,
-      userName: workflow.userName,
-      userEmail: workflow.userEmail,
-      steps: workflow.steps,
-      agents: agentMap,
-      initialMessage: message,
-      mcpServers: resolvedMcpServers,
+    const eventGenerator = workflowExecutionService.executeRichWorkflow({
+      workflow,
+      query: { message },
     });
 
-    // We grab the executionId from the first event
+    // The first event is either WORKFLOW_START (a run began, and carries its
+    // execution id) or a terminal WORKFLOW_END — which is what a workflow that
+    // cannot run at all produces, before any execution record exists. That case
+    // must answer with the reason, not report a success that never happened.
     let executionId = "";
     const firstEvent = await eventGenerator.next();
-    if (!firstEvent.done && firstEvent.value.type === "workflow_start") {
-      executionId = firstEvent.value.finalResult || "";
+    if (
+      !firstEvent.done &&
+      firstEvent.value.eventType === "WORKFLOW_END" &&
+      firstEvent.value.isOk === false
+    ) {
+      return api.badRequest(
+        firstEvent.value.error ?? "Workflow could not be started",
+      );
+    }
+    if (!firstEvent.done && firstEvent.value.eventType === "WORKFLOW_START") {
+      executionId = firstEvent.value.executionId ?? "";
     }
 
-    // Process the rest of the stream asynchronously without awaiting it here
-    const processStream = async () => {
+    void (async () => {
       try {
+        // Keep this disable: `no-unused-vars` comes from
+        // `eslint-config-next/typescript` and does **not** ignore an underscore
+        // prefix, so `const _event` is an error without it. The loop it
+        // replaces carries the same comment for the same reason.
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        for await (const event of eventGenerator) {
-          // Just iterate to consume and run the steps
+        for await (const _event of eventGenerator) {
+          // Draining the generator is what runs the workflow.
         }
       } catch (error) {
         logger.error({ err: error }, "Webhook workflow execution error");
       }
-    };
-
-    processStream(); // fire and forget
+    })();
 
     return api.success({
       success: true,

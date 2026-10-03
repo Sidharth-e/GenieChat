@@ -102,14 +102,18 @@ export type TemplateNodeData = BaseWorkflowNodeData<{
   template: { type: "tiptap"; tiptap: TipTapMentionJsonContent };
 };
 
+export type CodeNodeData = BaseWorkflowNodeData<{ kind: NodeKind.Code }> & {
+  /** The script body. Empty means the node is not configured yet. */
+  code: string;
+  language: "python" | "bash";
+};
+
 type MCPTool = { type: "mcp-tool"; serverId: string; serverName: string };
 type AppTool = { type: "app-tool" };
 
 export type WorkflowToolKey = {
   id: string;
   description: string;
-  parameterSchema?: ObjectJsonSchema7;
-  returnSchema?: JsonSchema7;
 } & (MCPTool | AppTool);
 
 export type ToolNodeData = BaseWorkflowNodeData<{ kind: NodeKind.Tool }> & {
@@ -127,7 +131,8 @@ export type WorkflowNodeData =
   | ToolNodeData
   | ConditionNodeData
   | HttpNodeData
-  | TemplateNodeData;
+  | TemplateNodeData
+  | CodeNodeData;
 
 // Runtime fields during execution
 export type NodeRuntimeField = {
@@ -171,5 +176,7 @@ export type WorkflowStreamEvent =
     }
   | {
       eventType: "WORKFLOW_END";
+      isOk?: boolean;
       output?: unknown;
+      error?: string;
     };

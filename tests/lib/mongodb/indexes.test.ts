@@ -236,7 +236,7 @@ describe("INDEX_SPECS", () => {
           partialFilterExpression: { type: "api_key", revoked: false },
         },
       },
-      // `getScheduledWorkflows`, on every scheduler tick. The `$or` over
+      // `getScheduledRichWorkflows`, on every scheduler tick. The `$or` over
       // `nextRunAt` (`$exists: false` / `$lte`) is served by the trailing key.
       workflows_schedule: {
         collection: config.mongodb.collections.workflows,

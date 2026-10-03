@@ -246,4 +246,9 @@ export function resolveDefaultTool(
   return defaultToolsMap[name];
 }
 
+// Declared in `default-tools-metadata.ts` so the client picker can import it
+// without pulling this module's `@/lib/config`/`server-only` graph into the
+// bundle; re-exported here, beside the resolver it describes.
+export { RESOLVABLE_DEFAULT_TOOLS } from "./default-tools-metadata";
+
 export default defaultToolsMap;

@@ -16,6 +16,7 @@ import { ConditionNodeConfig } from "./node-config/condition-node-config";
 import { HttpNodeConfig } from "./node-config/http-node-config";
 import { ToolNodeConfig } from "./node-config/tool-node-config";
 import { TemplateNodeConfig } from "./node-config/template-node-config";
+import { CodeNodeConfig } from "./node-config/code-node-config";
 
 export function SelectedNodeConfig({ node }: { node: UINode }) {
   const { updateNodeData, setNodes, setEdges } = useReactFlow<UINode>();
@@ -76,6 +77,7 @@ export function SelectedNodeConfig({ node }: { node: UINode }) {
         {node.data.kind === NodeKind.Http && <HttpNodeConfig data={node.data as HttpNodeData} />}
         {node.data.kind === NodeKind.Tool && <ToolNodeConfig data={node.data} />}
         {node.data.kind === NodeKind.Template && <TemplateNodeConfig data={node.data} />}
+        {node.data.kind === NodeKind.Code && <CodeNodeConfig data={node.data} />}
         {node.data.kind === NodeKind.Note && (
           <div className="px-4">
             <Textarea

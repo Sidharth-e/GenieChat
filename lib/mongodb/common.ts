@@ -5,7 +5,6 @@ import {
   Agent,
   Prompt,
   MCPServerConfig,
-  Workflow,
   WorkflowExecution,
   CustomTool,
   ToolSecret,
@@ -90,10 +89,6 @@ export interface PromptDocument extends Prompt {
 
 export interface MCPServerDocument extends MCPServerConfig {
   type: "mcp_server";
-}
-
-export interface WorkflowDocument extends Workflow {
-  type: "workflow";
 }
 
 export interface RichWorkflowDocument extends RichWorkflow {

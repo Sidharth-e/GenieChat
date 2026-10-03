@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { useWorkflows, useDeleteWorkflow } from "@/hooks/use-workflows-queries";
-import { Workflow, RichWorkflow } from "@/lib/types";
+import type { RichWorkflow } from "@/lib/types";
 import { WorkflowList } from "@/components/workflow/workflow-list";
 import { WorkflowEmptyState } from "@/components/workflow/workflow-empty-state";
 import { WorkflowCreateMenu } from "@/components/workflow/workflow-create-menu";
@@ -21,9 +21,8 @@ export function WorkflowContent() {
   );
   const [searchQuery, setSearchQuery] = useState("");
 
-  const handleExecuteWorkflow = (workflow: Workflow | RichWorkflow) => {
-    const type = "nodes" in workflow ? "node-workflow" : "agentic-workflow";
-    window.location.href = `/workflow/${workflow.id}/view/${type}?autoRun=true`;
+  const handleExecuteWorkflow = (workflow: RichWorkflow) => {
+    window.location.href = `/workflow/${workflow.id}/view/node-workflow?autoRun=true`;
   };
 
   const handleDeleteWorkflow = async () => {

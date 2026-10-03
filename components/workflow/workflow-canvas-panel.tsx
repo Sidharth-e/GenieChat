@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { SelectedNodeConfig } from "@/components/workflow/selected-node-config";
 import { ExecuteTab } from "@/components/workflow/node-config/execute-tab";
+import { WorkflowTriggerPanel } from "@/components/workflow/workflow-trigger-panel";
 import type { RichWorkflow } from "@/lib/types";
 import type { UINode } from "@/lib/workflow/types";
 
@@ -119,6 +120,11 @@ export const WorkflowCanvasPanel = memo(function WorkflowCanvasPanel({
             )}
             Save
           </Button>
+        )}
+
+        {/* Trigger — same gate as Save: it writes to the same document */}
+        {!workflow.isPublished && hasEditAccess && (
+          <WorkflowTriggerPanel workflow={workflow} />
         )}
 
         <Separator orientation="vertical" className="h-5 mx-1" />

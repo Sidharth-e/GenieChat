@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Workflow, WorkflowStep } from "@/lib/types";
+import { RichWorkflow, WorkflowTrigger } from "@/lib/types";
 
 export const workflowKeys = {
     all: ["workflows"] as const,
@@ -17,7 +17,7 @@ export const workflowKeys = {
  * Fetches all workflows with automatic caching and background refetching.
  */
 export function useWorkflows() {
-    return useQuery<Workflow[]>({
+    return useQuery<RichWorkflow[]>({
         queryKey: workflowKeys.lists(),
         queryFn: async () => {
             const response = await fetch("/api/workflows");
@@ -34,7 +34,7 @@ export function useWorkflows() {
  * Fetches a single workflow by ID.
  */
 export function useWorkflow(id: string | null) {
-    return useQuery<Workflow>({
+    return useQuery<RichWorkflow>({
         queryKey: workflowKeys.detail(id!),
         queryFn: async () => {
             const response = await fetch(`/api/workflows/${id}`);
@@ -57,9 +57,9 @@ export function useCreateWorkflow() {
         mutationFn: async (workflowData: {
             name: string;
             description?: string;
-            steps: Omit<WorkflowStep, "id" | "status" | "result">[];
+            trigger?: WorkflowTrigger;
         }) => {
-            const response = await fetch("/api/workflows", {
+            const response = await fetch("/api/workflows/node", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(workflowData),
@@ -69,10 +69,10 @@ export function useCreateWorkflow() {
                 throw new Error("Failed to create workflow");
             }
 
-            return response.json() as Promise<Workflow>;
+            return response.json() as Promise<RichWorkflow>;
         },
         onSuccess: (newWorkflow) => {
-            queryClient.setQueryData<Workflow[]>(workflowKeys.lists(), (old) =>
+            queryClient.setQueryData<RichWorkflow[]>(workflowKeys.lists(), (old) =>
                 old ? [newWorkflow, ...old] : [newWorkflow]
             );
         },
@@ -91,7 +91,7 @@ export function useUpdateWorkflow() {
             updates,
         }: {
             id: string;
-            updates: Partial<Omit<Workflow, "id" | "userId" | "createdAt">>;
+            updates: Partial<Omit<RichWorkflow, "id" | "userId" | "createdAt">>;
         }) => {
             const response = await fetch(`/api/workflows/${id}`, {
                 method: "PATCH",
@@ -103,14 +103,14 @@ export function useUpdateWorkflow() {
                 throw new Error("Failed to update workflow");
             }
 
-            return response.json() as Promise<Workflow>;
+            return response.json() as Promise<RichWorkflow>;
         },
         onMutate: async ({ id, updates }) => {
             await queryClient.cancelQueries({ queryKey: workflowKeys.lists() });
 
-            const previousWorkflows = queryClient.getQueryData<Workflow[]>(workflowKeys.lists());
+            const previousWorkflows = queryClient.getQueryData<RichWorkflow[]>(workflowKeys.lists());
 
-            queryClient.setQueryData<Workflow[]>(workflowKeys.lists(), (old) =>
+            queryClient.setQueryData<RichWorkflow[]>(workflowKeys.lists(), (old) =>
                 old?.map((workflow) =>
                     workflow.id === id ? { ...workflow, ...updates } : workflow
                 )
@@ -148,7 +148,7 @@ export function useDeleteWorkflow() {
             return id;
         },
         onSuccess: (deletedId) => {
-            queryClient.setQueryData<Workflow[]>(workflowKeys.lists(), (old) =>
+            queryClient.setQueryData<RichWorkflow[]>(workflowKeys.lists(), (old) =>
                 old?.filter((workflow) => workflow.id !== deletedId)
             );
         },

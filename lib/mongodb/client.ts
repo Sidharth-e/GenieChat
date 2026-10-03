@@ -30,7 +30,6 @@ import type {
   MCPServerDocument,
   ConfigDocument,
   LogDocument,
-  WorkflowDocument,
   WorkflowExecutionDocument,
   CustomToolDocument,
   ChatDocument,
@@ -103,10 +102,6 @@ export function getLogCollection(): Collection<WithMongoId<LogDocument>> {
   return getDb().collection<WithMongoId<LogDocument>>(logCollectionName);
 }
 
-export function getWorkflowCollection(): Collection<WithMongoId<WorkflowDocument>> {
-  return getDb().collection<WithMongoId<WorkflowDocument>>(workflowCollectionName);
-}
-
 export function getWorkflowExecutionCollection(): Collection<WithMongoId<WorkflowExecutionDocument>> {
   return getDb().collection<WithMongoId<WorkflowExecutionDocument>>(workflowExecutionCollectionName);
 }
@@ -149,12 +144,14 @@ export function getWebhookInvocationsCollection(): Collection<WithMongoId<Webhoo
   );
 }
 
-// The five accessors below exist because these collections are mixed-type,
-// exactly like `webhooksCollectionName` above: `history` holds message /
-// CHAT_CITATION / ai_usage documents, `tools` holds custom_tool / tool_secret /
-// api_key, and `workflows` holds workflow / rich_workflow. One accessor per
-// document shape, not per collection — a single union-typed accessor would
-// break `docs.map(hydrateDocument)` on message reads.
+// The five accessors below exist so each document shape gets a typed accessor
+// over a collection that another shape also uses — `history` holds message /
+// CHAT_CITATION / ai_usage documents and `tools` holds custom_tool / tool_secret
+// / api_key, which makes those two mixed-type, like `webhooksCollectionName`
+// above. `workflows` is not mixed-type: its accessor exists to carry the
+// `RichWorkflowDocument` type. One accessor per document shape, not per
+// collection — a single union-typed accessor would break
+// `docs.map(hydrateDocument)` on message reads.
 
 export function getChatCitationsCollection(): Collection<WithMongoId<ChatCitationDocument>> {
   return getDb().collection<WithMongoId<ChatCitationDocument>>(

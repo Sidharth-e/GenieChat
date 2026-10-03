@@ -1,10 +1,12 @@
 import { Edge } from "@xyflow/react";
+import type { RichWorkflowEdge, RichWorkflowNode } from "@/lib/types";
 import {
   NodeKind,
   type UINode,
   type LLMNodeData,
   type HttpNodeData,
   type ToolNodeData,
+  type CodeNodeData,
 } from "./types";
 
 interface ValidationResult {
@@ -72,6 +74,16 @@ export function allNodeValidate({
         };
       }
     }
+
+    if (node.data.kind === NodeKind.Code) {
+      const data = node.data as CodeNodeData;
+      if (!data.code?.trim()) {
+        return {
+          errorMessage: `Code node "${node.data.name}" must have code to run`,
+          node,
+        };
+      }
+    }
   }
 
   // Check for disconnected non-note nodes
@@ -93,4 +105,31 @@ export function allNodeValidate({
   }
 
   return true;
+}
+
+/**
+ * The run-time guard, deliberately weaker than `allNodeValidate`: a workflow
+ * being built should be runnable long before it is publishable, so the missing
+ * Output node and the unset optional fields that block publishing do not block
+ * a run. It rejects only the shapes that cannot produce a run at all, and it
+ * answers with a sentence the run's error can carry verbatim.
+ */
+export function runnableProblem({
+  nodes,
+  edges,
+}: {
+  nodes: RichWorkflowNode[];
+  edges: RichWorkflowEdge[];
+}): string | null {
+  const executable = nodes.filter((node) => node.data.kind !== NodeKind.Note);
+
+  if (executable.length === 0) {
+    return "This workflow has no steps yet. Add a node before running it.";
+  }
+
+  if (executable.length > 1 && edges.length === 0) {
+    return "This workflow's nodes are not connected. Connect them before running it.";
+  }
+
+  return null;
 }
