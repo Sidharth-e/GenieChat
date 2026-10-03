@@ -20,11 +20,12 @@ import "@xyflow/react/dist/base.css";
 import { Plus, Minus, Maximize } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "@/components/providers/theme-provider";
-import { NodeKind, type UINode, type WorkflowNodeData } from "@/lib/workflow/types";
+import { NodeKind, type UIEdge, type UINode, type WorkflowNodeData } from "@/lib/workflow/types";
 import type { RichWorkflow, RichWorkflowNode, RichWorkflowEdge } from "@/lib/types";
 import { createNodeData } from "@/lib/workflow/create-node";
 import { useWorkflowEditorStore } from "@/lib/stores/workflow-editor";
 import { DefaultNode } from "@/components/workflow/default-node";
+import { DefaultEdge } from "@/components/workflow/default-edge";
 import { NodeSelect } from "@/components/workflow/node-select";
 import { WorkflowCanvasPanel } from "@/components/workflow/workflow-canvas-panel";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ import { Button } from "@/components/ui/button";
 // ---- Constants ----
 
 const nodeTypes = { workflow: DefaultNode };
+const edgeTypes = { workflow: DefaultEdge };
 
 // ---- Inner Canvas ----
 
@@ -63,9 +65,10 @@ function WorkflowCanvasInner({
     })),
   );
 
-  const [edges, setEdges] = useState<Edge[]>(() =>
+  const [edges, setEdges] = useState<UIEdge[]>(() =>
     workflow.edges.map((e) => ({
       id: e.id,
+      type: "workflow" as const,
       source: e.source,
       target: e.target,
       sourceHandle: e.sourceHandle,
@@ -119,7 +122,7 @@ function WorkflowCanvasInner({
 
   // ---- Edge changes ----
   const onEdgesChange = useCallback(
-    (changes: EdgeChange<Edge>[]) => {
+    (changes: EdgeChange<UIEdge>[]) => {
       setEdges((eds) => applyEdgeChanges(changes, eds));
     },
     [],
@@ -129,8 +132,9 @@ function WorkflowCanvasInner({
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!editable) return;
-      const newEdge: Edge = {
+      const newEdge: UIEdge = {
         id: crypto.randomUUID(),
+        type: "workflow",
         source: connection.source,
         target: connection.target,
         sourceHandle: connection.sourceHandle ?? undefined,
@@ -234,10 +238,11 @@ function WorkflowCanvasInner({
       return {
         ...edge,
         animated,
+        data: { ...edge.data, editable },
         style: stroke ? { stroke, strokeWidth: 2 } : undefined,
       };
     });
-  }, [edges, nodes, activeNodeIds]);
+  }, [edges, nodes, activeNodeIds, editable]);
 
   // ---- Save workflow structure to the server ----
   const save = useCallback(async () => {
@@ -307,6 +312,7 @@ function WorkflowCanvasInner({
         multiSelectionKeyCode={null}
         id={workflow.id}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={editable ? onEdgesChange : undefined}
         isValidConnection={isValidConnection}

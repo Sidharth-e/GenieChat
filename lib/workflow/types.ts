@@ -1,4 +1,4 @@
-import { Node } from "@xyflow/react";
+import { Edge, Node } from "@xyflow/react";
 import type { ConditionBranches } from "./condition";
 
 // Node kind enum — each value represents a distinct workflow node type
@@ -144,6 +144,11 @@ export type NodeRuntimeField = {
 export type UINode<Kind extends NodeKind = NodeKind> = Node<
   Extract<WorkflowNodeData, { kind: Kind }> & { runtime?: NodeRuntimeField }
 >;
+
+// Canvas-local edge flags. `editable` gates the delete affordance and is injected
+// by the canvas when it styles edges — it is never persisted, because `save`
+// maps the raw edge state rather than the styled copy the renderer receives.
+export type UIEdge = Edge<{ editable?: boolean }>;
 
 // Execution history record
 export type NodeRuntimeHistory = {
