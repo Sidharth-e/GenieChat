@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 import { usePendingMessageStore, useThreadsStore } from "@/lib/stores";
 import { useAuthStore } from "@/lib/auth";
 import { useAgents } from "@/hooks/use-agents-queries";
@@ -154,20 +155,35 @@ export function useConversationShell(
 
   const handleRegenerate = React.useCallback(
     async (assistantMessageId: string) => {
-      if (isLoading) return;
-      if (assistantMessageId !== lastAssistantMessageId) return;
+      // Every guard below is a no-op the user can observe, so each says why
+      // rather than returning silently — a regenerate that does nothing and
+      // explains nothing is indistinguishable from a broken button.
+      if (isLoading) {
+        toast.info("A response is still streaming.");
+        return;
+      }
+      if (assistantMessageId !== lastAssistantMessageId) {
+        toast.error("Only the latest reply can be regenerated.");
+        return;
+      }
 
       const assistantIndex = messages.findIndex(
         (message) => message.id === assistantMessageId,
       );
-      if (assistantIndex <= 0) return;
+      if (assistantIndex <= 0) {
+        toast.error("There is no prompt to regenerate a reply from.");
+        return;
+      }
 
       const previousUserMessage = messages
         .slice(0, assistantIndex)
         .reverse()
         .find((message) => message.role === "user");
       const previousPrompt = previousUserMessage?.content?.trim();
-      if (!previousPrompt) return;
+      if (!previousPrompt) {
+        toast.error("There is no prompt to regenerate a reply from.");
+        return;
+      }
 
       setRegeneratingMessageId(assistantMessageId);
       try {

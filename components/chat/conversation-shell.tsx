@@ -53,6 +53,12 @@ interface ConversationShellProps {
 
   /** The configured <ChatInput /> for this surface. */
   composer: React.ReactNode;
+  /**
+   * The surface's stream error, if any. Rendered above the composer because no
+   * surface showed it before — a rejected stream (a rate limit, a refused
+   * regeneration) looked identical to a control that did nothing.
+   */
+  error?: string | null;
   /** `sidePanel` adds the multi-agent column wrapper; `plain` is a flex column. */
   layout?: "plain" | "sidePanel";
 
@@ -81,6 +87,7 @@ export function ConversationShell({
   slotAfterMessages,
   overlay,
   composer,
+  error,
   layout = "plain",
   scrollRef,
   bottomRef,
@@ -107,6 +114,7 @@ export function ConversationShell({
               onRegenerate={handlers.onRegenerate}
               canRegenerate={
                 message.role === "assistant" &&
+                !isLoading &&
                 message.id === lastAssistantMessageId &&
                 (handlers.canRegenerate?.(message) ?? true)
               }
@@ -145,7 +153,17 @@ export function ConversationShell({
       </main>
 
       <div className="px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3">
-        <div className="mx-auto max-w-3xl">{composer}</div>
+        <div className="mx-auto max-w-3xl">
+          {error && (
+            <div
+              role="alert"
+              className="mb-2 rounded-md border border-[var(--red-border)] bg-[var(--red-bg)] px-3 py-2 text-sm text-[var(--red)]"
+            >
+              {error}
+            </div>
+          )}
+          {composer}
+        </div>
       </div>
     </>
   );

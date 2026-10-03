@@ -14,6 +14,8 @@ import { chatService } from "@/lib/langchain/chat-service";
 import { getModelMaxInputChars } from "@/lib/langchain/model-config";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
+import { hasReachedVersionLimit } from "@/lib/conversation";
+import { MAX_MESSAGE_VERSIONS } from "@/constants/config";
 import { storageRefSchema } from "@/lib/storage/ref";
 import { z } from "zod";
 import { generateId } from "../utils";
@@ -415,6 +417,17 @@ export class StreamPipeline {
           "Only the latest assistant message can be regenerated",
           400,
           "INVALID_REQUEST",
+        );
+      }
+
+      // The cap is refused before the model is called, not after: an appended
+      // version the store would reject is a full generation spent for nothing.
+      // A message with no stored versions renders one, so it counts as one.
+      if (hasReachedVersionLimit(targetMessage.versions?.length ?? 1)) {
+        throw new ApiError(
+          `This message already has the maximum of ${MAX_MESSAGE_VERSIONS} versions`,
+          400,
+          "VERSION_LIMIT_REACHED",
         );
       }
 

@@ -1,4 +1,5 @@
 import type { Message } from "@/lib/types";
+import { MAX_MESSAGE_VERSIONS } from "@/constants/config";
 
 /**
  * The id of the newest assistant message, or null when there is none.
@@ -11,6 +12,17 @@ export function lastAssistantMessageId(messages: Message[]): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Whether a message has as many versions as it may hold.
+ *
+ * A message with no stored versions renders one synthesized version, so it
+ * counts as one. Both the server check and the UI gate read this, which is what
+ * keeps them from disagreeing about where the boundary is.
+ */
+export function hasReachedVersionLimit(versionCount: number): boolean {
+  return Math.max(versionCount, 1) >= MAX_MESSAGE_VERSIONS;
 }
 
 export interface LoadingMessageInput {

@@ -81,6 +81,7 @@ export function MultiAgentChatConversation({
       showStandaloneLoader={shell.showStandaloneLoader}
       loadingMessage={shell.loadingMessage}
       handlers={shell.handlers}
+      error={chat.error}
       composer={
         <ChatInput
           value={chat.input}

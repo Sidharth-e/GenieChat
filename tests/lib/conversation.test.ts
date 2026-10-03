@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   lastAssistantMessageId,
   buildLoadingMessage,
+  hasReachedVersionLimit,
   shouldShowStandaloneLoader,
 } from "@/lib/conversation";
+import { MAX_MESSAGE_VERSIONS } from "@/constants/config";
 import type { Message } from "@/lib/types";
 
 function messageFactory(overrides: Partial<Message> = {}): Message {
@@ -132,5 +134,24 @@ describe("shouldShowStandaloneLoader", () => {
         lastMessage: messageFactory({ role: "assistant" }),
       }),
     ).toBe(false);
+  });
+});
+
+describe("hasReachedVersionLimit", () => {
+  it("is false below the cap", () => {
+    expect(hasReachedVersionLimit(1)).toBe(false);
+    expect(hasReachedVersionLimit(MAX_MESSAGE_VERSIONS - 1)).toBe(false);
+  });
+
+  it("is true at the cap", () => {
+    expect(hasReachedVersionLimit(MAX_MESSAGE_VERSIONS)).toBe(true);
+  });
+
+  it("is true above the cap", () => {
+    expect(hasReachedVersionLimit(MAX_MESSAGE_VERSIONS + 1)).toBe(true);
+  });
+
+  it("treats a message with no stored versions as holding one", () => {
+    expect(hasReachedVersionLimit(0)).toBe(false);
   });
 });

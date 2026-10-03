@@ -2,6 +2,20 @@ export const DOCUMENT_MAX_UPLOAD_DOCUMENT_SIZE = 20 * 1024 * 1024; // 20MB
 export const RAG_MAX_UPLOAD_DOCUMENT_SIZE = 100000000; // 100MB
 
 /**
+ * How many versions one assistant message may accumulate.
+ *
+ * Regeneration appends a version rather than replacing one, so without a bound
+ * a single message grows without limit — and every version is carried in the
+ * thread document, re-read on each load. Five is the working number: enough to
+ * explore alternates without turning one turn into an unbounded record.
+ *
+ * Enforced server-side in the stream pipeline (the authority, and the place
+ * that avoids spending model tokens on a refused regeneration) and mirrored in
+ * the UI, which disables the control at the boundary.
+ */
+export const MAX_MESSAGE_VERSIONS = 5;
+
+/**
  * Approximate token ceiling for a document extract inlined into a chat turn.
  *
  * The chat path inlines the whole extract under `--- Attached Documents ---`

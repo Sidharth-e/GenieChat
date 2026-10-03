@@ -145,6 +145,7 @@ export function SwarmChatConversation({ threadId }: SwarmChatConversationProps) 
       loadingMessage={shell.loadingMessage}
       overlay={overlay}
       slotBeforeMessages={roster}
+      error={chat.error}
       composer={
         <ChatInput
           value={chat.input}

@@ -461,6 +461,7 @@ export function ChatConversation({
         ...shell.handlers,
         onArenaVote: voteArenaWinner,
       }}
+      error={chatHook.error}
       slotAfterMessages={
         <>
           {researchState === "PLANNING" && (

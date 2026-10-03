@@ -2,6 +2,7 @@
 
 import { logger } from "@/lib/logger";
 import * as React from "react";
+import { toast } from "sonner";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
@@ -33,6 +34,12 @@ interface MessageActionsProps {
   onRegenerate?: () => void | Promise<void>;
   canRegenerate?: boolean;
   isRegenerating?: boolean;
+  /**
+   * Why regeneration is unavailable, when it is. Present ⇒ the control renders
+   * disabled and carries the reason as its title, so the boundary is visible
+   * instead of the button silently doing nothing.
+   */
+  regenerateBlockedReason?: string;
   activeVersionIndex?: number;
   versionCount?: number;
   onVersionChange?: (delta: -1 | 1) => void;
@@ -50,6 +57,7 @@ export function MessageActions({
   onRegenerate,
   canRegenerate = false,
   isRegenerating = false,
+  regenerateBlockedReason,
   activeVersionIndex = 0,
   versionCount = 1,
   onVersionChange,
@@ -145,6 +153,7 @@ export function MessageActions({
       await onRegenerate();
     } catch (error) {
       logger.error("Error regenerating message:", error);
+      toast.error("Could not regenerate the response.");
     } finally {
       setIsRegeneratePending(false);
     }
@@ -152,7 +161,10 @@ export function MessageActions({
 
   const showRegenerate = canRegenerate && Boolean(onRegenerate);
   const regenerateDisabled =
-    !onRegenerate || isRegenerating || isRegeneratePending;
+    !onRegenerate ||
+    isRegenerating ||
+    isRegeneratePending ||
+    Boolean(regenerateBlockedReason);
   const hasMultipleVersions = versionCount > 1;
   const canGoPrev = activeVersionIndex > 0;
   const canGoNext = activeVersionIndex < versionCount - 1;
@@ -225,8 +237,8 @@ export function MessageActions({
               className="h-8 w-8 cursor-pointer rounded-lg text-tertiary/40 hover:text-tertiary hover:bg-tertiary/5"
               onClick={handleRegenerate}
               disabled={regenerateDisabled}
-              title="Regenerate response"
-              aria-label="Regenerate response"
+              title={regenerateBlockedReason ?? "Regenerate response"}
+              aria-label={regenerateBlockedReason ?? "Regenerate response"}
             >
               {isRegenerating || isRegeneratePending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

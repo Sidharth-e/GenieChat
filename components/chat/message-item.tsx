@@ -8,6 +8,8 @@ import { AttachedDocuments, AttachedImages } from "./message-attachments";
 import { ToolCallGroup } from "./tool-call-block";
 import { MessageContent } from "@/components/common/message-content";
 import { MessageActions } from "@/components/common/message-actions";
+import { hasReachedVersionLimit } from "@/lib/conversation";
+import { MAX_MESSAGE_VERSIONS } from "@/constants/config";
 import { DeepResearchReportCard } from "./deep-research-report-card";
 import { ChatLoadingIndicator } from "./chat-loading-indicator";
 import { ArenaComparisonView } from "./arena-comparison-view";
@@ -235,6 +237,9 @@ function MessageItemComponent({
     !displayMessage.images?.length &&
     !displayMessage.researchReport;
 
+  // The UI half of the version cap; the stream pipeline holds the authority.
+  const versionLimitReached = hasReachedVersionLimit(versions.length);
+
   if (shouldRenderInlineLoadingIndicator) {
     return (
       <ChatLoadingIndicator
@@ -445,6 +450,11 @@ function MessageItemComponent({
               }
               canRegenerate={canRegenerate && !isUser}
               isRegenerating={isRegenerating}
+              regenerateBlockedReason={
+                versionLimitReached
+                  ? `Maximum of ${MAX_MESSAGE_VERSIONS} versions reached`
+                  : undefined
+              }
               activeVersionIndex={clampIndex(visibleVersionIndex)}
               versionCount={versions.length}
               onVersionChange={(delta) => {
