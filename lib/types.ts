@@ -873,3 +873,25 @@ export interface ConversationState {
     feedback: "like" | "dislike" | null,
   ) => void;
 }
+
+// --- Scheduling Types ---
+
+/** What a schedule can point at. Mirrors `WebhookTarget` plus the kinds this subsystem adds. */
+export type TriggerTargetType = "workflow" | "agent" | "tool";
+
+export interface TriggerTarget {
+  type: TriggerTargetType;
+  id: string;
+}
+
+/**
+ * When a schedule fires.
+ *
+ * `cron` carries its own IANA zone rather than a fixed offset, so a schedule in a
+ * DST-observing zone does not drift an hour twice a year. `once` self-disables
+ * after it fires — the tick sets `enabled: false` — so it needs no separate
+ * "already ran" flag.
+ */
+export type ScheduleCadence =
+  | { kind: "cron"; expression: string; timezone: string }
+  | { kind: "once"; runAt: string };
