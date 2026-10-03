@@ -1,6 +1,6 @@
-import { z } from "zod";
 import { WorkflowStore } from "@/lib/mongodb/workflow-store";
 import { workflowExecutionService } from "@/lib/langchain/workflow-execution-service";
+import { workflowInputSchema } from "@/lib/schedules/input-schemas";
 import {
   registerExecutor,
   type ClaimedRun,
@@ -9,11 +9,11 @@ import {
 } from "@/lib/schedules/registry";
 
 /**
- * A scheduled workflow takes the same `query` the manual run does, so the
- * workflow's Input node reads it the same way. The legacy pulse hardcoded a
- * placeholder here; this is the field that replaces it.
+ * The schema lives in `input-schemas.ts` rather than here, because the editor
+ * builds its input form from the same object and cannot import this module --
+ * this one reaches the store and the model, which do not exist on the client.
  */
-const inputSchema = z.object({ message: z.string().min(1) });
+const inputSchema = workflowInputSchema;
 
 const workflowStore = new WorkflowStore();
 
