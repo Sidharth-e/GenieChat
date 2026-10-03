@@ -3,6 +3,7 @@
 import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react";
 import { NodeKind, type UINode } from "@/lib/workflow/types";
 import { allConditionBranches } from "@/lib/workflow/resolve";
+import { selectWorkflowEditable, useWorkflowEditorStore } from "@/lib/stores/workflow-editor";
 import { cn } from "@/lib/utils";
 import { Loader2, TriangleAlert, X } from "lucide-react";
 import { memo } from "react";
@@ -17,9 +18,14 @@ export const DefaultNode = memo(function DefaultNode({
   selected,
 }: Props) {
   const { setNodes, setEdges } = useReactFlow<UINode>();
+  const editable = useWorkflowEditorStore(selectWorkflowEditable);
 
+  // Input and Output are structural, so they stay; a read-only canvas offers no
+  // delete affordance at all, since `setNodes` would be dropped by onNodesChange.
   const isDeletable =
-    data.kind !== NodeKind.Input && data.kind !== NodeKind.Output;
+    editable &&
+    data.kind !== NodeKind.Input &&
+    data.kind !== NodeKind.Output;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -98,7 +104,8 @@ export const DefaultNode = memo(function DefaultNode({
           <Loader2 className="size-3.5 animate-spin shrink-0" />
         )}
 
-        {/* Delete button — shows on hover, not for Input/Output */}
+        {/* Delete button — shows on hover, only on an editable canvas and not
+            for the structural Input/Output nodes */}
         {isDeletable && (
           <button
             onClick={handleDelete}

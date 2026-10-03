@@ -1035,6 +1035,30 @@ code {
 .wf-node-blue { border-color: color-mix(in srgb, var(--blue) 30%, transparent); }
 .wf-node-green { border-color: color-mix(in srgb, var(--green) 30%, transparent); }
 
+/* Midpoint delete affordance for workflow edges — the node header's hover X,
+   positioned in the edge label renderer. */
+.wf-edge-delete {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+.wf-edge-delete:hover {
+  color: var(--red);
+  border-color: var(--red-border);
+  background: color-mix(in srgb, var(--red) 10%, var(--bg-panel));
+}
+
 .wf-node-header {
   display: flex;
   align-items: center;

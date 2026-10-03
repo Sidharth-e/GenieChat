@@ -2,13 +2,13 @@
 
 import { useReactFlow } from "@xyflow/react";
 import { NodeKind, type UINode, type HttpNodeData } from "@/lib/workflow/types";
+import { selectWorkflowEditable, useWorkflowEditorStore } from "@/lib/stores/workflow-editor";
 import { NodeIcon } from "./node-icon";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { X, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import { InputNodeConfig } from "./node-config/input-node-config";
 import { OutputNodeConfig } from "./node-config/output-node-config";
 import { LLMNodeConfig } from "./node-config/llm-node-config";
@@ -20,14 +20,14 @@ import { CodeNodeConfig } from "./node-config/code-node-config";
 
 export function SelectedNodeConfig({ node }: { node: UINode }) {
   const { updateNodeData, setNodes, setEdges } = useReactFlow<UINode>();
+  const editable = useWorkflowEditorStore(selectWorkflowEditable);
 
-  const isDeletable = node.data.kind !== NodeKind.Input && node.data.kind !== NodeKind.Output;
+  const isDeletable =
+    editable &&
+    node.data.kind !== NodeKind.Input &&
+    node.data.kind !== NodeKind.Output;
 
   const handleDelete = () => {
-    if (!isDeletable) {
-      toast.warning("This node cannot be deleted");
-      return;
-    }
     setNodes((nds) => nds.filter((n) => n.id !== node.id));
     setEdges((eds) => eds.filter((e) => e.source !== node.id && e.target !== node.id));
   };
