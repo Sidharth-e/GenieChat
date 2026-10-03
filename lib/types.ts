@@ -812,6 +812,108 @@ export interface ScancodeOptions {
   textxalign?: "center";
 }
 
+// Data chart fence (```chart)
+
+/** The `type` values a ```` ```chart ```` fence accepts. */
+export type ChartType = "line" | "bar" | "area" | "pie" | "composed";
+
+/** How one series is drawn. A `composed` chart mixes these. */
+export type ChartSeriesType = "line" | "bar" | "area";
+
+/** The recharts curve interpolations this fence accepts. */
+export type ChartCurve =
+  | "basis"
+  | "basisClosed"
+  | "basisOpen"
+  | "linear"
+  | "linearClosed"
+  | "natural"
+  | "monotoneX"
+  | "monotoneY"
+  | "monotone"
+  | "step"
+  | "stepBefore"
+  | "stepAfter";
+
+/** One raw series entry, exactly as it appears in the fence body. */
+export interface ChartSeriesConfig {
+  dataKey?: string;
+  name?: string;
+  color?: string;
+  stackId?: string;
+  /** The curve interpolation. Named `type` in the fence, as recharts names it. */
+  type?: string;
+  /** The mark, for a `composed` chart. */
+  chartType?: string;
+  /**
+   * Accepted and discarded. The fence never draws a second y-axis: the two
+   * scales' alignment is arbitrary, so a dual-axis chart invents a correlation
+   * the data does not contain.
+   */
+  yAxisId?: string | number;
+}
+
+/** A parsed ```` ```chart ```` fence body. Every field is optional but `type`. */
+export interface ChartConfig {
+  type?: string;
+  title?: string;
+  /**
+   * Accepted and discarded. The title already names the chart, and a
+   * description only restates the message the chart sits inside — so fences
+   * written while it was drawn still parse, they just lose the second line.
+   */
+  description?: string;
+  data?: unknown;
+  xAxisKey?: string;
+  series?: ChartSeriesConfig[];
+}
+
+/** One row of the fence's `data` array. */
+export type ChartDataPoint = Record<string, unknown>;
+
+/** A series normalized for rendering: every field resolved, none optional. */
+export interface ChartSeries {
+  dataKey: string;
+  name: string;
+  color: string;
+  type: ChartSeriesType;
+  stackId?: string;
+  curve: ChartCurve;
+}
+
+/** One drawn slice of a pie. */
+export interface ChartPieSlice {
+  name: string;
+  value: number;
+  color: string;
+}
+
+/** What the renderer draws, once the fence body has been validated. */
+export interface ChartView {
+  type: ChartType;
+  title?: string;
+  data: ChartDataPoint[];
+  xAxisKey: string;
+  /** Cartesian series. Empty for a pie. */
+  series: ChartSeries[];
+  /** Pie slices. Empty for every other type. */
+  slices: ChartPieSlice[];
+  /** Whether long category labels force the x ticks onto an angle. */
+  angledTicks: boolean;
+  /** Whether to draw a legend. A single series needs none. */
+  showLegend: boolean;
+}
+
+/**
+ * The three outcomes of reading a fence body. `empty` is a body that is not
+ * JSON at all — mid-stream it is still arriving, so a skeleton is honest;
+ * `error` is a body that parsed but cannot be drawn.
+ */
+export type ChartParseResult =
+  | { status: "empty" }
+  | { status: "error"; message: string }
+  | { status: "ready"; view: ChartView };
+
 /** The subset of chat-hook state the conversation shell renders. */
 export interface ConversationState {
   messages: Message[];

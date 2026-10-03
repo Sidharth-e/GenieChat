@@ -22,7 +22,12 @@ const Mermaid = dynamic(
 
 const ChartRenderer = dynamic(
   () => import("@/components/chat/chart-renderer").then((mod) => ({ default: mod.ChartRenderer })),
-  { loading: () => <div className="animate-pulse rounded-xl bg-card-bg border border-card-border p-6 my-6 h-40" /> },
+  {
+    // Recharts measures its own container, so it cannot render on the server —
+    // the same reason the scan-code renderer below is client-only.
+    ssr: false,
+    loading: () => <div className="animate-pulse rounded bg-muted my-5 h-60" />,
+  },
 );
 
 const ScancodeRenderer = dynamic(
@@ -150,7 +155,12 @@ export function CodeBlock({
   }
 
   if (language === "chart") {
-    return <ChartRenderer content={String(children).replace(/\n$/, "")} />;
+    return (
+      <ChartRenderer
+        content={String(children).replace(/\n$/, "")}
+        isStreaming={isStreaming}
+      />
+    );
   }
 
   // `barcode` is the fence's former name, kept so threads written before the

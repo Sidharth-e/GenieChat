@@ -357,7 +357,7 @@ function MessageItemComponent({
                   aria-label="Expand user message"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-4 whitespace-pre-wrap wrap-break-words text-sm leading-6 text-foreground">
+                    <p className="line-clamp-4 whitespace-pre-wrap wrap-break-word text-sm leading-6 text-foreground">
                       {userMessagePreview}
                     </p>
                     <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-tertiary/80">

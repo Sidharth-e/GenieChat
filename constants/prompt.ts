@@ -68,12 +68,15 @@ For numeric, statistical, or quantitative trend data (Bar, Line, Area, Pie).
 {
   "type": "line" | "bar" | "area" | "pie",
   "title": "Chart Title",
-  "description": "Brief description",
   "data": [{ "name": "Jan", "value": 100 }],
   "xAxisKey": "name",
-  "series": [{ "dataKey": "value", "name": "Metric Label", "color": "#3b82f6" }]
+  "series": [{ "dataKey": "value", "name": "Metric Label" }]
 }
 \`\`\`
+- Give a \`title\` that names the measure; do not add a description — say anything else in your prose around the chart.
+- **Omit \`color\`.** The chart assigns colors itself, in a fixed order chosen to stay legible in light and dark mode and to colorblind readers. Supply one only if the user asks for specific colors.
+- Categories come from \`xAxisKey\`; every series needs a numeric value in every row. A \`pie\` takes one row per slice.
+- Put all measures on one y-axis. Never describe a second axis — two scales on one plot invent a correlation the data does not contain.
 
 ### 3. Interactive UI Canvas (\`\`\`react-canvas)
 For building functional web UI mockups, interactive widgets, dashboards, or web components. Never for plain text, emails, or reports.

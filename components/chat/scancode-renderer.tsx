@@ -174,7 +174,7 @@ export function ScancodeRenderer({
 
       {view.caption && (
         <div className="px-4 py-2.5 border-t border-card-border">
-          <p className="text-sm text-text-secondary whitespace-pre-wrap wrap-break-words">
+          <p className="text-sm text-text-secondary whitespace-pre-wrap wrap-break-word">
             {view.caption}
           </p>
         </div>

@@ -35,7 +35,7 @@ function MessageContentBase({
             transition={{ duration: 0.15, ease: "easeOut" }}
           >
             {isUser ? (
-              <div className="whitespace-pre-wrap wrap-break-words">
+              <div className="whitespace-pre-wrap wrap-break-word">
                 {agentNames && agentNames.length > 0
                   ? (() => {
                       const escaped = agentNames
