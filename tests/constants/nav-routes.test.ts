@@ -63,7 +63,7 @@ describe("rail config", () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
   it("flyout groups hold the secondary routes", () => {
-    expect(BUILD_ITEMS.map((i) => i.href)).toEqual(["/auto", "/tools", "/webhooks"]);
+    expect(BUILD_ITEMS.map((i) => i.href)).toEqual(["/auto", "/tools", "/schedules", "/webhooks"]);
     expect(LIBRARY_ITEMS.map((i) => i.href)).toEqual(["/artifacts", "/memories"]);
   });
 });

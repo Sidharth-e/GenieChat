@@ -6,6 +6,7 @@ import {
   History,
   Zap,
   Wrench,
+  CalendarClock,
   Webhook,
   FileBox,
   Brain,
@@ -45,6 +46,7 @@ export const RAIL_HISTORY_ITEM: NavItem = {
 export const BUILD_ITEMS: NavItem[] = [
   { href: "/auto", icon: Zap, label: "Auto" },
   { href: "/tools", icon: Wrench, label: "Tools" },
+  { href: "/schedules", icon: CalendarClock, label: "Schedules" },
   { href: "/webhooks", icon: Webhook, label: "Webhooks" },
 ];
 
