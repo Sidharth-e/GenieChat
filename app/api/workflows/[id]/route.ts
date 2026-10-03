@@ -7,6 +7,7 @@ import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
 import { CronExpressionParser } from "cron-parser";
 import { validateWorkflowSteps } from "@/lib/workflow/validation";
+import { nextRunAtFor } from "@/lib/workflow/schedule";
 
 const workflowStore = isDatabaseConfigured() ? new WorkflowStore() : null;
 
@@ -109,13 +110,26 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const richWorkflow = await workflowStore.getRichWorkflow(id);
     if (richWorkflow) {
       if (richWorkflow.userId !== user.id) return api.forbidden();
-      const { name, description, isPublished, visibility, icon } = body;
+
+      const { name, description, isPublished, visibility, icon, trigger } = body;
+
+      let nextRunAt: string | undefined;
+      if (trigger !== undefined) {
+        try {
+          nextRunAt = nextRunAtFor(trigger, new Date()) ?? undefined;
+        } catch {
+          return api.badRequest("Invalid cron expression");
+        }
+      }
+
       const updated = await workflowStore.updateRichWorkflow(id, {
         name,
         description,
         isPublished,
         visibility,
         icon,
+        trigger,
+        nextRunAt,
       });
       if (!updated) return api.serverError("Failed to update workflow");
       return api.success(updated);
