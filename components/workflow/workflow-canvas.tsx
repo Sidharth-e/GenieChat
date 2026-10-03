@@ -22,7 +22,6 @@ import { toast } from "sonner";
 import { useTheme } from "@/components/providers/theme-provider";
 import { NodeKind, type UINode, type WorkflowNodeData } from "@/lib/workflow/types";
 import type { RichWorkflow, RichWorkflowNode, RichWorkflowEdge } from "@/lib/types";
-import { wouldCreateCycle } from "@/lib/workflow/cycle-detection";
 import { createNodeData } from "@/lib/workflow/create-node";
 import { useWorkflowEditorStore } from "@/lib/stores/workflow-editor";
 import { DefaultNode } from "@/components/workflow/default-node";
@@ -146,20 +145,21 @@ function WorkflowCanvasInner({
   const isValidConnection = useCallback(
     (connection: Edge | Connection) => {
       if (!editable) return false;
+      // Self-loops stay forbidden: a node that depends on its own output is a
+      // mistake, not a loop. Longer cycles are allowed — LangGraph supports
+      // them, and `WORKFLOW_RECURSION_LIMIT` stops the ones that never exit.
       if (connection.source === connection.target) return false;
-      const conn: Connection = {
-        source: connection.source,
-        target: connection.target,
-        sourceHandle: connection.sourceHandle ?? null,
-        targetHandle: connection.targetHandle ?? null,
-      };
-      const existingConnections: Connection[] = edges.map((e) => ({
-        source: e.source,
-        target: e.target,
-        sourceHandle: e.sourceHandle ?? null,
-        targetHandle: e.targetHandle ?? null,
-      }));
-      return !wouldCreateCycle(conn, existingConnections);
+
+      // A condition branch routes to exactly one node; the branch's target is
+      // what the graph builder reads back. Every other source handle may fan
+      // out to as many nodes as the user wants.
+      const sourceHandle = connection.sourceHandle;
+      if (sourceHandle && sourceHandle !== "right") {
+        return !edges.some(
+          (e) => e.source === connection.source && e.sourceHandle === sourceHandle,
+        );
+      }
+      return true;
     },
     [editable, edges],
   );

@@ -2,6 +2,7 @@
 
 import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react";
 import { NodeKind, type UINode } from "@/lib/workflow/types";
+import { allConditionBranches } from "@/lib/workflow/resolve";
 import { cn } from "@/lib/utils";
 import { Loader2, TriangleAlert, X } from "lucide-react";
 import { memo } from "react";
@@ -51,17 +52,37 @@ export const DefaultNode = memo(function DefaultNode({
         />
       )}
 
-      {/* Right handle (source) — not on Output, Note, or Condition */}
-      {![NodeKind.Note, NodeKind.Output, NodeKind.Condition].includes(
-        data.kind,
-      ) && (
-        <Handle
-          id="right"
-          type="source"
-          position={Position.Right}
-          isConnectable={isConnectable}
-          className="!w-3 !h-3 !border-2 !border-background !bg-primary"
-        />
+      {/* Right handles (source) */}
+      {data.kind === NodeKind.Condition ? (
+        // One handle per branch, with the handle id set to the branch's own id.
+        // That id is what lands in the edge's `sourceHandle`, which is what
+        // `conditionEdgeTargets` reads back when the graph is built.
+        <div className="absolute -right-1 top-1/2 flex -translate-y-1/2 flex-col gap-3">
+          {allConditionBranches(data.branches).map((branch) => (
+            <div key={branch.id} className="relative flex items-center justify-end">
+              <span className="mr-2 whitespace-nowrap text-[10px] font-medium uppercase wf-text-faint">
+                {branch.type === "elseIf" ? "else if" : branch.type}
+              </span>
+              <Handle
+                id={branch.id}
+                type="source"
+                position={Position.Right}
+                isConnectable={isConnectable}
+                className="!static !h-3 !w-3 !transform-none !border-2 !border-background !bg-primary"
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        ![NodeKind.Note, NodeKind.Output].includes(data.kind) && (
+          <Handle
+            id="right"
+            type="source"
+            position={Position.Right}
+            isConnectable={isConnectable}
+            className="!w-3 !h-3 !border-2 !border-background !bg-primary"
+          />
+        )
       )}
 
       {/* Header */}
