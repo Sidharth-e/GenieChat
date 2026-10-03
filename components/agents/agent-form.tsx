@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { Agent, AgentDocument, AgentSkill } from "@/lib/types";
 import { useMCPStore } from "@/lib/stores";
 import { useTools } from "@/hooks/use-tools-queries";
+import { TargetSchedules } from "@/components/schedules/target-schedules";
 import { DocumentUploadSection } from "./document-upload-section";
 import { useRouter } from "next/navigation";
 import {
@@ -634,6 +635,13 @@ export function AgentForm({
                 />
               </div>
             </section>
+
+            {/* Schedules (edit mode only) */}
+            {initialData?.id && (
+              <div className="mt-8 border-t border-card-border pt-6">
+                <TargetSchedules targetType="agent" targetId={initialData.id} />
+              </div>
+            )}
           </div>
         </main>
       </div>
