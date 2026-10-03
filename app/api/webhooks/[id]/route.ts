@@ -21,8 +21,10 @@ async function resolveTargetName(
   targetId: string,
 ): Promise<string | undefined> {
   if (targetType === "workflow" && workflowStore) {
-    const workflow = await workflowStore.getWorkflow(targetId);
-    return workflow?.name;
+    const rich = await workflowStore.getRichWorkflow(targetId);
+    if (rich) return rich.name;
+    const legacy = await workflowStore.getWorkflow(targetId);
+    return legacy?.name;
   }
   if (targetType === "agent" && agentStore) {
     const agent = await agentStore.getAgent(targetId);

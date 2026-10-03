@@ -1,6 +1,6 @@
 import "server-only";
 import { logger } from "@/lib/logger";
-import { Webhook, WebhookInvocation, Agent, ToolSecret, Message } from "@/lib/types";
+import { Webhook, WebhookInvocation, ToolSecret, Message } from "@/lib/types";
 import { WebhookStore } from "@/lib/mongodb/webhook-store";
 import { WorkflowStore } from "@/lib/mongodb/workflow-store";
 import { AgentStore } from "@/lib/mongodb/agent-store";
@@ -12,7 +12,6 @@ import { agentService } from "@/lib/langchain/agent-service";
 import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import { resolveMCPServerSecrets } from "@/lib/mcp/resolve-mcp-secrets";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
-import { validateWorkflowSteps } from "@/lib/workflow/validation";
 import { generateId } from "@/lib/utils";
 
 const webhookStore = isDatabaseConfigured() ? new WebhookStore() : null;
@@ -67,84 +66,25 @@ async function executeWorkflowTarget(
   invocation: WebhookInvocation,
   message: string,
 ): Promise<void> {
-  if (!workflowStore || !agentStore || !mcpStore || !webhookStore) {
+  if (!workflowStore || !webhookStore) {
     throw new Error("Database not configured");
   }
 
-  // Try step-based workflow first, then rich workflow
-  const workflow = await workflowStore.getWorkflow(webhook.target.id);
-
+  const workflow = await workflowStore.getRichWorkflow(webhook.target.id);
   if (!workflow) {
-    const richWorkflow = await workflowStore.getRichWorkflow(webhook.target.id);
-    if (!richWorkflow) {
-      throw new Error(`Workflow ${webhook.target.id} not found`);
-    }
-
-    const query: Record<string, unknown> = { input: message };
-    const stream = workflowExecutionService.executeRichWorkflow({
-      workflow: richWorkflow,
-      query,
-    });
-
-    let executionId = "";
-    for await (const event of stream) {
-      if (event.eventType === "WORKFLOW_START" && event.executionId) {
-        executionId = event.executionId;
-        await webhookStore.updateInvocation(invocation.id, webhook.userId, {
-          status: "running",
-          executionId,
-        });
-      }
-    }
-
-    await webhookStore.updateInvocation(invocation.id, webhook.userId, {
-      status: "completed",
-      executionId,
-      completedAt: new Date().toISOString(),
-      durationMs: Date.now() - new Date(invocation.triggeredAt).getTime(),
-    });
-    return;
+    throw new Error(`Workflow ${webhook.target.id} not found`);
   }
 
-  // Step-based workflow
-  const validation = validateWorkflowSteps(workflow.steps);
-  if (!validation.valid) {
-    throw new Error(`Invalid workflow steps: ${validation.errors[0]}`);
-  }
-
-  const agentMap = new Map<string, Agent>();
-  for (const step of workflow.steps) {
-    const stepAgentId = step.agentId?.trim();
-    if (!stepAgentId) throw new Error(`Step "${step.name}" missing agent`);
-    if (!agentMap.has(stepAgentId)) {
-      const agent = await agentStore.getAgent(stepAgentId);
-      if (!agent) throw new Error(`Agent "${stepAgentId}" not found`);
-      agentMap.set(stepAgentId, agent);
-    }
-  }
-
-  const allMcpServers = await mcpStore.getMCPServers(webhook.userId);
-  const enabledMcpServers = allMcpServers.filter((s) => s.enabled);
-  const secretMap = await loadUserSecrets(webhook.userId);
-  const resolvedMcpServers = resolveMCPServerSecrets(
-    enabledMcpServers,
-    secretMap,
-  );
-
-  const stream = workflowExecutionService.executeWorkflow({
-    workflowId: workflow.id,
-    workflowName: workflow.name,
-    userId: webhook.userId,
-    steps: workflow.steps,
-    agents: agentMap,
-    initialMessage: message,
-    mcpServers: resolvedMcpServers,
+  const query: Record<string, unknown> = { message };
+  const stream = workflowExecutionService.executeRichWorkflow({
+    workflow,
+    query,
   });
 
   let executionId = "";
   for await (const event of stream) {
-    if (event.type === "workflow_start" && event.finalResult) {
-      executionId = event.finalResult;
+    if (event.eventType === "WORKFLOW_START" && event.executionId) {
+      executionId = event.executionId;
       await webhookStore.updateInvocation(invocation.id, webhook.userId, {
         status: "running",
         executionId,
