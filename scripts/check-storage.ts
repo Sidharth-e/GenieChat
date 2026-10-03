@@ -79,8 +79,8 @@ async function main() {
   report("deleteObject", first.status === "OK", first.status);
 
   // S3's DeleteObject is idempotent: a key that is not there still answers 204,
-  // so this reports OK rather than NOT_FOUND. Asserting NOT_FOUND here would be
-  // asserting Azure's DeleteBlob semantics, which S3 does not have.
+  // so this reports OK rather than NOT_FOUND. Asserting NOT_FOUND here would
+  // assert semantics S3 does not have.
   const second = await deleteObject(clients, put.response);
   report("deleteObject on missing → OK (S3 delete is idempotent)", second.status === "OK", second.status);
 

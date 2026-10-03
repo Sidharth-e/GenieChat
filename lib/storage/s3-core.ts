@@ -41,9 +41,8 @@ export interface StorageClients {
  * True for both a missing object and a missing bucket.
  *
  * The AWS SDK surfaces 404 as `NotFound` (from the head path, e.g. `HeadBucket`)
- * or `NoSuchKey` (from GetObject); `$metadata.httpStatusCode` is the fallback for
- * a response shape we have not seen. This replaces the Azure
- * `RestError.statusCode === 404` test.
+ * or `NoSuchKey` (from GetObject); `$metadata.httpStatusCode` is the fallback
+ * for a response shape we have not seen.
  *
  * A missing *object* never reaches it from a delete; a missing *bucket* does.
  * S3's `DeleteObject` is idempotent and answers 204 for a key that is not there,
@@ -210,9 +209,8 @@ export const getObject = async (
       };
     }
 
-    // In Node the SDK returns a Readable, which is what the consumers of the
-    // old Azure stream expect (`for await (const chunk of …)`, and
-    // `streamToString`'s `.on("data")`).
+    // In Node the SDK returns a Readable, which is what the consumers expect
+    // (`for await (const chunk of …)`, and `streamToString`'s `.on("data")`).
     return {
       status: "OK",
       response: response.Body as unknown as NodeJS.ReadableStream,
@@ -274,8 +272,7 @@ export const getObjectAsBase64 = async (
  *
  * A TTL beyond the SigV4 maximum throws rather than being capped. Presigning
  * also throws rather than returning a result, because every caller needs a URL
- * and has no useful degraded value — the same contract the synchronous Azure
- * `GenerateBlobSasUrl` had.
+ * and has no useful degraded value.
  */
 export const presignGet = async (
   clients: StorageClients,

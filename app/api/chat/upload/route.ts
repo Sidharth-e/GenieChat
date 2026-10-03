@@ -121,10 +121,9 @@ export async function POST(request: NextRequest) {
             // The ref is what the client sends back and what gets persisted.
             ref: uploadResult.response,
             // Signed for immediate preview only. The client holds it in the
-            // draft store's localStorage, as the Azure SAS URL it replaces did,
-            // and sends the whole attachment back on the next submit -- the zod
-            // attachment schema strips this field on arrival, so it never
-            // reaches MongoDB.
+            // draft store's localStorage and sends the whole attachment back on
+            // the next submit -- the zod attachment schema strips this field on
+            // arrival, so it never reaches MongoDB.
             //
             // Presigning runs *after* a successful putObject, so a throw at this
             // line would leave an unreferenced object behind. It cannot throw:

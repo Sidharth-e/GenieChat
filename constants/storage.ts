@@ -22,11 +22,10 @@ export const ALL_STORAGE_BUCKETS: readonly StorageBucket[] =
 /**
  * Presigned-URL lifetimes in seconds.
  *
- * `max` is the SigV4 ceiling of 604800 (7 days) — S3 presigning cannot exceed
- * it, unlike the one-year Azure SAS URLs this replaces.
+ * `max` is the SigV4 ceiling of 604800 (7 days) — S3 presigning cannot exceed it.
  */
 export const STORAGE_TTL = {
-  /** Chat attachments and pending-attachment previews. Matches the old 24h SAS. */
+  /** Chat attachments and pending-attachment previews. */
   attachment: 60 * 60 * 24,
   /** Download-proxy redirects, which the browser follows immediately. */
   download: 60 * 60,

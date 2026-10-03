@@ -25,14 +25,13 @@ interface UploadedImageInput extends UploadedDocumentInput {
 /**
  * Validates a stored reference and confirms the user owns it.
  *
- * Replaces `parseAndValidateBlobReference`: the bucket allowlists and the
- * hostname check are gone because the ref names a bucket from a closed set
- * (`parseRef` rejects anything else), and ownership is a prefix test
- * (`isUserScopedKey`): keys written under this convention put the user id first,
- * so a ref whose first segment is not the caller's id is refused rather than
- * read. That test runs against refs arriving in the **request body** (`doc.ref`
- * and `img.ref` below), not only against refs this server minted — which is the
- * whole reason it exists.
+ * The bucket allowlists and hostname check are unnecessary: the ref names a
+ * bucket from a closed set (`parseRef` rejects anything else), and ownership is
+ * a prefix test (`isUserScopedKey`): keys written under this convention put the
+ * user id first, so a ref whose first segment is not the caller's id is refused
+ * rather than read. That test runs against refs arriving in the **request body**
+ * (`doc.ref` and `img.ref` below), not only against refs this server minted —
+ * which is the whole reason it exists.
  */
 function parseAndValidateRef(
   ref: string,
@@ -257,7 +256,7 @@ export async function processDocuments(
           const buffer = blobResult.response;
 
           // Plain-text bypass and binary parsing both live in the docling
-          // client now, so this path no longer needs to know the difference.
+          // client, so this path does not need to know the difference.
           const processResult = await convertDocument(
             buffer,
             doc.fileName,

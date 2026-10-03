@@ -8,8 +8,8 @@ import {
  * A reference to a stored object, shaped `s3://<bucket>/<key>`.
  *
  * This is the only form written to MongoDB. It is a locator, not a credential:
- * possessing one grants no access, unlike the signed Azure SAS URLs it
- * replaces, where a leaked database row was a leaked capability.
+ * possessing one grants no access — a leaked database row is not a leaked
+ * capability, because every read has to presign a fresh URL from the ref first.
  */
 export type StorageRef = string;
 

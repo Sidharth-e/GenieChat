@@ -46,10 +46,9 @@ export const CreateCitations = async (
             createdAt: new Date(),
             type: CHAT_CITATION_ATTRIBUTE,
             userId: currentUserId,
-            // The Azure hit carried the thread id in its `document.metadata`;
-            // `KnowledgeHit` does not, and a hit cannot know which thread asked
-            // for it. Callers that need a citation tied to its thread must pass
-            // it in rather than reading it off the hit.
+            // A `KnowledgeHit` carries no thread id — a hit cannot know which
+            // thread asked for it. Callers that need a citation tied to its
+            // thread must pass it in rather than reading it off the hit.
             chatThreadId: "",
         });
 

@@ -9,8 +9,8 @@
  * See docs/superpowers/specs/2026-09-24-docling-document-parsing-design.md §2.
  */
 
-/** The success payload. Mirrors the shape the Azure DI extraction returned, with
- *  the file name folded in so both call sites are served by one shape. */
+/** The success payload. Carries the file name alongside the extracted text so
+ *  both call sites are served by one shape. */
 export interface ConvertedDocument {
   /**
    * Docling's Markdown, wrapped as a single element so every existing
@@ -107,11 +107,11 @@ function countPages(document: DoclingConversionResponse["document"]): number {
     if (count > 0) return count;
   }
   // A sentinel beats failing an otherwise-good conversion over this count. The
-  // count is written by `CreateChatDocument` and reads nothing back: it is
-  // absent from the Azure AI Search index schema, so it cannot affect retrieval
-  // or ranking, and its only readers (`FindAllChatDocuments`,
-  // `FindChatDocumentWithName`) have no callers. A degraded count is therefore
-  // not merely cosmetic — it is currently unobservable. One of the two callers
+  // count is written by `CreateChatDocument` and reads nothing back: it never
+  // reaches the knowledge index, so it cannot affect retrieval or ranking, and
+  // its only readers (`FindAllChatDocuments`, `FindChatDocumentWithName`) have
+  // no callers. A degraded count is therefore not merely cosmetic — it is
+  // currently unobservable. One of the two callers
   // pays for it and drops it: the RAG path consumes `totalPages`, while the
   // chat path has no field for it in `DocumentReference` — so on the
   // latency-critical chat path the `json` export this count is derived from
@@ -193,14 +193,13 @@ export function mapConversionResponse(
 /**
  * Whether a file is plain text and so bypasses Docling entirely.
  *
- * The two extraction paths this replaces each carried their own test, and they
- * were not equivalent: the RAG path tested the name and the MIME type separately
- * and lowercased the type, while the chat path compared the type verbatim. This
- * is the union of both, and strictly wider than the chat path's — for a
- * mixed-case type with no matching extension, `isTextFile("notes", "Text/Plain")`
- * returns `true` where the chat path would have rejected it. The
- * case-insensitive test is the one kept deliberately, because text files
- * bypassing Docling is the desired outcome either way.
+ * The two tests this consolidates were not equivalent: the RAG path tested the
+ * name and the MIME type separately and lowercased the type, while the chat path
+ * compared the type verbatim. This is the union of both, and strictly wider than
+ * the chat path's — for a mixed-case type with no matching extension,
+ * `isTextFile("notes", "Text/Plain")` returns `true` where the chat path would
+ * have rejected it. The case-insensitive test is the one kept deliberately,
+ * because text files bypassing Docling is the desired outcome either way.
  */
 export function isTextFile(fileName: string, mimeType: string): boolean {
   return (

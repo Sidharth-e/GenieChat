@@ -125,9 +125,10 @@ const envSchema = z
     OLLAMA_BASE_URL: z.string().url().default("https://ollama.com"),
     OLLAMA_EMBEDDING_MODEL: z.string().default("nomic-embed-text"),
     // Only set this for embedding models that accept a custom output width.
-    // Must equal the Azure AI Search indexes' vectorSearchDimensions (1536),
-    // which means switching models requires recreating those indexes and
-    // re-embedding existing content — vectors from different models are not
+    // The store's width is fixed by `EMBEDDING_DIMENSIONS`
+    // (`constants/embeddings.ts`) — every vector column and index is built from
+    // it — so a model whose width differs requires changing that constant too
+    // and re-embedding existing content: vectors from different models are not
     // comparable even at the same width.
     OLLAMA_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
 
@@ -148,9 +149,8 @@ const envSchema = z
     NEXTAUTH_SECRET: z.string().trim().optional(),
 
     // Redis
-    // A single connection string carries everything the old AZURE_REDIS_* set
-    // encoded separately: `rediss://` selects TLS, and credentials in the
-    // userinfo become the AUTH password.
+    // One connection string carries it all: `rediss://` selects TLS, and
+    // credentials in the userinfo become the AUTH password.
     //
     // Blank normalises to `undefined` before URL validation, so `REDIS_URL=`
     // means "not configured" (rate limiting fails open) rather than a boot

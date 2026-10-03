@@ -26,8 +26,8 @@ export const RRF_K = 60;
 
 /**
  * HNSW parameters. m=16 / ef_construction=64 is pgvector's documented starting
- * point and is a better recall/latency trade than Azure's m=4 here because the
- * HNSW build happens once, offline.
+ * point, and the higher m is affordable here because the HNSW build happens
+ * once, offline.
  */
 export const HNSW_M = 16;
 export const HNSW_EF_CONSTRUCTION = 64;

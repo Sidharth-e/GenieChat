@@ -312,8 +312,8 @@ export function memorySeedLimit(top: number): number {
 }
 
 /**
- * Bound on the retrieval query string. Moved out of the store so the pure text
- * primitives can read it without importing the Azure module.
+ * Bound on the retrieval query string. Lives here rather than in the store so
+ * the pure text primitives can read it without importing IO.
  */
 export const MEMORY_MAX_QUERY_CHARS = 24_000;
 

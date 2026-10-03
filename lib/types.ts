@@ -207,9 +207,7 @@ export interface ChatAttachment {
    * every send, and the zod attachment schema strips it on arrival — which is
    * why it is never written to MongoDB. It is also held in the draft store's
    * browser localStorage (`lib/stores/draft-inputs.ts`, zustand `persist`), so
-   * it survives a reload and expires on its own; that is pre-existing behaviour,
-   * inherited from the 24h Azure SAS URL it replaces, and not a regression this
-   * change introduces.
+   * it survives a reload, and it expires on its own when the signature does.
    */
   previewUrl?: string;
   mimeType: string;

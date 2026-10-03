@@ -15,11 +15,11 @@ import {
  * aliases at build time and `vitest.setup.ts` mocks, but which does not resolve
  * at all for a plain Node process -- and it reaches `lib/env.ts`, which parses
  * the whole environment schema at first import. A bootstrap script that only
- * needs `MONGODB_URI` must not require the Azure AD and encryption keys
- * to be present, and must not depend on the app's lazy Mongo singleton having
- * been touched. The two values here are exactly the ones
- * `config.mongodb.uri` and `config.mongodb.databaseName` are built from,
- * including the `"geniechat"` default.
+ * needs `MONGODB_URI` must not require the production secrets the schema
+ * demands (for example `SECRET_ENCRYPTION_KEY`), and must not depend on the
+ * app's lazy Mongo singleton having been touched. The two values here are
+ * exactly the ones `config.mongodb.uri` and `config.mongodb.databaseName` are
+ * built from, including the `"geniechat"` default.
  *
  * `@/lib/mongodb/indexes` is importable precisely because it is pure data with
  * no `lib/env` import.

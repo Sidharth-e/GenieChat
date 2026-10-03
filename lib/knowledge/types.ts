@@ -37,9 +37,9 @@ export interface IndexChunksParams {
 }
 
 /**
- * The `CHAT_DOCUMENT` model, inherited from the retired Azure Search index
- * layer. The Mongo-layer shape is `ChatDocument` in `lib/mongodb/common.ts`;
- * this one is kept because the RAG services are written against it.
+ * The `CHAT_DOCUMENT` model. The Mongo-layer shape is `ChatDocument` in
+ * `lib/mongodb/common.ts`; this one is kept because the RAG services are
+ * written against it.
  */
 export interface ChatDocumentModel {
   id: string;
@@ -58,9 +58,8 @@ export interface ChatDocumentModel {
 }
 
 /**
- * `content` was `DocumentSearchResponse` — Azure's fat hit wrapper. It is a
- * `KnowledgeHit` now, singular: one citation holds one hit, and the wrapper's
- * only remaining content was the fields this interface already carries.
+ * `content` is a `KnowledgeHit`, singular: one citation holds one hit, and the
+ * fields a hit carries are exactly the ones this interface already declares.
  */
 export interface ChatCitationModel {
   id: string;
