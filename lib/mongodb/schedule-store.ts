@@ -11,7 +11,8 @@ import {
   type ScheduleRunDocument,
   type WithMongoId,
 } from "@/lib/mongodb/common";
-import { nextOccurrence } from "@/lib/schedules/cadence";
+import { logger } from "@/lib/logger";
+import { nextClaim } from "@/lib/schedules/cadence";
 import { reaperOutcome } from "@/lib/schedules/retry";
 import {
   SCHEDULE_LEASE_MS,
@@ -123,18 +124,34 @@ export class ScheduleStore {
 
     const claimed: Schedule[] = [];
     for (const candidate of candidates) {
-      const once = candidate.cadence.kind === "once";
-      const next = once ? null : nextOccurrence(candidate.cadence, now);
+      // Per-item, not per-loop. One stored cadence that no longer computes — a
+      // hand-edited document, a zone the parser rejects — used to throw out of
+      // this loop and reject the whole tick, which turned a single bad document
+      // into a 500 for every tenant on every request until somebody found it.
+      // Disabling the offender is what makes it visible; silently skipping it
+      // would leave it enabled and re-tried, and re-logged, every tick forever.
+      const outcome = nextClaim(candidate.cadence, now);
+      if (!outcome.ok) {
+        logger.error(
+          { scheduleId: candidate.id, cadence: candidate.cadence, err: outcome.message },
+          "schedule-cadence-uncomputable",
+        );
+        await this.scheduleCollection.updateOne(
+          { _id: candidate._id, enabled: true, nextRunAt: candidate.nextRunAt },
+          { $set: { enabled: false, updatedAt: nowISO } },
+        );
+        continue;
+      }
 
       const pre = await this.scheduleCollection.findOneAndUpdate(
         { _id: candidate._id, enabled: true, nextRunAt: candidate.nextRunAt },
         {
           $set: {
-            nextRunAt: next ? next.toISOString() : null,
+            nextRunAt: outcome.nextRunAt,
             lastRunAt: nowISO,
             updatedAt: nowISO,
             // A `once` schedule disables itself rather than being claimed again.
-            ...(once ? { enabled: false } : {}),
+            ...(outcome.disable ? { enabled: false } : {}),
           },
         },
         { returnDocument: "before" },
@@ -247,12 +264,21 @@ export class ScheduleStore {
    * run as a whole; the next attempt overwrites both. The lease is cleared
    * unconditionally — whatever the outcome, this run is no longer the one
    * holding it.
+   *
+   * The schedule's own `lastRunStatus` is written here too, because this is the
+   * only place a run reaches a state the caller can act on. It is a denormalised
+   * copy of the newest run's status, so a schedule list need not read the run
+   * collection to answer "what happened last time" — which is why it is written
+   * from the run's own `scheduleId` rather than passed in, and why a schedule
+   * whose runs are all deleted keeps its last-known status. `skippedRuns` is
+   * deliberately not reflected here: an overlap skip writes no run at all, and
+   * `skippedRuns` already surfaces it as its own counter.
    */
   async settleRun(runId: string, outcome: SettleOutcome): Promise<void> {
     const finishedAt = new Date().toISOString();
     const started = await this.runCollection.findOne(
       { _id: runId },
-      { projection: { startedAt: 1 } },
+      { projection: { startedAt: 1, scheduleId: 1 } },
     );
 
     const fields: Record<string, unknown> = {
@@ -278,6 +304,13 @@ export class ScheduleStore {
       { _id: runId },
       { $set: dropUndefinedFields(fields) },
     );
+
+    if (started?.scheduleId) {
+      await this.scheduleCollection.updateOne(
+        { _id: started.scheduleId },
+        { $set: { lastRunStatus: outcome.status, updatedAt: finishedAt } },
+      );
+    }
   }
 
   /**

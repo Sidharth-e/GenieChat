@@ -273,9 +273,9 @@ describe("INDEX_SPECS", () => {
         collection: config.mongodb.collections.scheduleRuns,
         keys: { status: 1, leaseExpiresAt: 1 },
       },
-      scheduleRuns_scheduleId_status_createdAt: {
+      scheduleRuns_scheduleId_createdAt: {
         collection: config.mongodb.collections.scheduleRuns,
-        keys: { scheduleId: 1, status: 1, createdAt: -1 },
+        keys: { scheduleId: 1, createdAt: -1 },
       },
       scheduleRuns_userId_createdAt: {
         collection: config.mongodb.collections.scheduleRuns,

@@ -1,6 +1,6 @@
 import { MongoClient, type Collection } from "mongodb";
 import { generateId } from "@/lib/utils";
-import { nextOccurrence } from "@/lib/schedules/cadence";
+import { nextClaim } from "@/lib/schedules/cadence";
 import { reaperOutcome } from "@/lib/schedules/retry";
 import { SCHEDULE_RUN_RETENTION_DAYS } from "@/constants/schedules";
 import type {
@@ -164,17 +164,28 @@ async function claimDueSchedules(
 
   const claimed: ScheduleRow[] = [];
   for (const candidate of candidates) {
-    const once = candidate.cadence.kind === "once";
-    const next = once ? null : nextOccurrence(candidate.cadence, now);
+    // Mirrors the store's per-item guard: an uncomputable cadence is disabled
+    // and skipped rather than thrown, so one bad document cannot take the loop
+    // (and with it the whole tick) down. None of the checks below store a bad
+    // cadence, so this branch is here to keep the copy honest about the shape
+    // the store now has, not to be exercised.
+    const outcome = nextClaim(candidate.cadence, now);
+    if (!outcome.ok) {
+      await schedules.updateOne(
+        { _id: candidate._id, enabled: true, nextRunAt: candidate.nextRunAt },
+        { $set: { enabled: false, updatedAt: nowISO } },
+      );
+      continue;
+    }
 
     const pre = await schedules.findOneAndUpdate(
       { _id: candidate._id, enabled: true, nextRunAt: candidate.nextRunAt },
       {
         $set: {
-          nextRunAt: next ? next.toISOString() : null,
+          nextRunAt: outcome.nextRunAt,
           lastRunAt: nowISO,
           updatedAt: nowISO,
-          ...(once ? { enabled: false } : {}),
+          ...(outcome.disable ? { enabled: false } : {}),
         },
       },
       { returnDocument: "before" },
@@ -187,6 +198,7 @@ async function claimDueSchedules(
 
 /** The store's `settleRun`, copied because the store cannot be imported here. */
 async function settleRun(
+  schedules: Collection<ScheduleRow>,
   runs: Collection<RunRow>,
   runId: string,
   outcome:
@@ -197,7 +209,7 @@ async function settleRun(
   const finishedAt = new Date().toISOString();
   const started = await runs.findOne(
     { _id: runId },
-    { projection: { startedAt: 1 } },
+    { projection: { startedAt: 1, scheduleId: 1 } },
   );
 
   const fields: Record<string, unknown> = {
@@ -221,10 +233,18 @@ async function settleRun(
   }
 
   await runs.updateOne({ _id: runId }, { $set: fields });
+
+  if (started?.scheduleId) {
+    await schedules.updateOne(
+      { _id: started.scheduleId },
+      { $set: { lastRunStatus: outcome.status, updatedAt: finishedAt } },
+    );
+  }
 }
 
 /** The store's `reapExpiredLeases`, scoped to this run's `userId`. */
 async function reapExpiredLeases(
+  schedules: Collection<ScheduleRow>,
   runs: Collection<RunRow>,
   now: Date,
 ): Promise<number> {
@@ -237,7 +257,7 @@ async function reapExpiredLeases(
     .toArray();
 
   for (const doc of stale) {
-    await settleRun(runs, doc._id, reaperOutcome(doc, now));
+    await settleRun(schedules, runs, doc._id, reaperOutcome(doc, now));
   }
   return stale.length;
 }
@@ -308,7 +328,10 @@ async function racesToSingleRun(
  * A run whose process died is retried, not stuck `running` — the property that
  * makes a killed serverless invocation survivable.
  */
-async function reapsExpiredLease(runs: Collection<RunRow>): Promise<boolean> {
+async function reapsExpiredLease(
+  schedules: Collection<ScheduleRow>,
+  runs: Collection<RunRow>,
+): Promise<boolean> {
   const runId = generateId();
   await runs.insertOne(
     makeRunDoc({
@@ -321,7 +344,7 @@ async function reapsExpiredLease(runs: Collection<RunRow>): Promise<boolean> {
     }),
   );
 
-  const reaped = await reapExpiredLeases(runs, NOW);
+  const reaped = await reapExpiredLeases(schedules, runs, NOW);
   const after = await runs.findOne({ _id: runId });
 
   return (
@@ -334,7 +357,10 @@ async function reapsExpiredLease(runs: Collection<RunRow>): Promise<boolean> {
 }
 
 /** Spent attempts land on `failed` rather than being handed back forever. */
-async function exhaustsToFailed(runs: Collection<RunRow>): Promise<boolean> {
+async function exhaustsToFailed(
+  schedules: Collection<ScheduleRow>,
+  runs: Collection<RunRow>,
+): Promise<boolean> {
   const runId = generateId();
   await runs.insertOne(
     makeRunDoc({
@@ -348,10 +374,42 @@ async function exhaustsToFailed(runs: Collection<RunRow>): Promise<boolean> {
     }),
   );
 
-  await reapExpiredLeases(runs, NOW);
+  await reapExpiredLeases(schedules, runs, NOW);
   const after = await runs.findOne({ _id: runId });
 
   return after?.status === "failed" && after.error?.code === "lease_expired";
+}
+
+/**
+ * Settling a run writes the schedule's own `lastRunStatus` -- the denormalised
+ * copy a schedule list reads so it need not touch the run collection. Nothing
+ * else produces the field, so if this stops holding the field is simply always
+ * undefined.
+ */
+async function settlesIntoLastRunStatus(
+  schedules: Collection<ScheduleRow>,
+  runs: Collection<RunRow>,
+): Promise<boolean> {
+  const scheduleId = generateId();
+  await schedules.insertOne(makeScheduleDoc({ _id: scheduleId }));
+  const runId = generateId();
+  await runs.insertOne(
+    makeRunDoc({
+      _id: runId,
+      scheduleId,
+      status: "running",
+      attempt: 1,
+      leaseExpiresAt: null,
+      startedAt: NOW_ISO,
+    }),
+  );
+
+  await settleRun(schedules, runs, runId, { status: "succeeded" });
+
+  const schedule = await schedules.findOne({ _id: scheduleId });
+  const run = await runs.findOne({ _id: runId });
+
+  return schedule?.lastRunStatus === "succeeded" && run?.status === "succeeded";
 }
 
 /**
@@ -437,9 +495,16 @@ async function main() {
     );
     report(
       "an expired lease is reaped and retried",
-      await reapsExpiredLease(runs),
+      await reapsExpiredLease(schedules, runs),
     );
-    report("exhausted attempts land on failed", await exhaustsToFailed(runs));
+    report(
+      "exhausted attempts land on failed",
+      await exhaustsToFailed(schedules, runs),
+    );
+    report(
+      "settling a run writes the schedule's last status",
+      await settlesIntoLastRunStatus(schedules, runs),
+    );
     report("an overlap under skip inserts no row", await skipsOverlap(schedules, runs));
   } finally {
     // Scoped to TEST_USER, so a live database's own schedules are never touched.

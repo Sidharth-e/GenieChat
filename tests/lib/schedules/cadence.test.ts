@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeCadence,
+  nextClaim,
   nextOccurrence,
   nextOccurrences,
   validateCadence,
@@ -48,6 +49,55 @@ describe("validateCadence", () => {
 
   it("rejects a once cadence whose runAt is not ISO", () => {
     expect(validateCadence({ kind: "once", runAt: "tomorrow" }).ok).toBe(false);
+  });
+
+  // Review Focus 1, for the other cadence kind: a `once` schedule stored with a
+  // past `runAt` gets `nextRunAt: null`, and the due query's `$lte: <iso>` string
+  // bound never matches a BSON null -- so it sits enabled and never fires.
+  it("rejects a once cadence whose runAt has already passed", () => {
+    const result = validateCadence(
+      { kind: "once", runAt: "2026-10-02T09:00:00.000Z" },
+      new Date("2026-10-03T12:00:00.000Z"),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts a once cadence exactly one millisecond ahead of the reference", () => {
+    expect(
+      validateCadence(
+        { kind: "once", runAt: "2026-10-03T12:00:00.001Z" },
+        new Date("2026-10-03T12:00:00.000Z"),
+      ),
+    ).toEqual({ ok: true });
+  });
+});
+
+describe("nextClaim", () => {
+  const now = new Date("2026-10-05T06:00:00.000Z");
+
+  it("advances a cron cadence to its next occurrence and leaves it enabled", () => {
+    expect(nextClaim(cron("0 9 * * 1-5"), now)).toEqual({
+      ok: true,
+      nextRunAt: "2026-10-05T09:00:00.000Z",
+      disable: false,
+    });
+  });
+
+  it("disables a once cadence and leaves no next occurrence", () => {
+    expect(
+      nextClaim(
+        { kind: "once", runAt: "2026-10-05T06:00:00.000Z" },
+        now,
+      ),
+    ).toEqual({ ok: true, nextRunAt: null, disable: true });
+  });
+
+  // Review Focus 2's sibling: one stored cadence that no longer computes must not
+  // take the whole claim down with it. The store logs and disables on `ok: false`.
+  it("reports failure rather than throwing when the cadence does not compute", () => {
+    const result = nextClaim(cron("every so often"), now);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toBeTruthy();
   });
 });
 

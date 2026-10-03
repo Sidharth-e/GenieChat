@@ -33,11 +33,36 @@ function nextFrom(cadence: ScheduleCadence, from: Date): Date | null {
   return interval.next().toDate();
 }
 
-export function validateCadence(cadence: ScheduleCadence): CadenceValidation {
+/**
+ * Whether a cadence can fire at all.
+ *
+ * `from` is a parameter rather than a read of the clock for the same reason
+ * `nextOccurrence` takes one: the answer is about a relationship between the
+ * cadence and an instant, and a caller computing a save-time preview wants both
+ * halves to agree on which instant they are asking about.
+ *
+ * A `once` cadence in the past is rejected, and that is the whole reason the
+ * reference instant is needed here. Such a cadence stores `nextRunAt: null`, and
+ * the due query bounds that field with an ISO *string* — which never matches a
+ * BSON `null`, because MongoDB's comparison is type-bracketed. The schedule
+ * would sit `enabled: true` and never fire, which is precisely the silent
+ * never-fires failure that the cron branch below exists to prevent, for the
+ * other cadence kind.
+ */
+export function validateCadence(
+  cadence: ScheduleCadence,
+  from: Date = new Date(),
+): CadenceValidation {
   if (cadence.kind === "once") {
     const runAt = new Date(cadence.runAt);
     if (Number.isNaN(runAt.getTime())) {
       return { ok: false, message: "runAt must be an ISO 8601 date." };
+    }
+    if (runAt.getTime() <= from.getTime()) {
+      return {
+        ok: false,
+        message: "A one-off schedule must be set for a time in the future.",
+      };
     }
     return { ok: true };
   }
@@ -51,7 +76,7 @@ export function validateCadence(cadence: ScheduleCadence): CadenceValidation {
 
   try {
     CronExpressionParser.parse(cadence.expression, {
-      currentDate: new Date(),
+      currentDate: from,
       tz: cadence.timezone,
     });
   } catch (error) {
@@ -76,6 +101,45 @@ export function nextOccurrence(
   from: Date,
 ): Date | null {
   return nextFrom(cadence, from);
+}
+
+/**
+ * The claim's arithmetic for one due schedule: where `nextRunAt` goes, and
+ * whether the cadence is spent.
+ *
+ * This is a value rather than a throw because the store claims *every* due
+ * schedule in one loop, and a single stored cadence that no longer computes — a
+ * hand-edited document, a zone the parser rejects — must not take the loop down
+ * with it. Thrown, it would reject `claimDueSchedules`, reject `runTick`, and
+ * turn the tick endpoint into a 500 on every request for every tenant until
+ * somebody fixed the one document. Returned, the store can disable that schedule
+ * and carry on with the rest, which is what the deleted `/api/cron` route did
+ * with its own per-item `try`/`catch`.
+ *
+ * It lives here, not in the store, for the same reason `reaperOutcome` lives in
+ * `retry.ts`: the store is `"server-only"` and I/O-bound, so the decision has to
+ * be somewhere a unit test can reach it.
+ */
+export function nextClaim(
+  cadence: ScheduleCadence,
+  now: Date,
+): { ok: true; nextRunAt: string | null; disable: boolean } | { ok: false; message: string } {
+  try {
+    if (cadence.kind === "once") {
+      return { ok: true, nextRunAt: null, disable: true };
+    }
+    const next = nextFrom(cadence, now);
+    return {
+      ok: true,
+      nextRunAt: next ? next.toISOString() : null,
+      disable: false,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "uncomputable cadence",
+    };
+  }
 }
 
 export function nextOccurrences(

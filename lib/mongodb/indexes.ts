@@ -658,11 +658,16 @@ export const INDEX_SPECS: IndexSpec[] = [
     keys: { status: 1, leaseExpiresAt: 1 },
     name: "scheduleRuns_lease",
   },
-  // Per-schedule history, and the overlap check that runs before every insert.
+  // Per-schedule history, newest-first. `getRuns` sorts on `createdAt`, so a
+  // `status` between the two keys would make the index unusable for that sort —
+  // the sort keys have to be a suffix of the index keys, and a middle key breaks
+  // the run. The overlap check before every insert (`scheduleId` + `status`) is
+  // served by the `scheduleId` prefix, filtering `status` as a residual, which is
+  // cheap because it only ever scans one schedule's runs.
   {
     collection: NAMES.scheduleRuns,
-    keys: { scheduleId: 1, status: 1, createdAt: -1 },
-    name: "scheduleRuns_scheduleId_status_createdAt",
+    keys: { scheduleId: 1, createdAt: -1 },
+    name: "scheduleRuns_scheduleId_createdAt",
   },
   // Cross-schedule activity for one user.
   {
