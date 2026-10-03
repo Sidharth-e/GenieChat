@@ -24,7 +24,7 @@ pnpm test             # Runs Vitest unit tests
 pnpm test:watch       # Runs Vitest in watch mode
 pnpm test:coverage    # Runs Vitest with coverage
 pnpm ci:check         # Runs type-check + lint + test
-pnpm db:setup         # Creates all 17 collections and their indexes; idempotent and safe to re-run
+pnpm db:setup         # Creates all 19 collections and their indexes; idempotent and safe to re-run
 pnpm db:setup:pg      # Creates the pgvector table and indexes; idempotent and safe to re-run
 pnpm db:setup:neo4j   # Creates the Neo4j constraints and memory vector indexes; idempotent
 pnpm embeddings:check # Exercises the Ollama embedding path: short, over-budget and empty input
@@ -33,6 +33,8 @@ pnpm knowledge:backfill # Re-chunks and re-embeds documents already in MongoDB
 pnpm memory:check     # Exercises the memory graph: writes, recall, delete, enrichment
 pnpm memory:enrich    # Re-runs enrichment for memories left pending (honours ENRICH_LIMIT)
 pnpm memory:migrate   # One-off: moves the `memories` collection into the Neo4j graph
+pnpm schedules:check  # Exercises the scheduling concurrency properties: claim race, lease reaper, retry exhaustion, overlap
+pnpm schedules:migrate # One-off: converts legacy workflow cron triggers into `schedules`
 pnpm storage:check    # Exercises the Garage S3 client: put, presign, fetch, delete, NOT_FOUND
 ```
 
@@ -62,6 +64,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/embeddings/` — Ollama embeddings. `text.ts` is pure (token estimation, normalization, head/tail truncation, context-length retry parsing) and unit-tested; `dimensions.ts` holds `EmbeddingDimensionError` plus `assertEmbeddingDimensions` / `isEmbeddingDimensionError` and is pure and unit-tested — a typed error rather than message-matching, because the predicate has to recognise the provider's wording while this one is ours; `index.ts` is the `"server-only"` provider that calls both and re-exports them. `constants/embeddings.ts` holds `EMBEDDING_DIMENSIONS`, the index contract every vector store must match.
 - `lib/neo4j/` — the Neo4j driver. `config.ts` reads `config.neo4j` and is pure, returning null unless the URI *and* a password are present; `client.ts` is the `"server-only"` layer holding one lazily-built `Driver` plus `isNeo4jConfigured()`, so every caller degrades rather than throws.
 - `lib/memory/` — the memory graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore`; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same SQL the store does; `extract.ts`, `recall.ts`, `text.ts` and `update.ts` are pure and unit-tested; `enrichment-schema.ts` and `llm-extraction.ts` hold the model contract and the call, and `enrichment-write.ts` and `enrich.ts` write what it returns. `graph-view.ts` assembles the four graph reads into the drawn node/edge set and `graph-layout.ts` positions it — both pure and unit-tested, and both deliberately unaware of React Flow, so the decisions worth testing (which entities survive the cap, what an edge is called, what "degree" means, where a node lands) need no browser. `constants/memory.ts` holds the edge types, weights and limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
+- `lib/schedules/` — the scheduling subsystem. `cadence.ts` (cron and `once` next-occurrence) and `retry.ts` (backoff, terminal error classes, the reaper's outcome) are pure and unit-tested; `registry.ts` holds the `TriggerExecutor` map every target kind registers into; `executor-workflow.ts` is the workflow executor and the only one registered in phase 1; `tick.ts` is the I/O layer that runs one pass. Execution is **at-least-once**: a claimed run holds a lease, and a run whose process died is handed back by the reaper rather than being lost. `constants/schedules.ts` holds the lease length, the retry curve and the tick's bounds. See [Scheduling](#scheduling).
 - `lib/redis-client.ts` — Shared ioredis connections, one per named consumer, with a per-consumer circuit breaker. `getRedisClient(name, options)` returns a discriminated result (`ready` / `unconfigured` / `circuit-open`) so each caller picks its own degradation policy. See [Redis](#redis).
 - `lib/mongodb/` — MongoDB data layer using the official `mongodb` driver. `client.ts` provides synchronous collection accessors that connect lazily on first use. Most `*-store.ts` files hold exactly one document shape, but some span more — `workflow-store.ts` spans workflows, rich workflows and executions — and one collection can back several stores — `tools` backs `tool-store.ts`, `secret-store.ts` and `api-key-store.ts`.
 - `lib/langchain/` — LLM orchestration layer:
@@ -244,6 +247,76 @@ model-written `reason` is readable. `scripts/check-memory.ts` covers these four
 statements, since the store is `"server-only"` and the script is the only thing
 that executes the same Cypher.
 
+### Scheduling
+
+Two documents, and the split is the feature. A **`Schedule`** is the user's
+intent — "every weekday at 9am, run this workflow with this input" — and a
+**`ScheduleRun`** is one attempt at it. They are separate because retries and
+history need a record per attempt: rolling them into one document makes "last
+status" the only thing expressible, which is the shape this replaces. `runs`
+carries the attempt state machine (`pending` → `running` → `succeeded` /
+`failed`, with `skipped` and `cancelled` for the paths that never execute),
+while `schedules` carries the intent plus `nextRunAt` and a `skippedRuns` count.
+
+**Nothing runs on a timer inside the app.** `POST /api/schedules/tick` runs
+`runTick` once and returns; the driver is whatever calls that endpoint on a
+schedule. That is what makes the subsystem portable — the same code runs on a
+container, a serverless function or a laptop, and the app never assumes a
+long-lived process.
+
+`runTick` is five phases, in order, and the order is load-bearing: **reap**
+(a run whose lease lapsed belongs to a process that died — this is what makes a
+killed invocation a retry rather than a lost run), **claim due schedules**,
+**create or skip runs**, **claim due runs**, **execute with bounded
+concurrency**. Retries need no second mechanism: a run due for retry is simply
+due work phase 4 already found.
+
+**Two claims, both a single `findOneAndUpdate`.** A schedule is claimed by
+compare-and-swapping its own `nextRunAt`, because advancing it *is* part of
+claiming it — a claim that left `nextRunAt` alone would find the same schedule
+due again on the next iteration. A run is claimed by flipping `status` to
+`running`, which is its own token. The returned document is the **pre-image**,
+so a schedule's pre-claim `nextRunAt` is the run's `scheduledFor` with no second
+read and no window in which two tickers see the same due schedule.
+
+**The next occurrence is computed from `now`, never by adding a period.** That
+one decision buys two things: `catchUpPolicy: "skip"` is free (a week of
+downtime yields one occurrence, not a week of them), and DST is correct, because
+the cadence carries its own IANA zone rather than a fixed offset. `cadence.ts`
+is where both live.
+
+**The lease is the at-least-once boundary.** A claimed run holds a lease
+(`leaseExpiresAt`) that the tick renews while it works. Past it another tick may
+take the run back, and the reaper either returns it to `pending` with backoff or
+fails it once `attempt >= maxAttempts`. So a run executes at least once, and a
+crash costs a retry rather than a lost run — the tradeoff is that a slow-but-live
+run may execute twice.
+
+**`lib/schedules/registry.ts` is the only place the scheduler learns what a
+target is.** Executors register by `TriggerTargetType`; the tick asks for one and
+never branches on the kind. `getExecutor` returning `null` is what makes an
+unimplemented kind answer `invalid_target` at save time rather than at 3am.
+`executor-workflow.ts` is the only executor registered in phase 1 — `agent` and
+`tool` are types the model already admits and executors that do not exist yet,
+which is deliberate. The registry is a module-level `Map`, so a consumer must
+import the module that registers the executor it wants; `tick.ts` imports
+`executor-workflow.ts` at the top for exactly that reason, and without it every
+schedule would answer `invalid_target` while both the type-check and the unit
+suite stayed green.
+
+**`expiresAt` on a run is a real `Date`, not an ISO string** — it backs a TTL
+index, and MongoDB's comparison is type-bracketed, so a string bound would select
+no BSON `Date` and the index would silently expire nothing. It is the same
+exception [Key Conventions](#key-conventions) records for the webhook-invocation
+`expiresAt`.
+
+`pnpm db:setup` creates both collections and their indexes; `pnpm
+schedules:check` exercises the four properties that are concurrency properties
+and so cannot be unit-tested (a claim racing itself, an expired lease, spent
+attempts, an overlap under `skip`); `pnpm schedules:migrate` is a one-off that
+converts legacy workflow cron triggers into `schedules`. See
+[Server-Side Core](#server-side-core-lib) for the module layout.
+
 ### Document Parsing (Docling)
 
 Document parsing runs on a self-hosted `docling-serve` sidecar (port 5001, loopback-only, since only the app talks to it), built from `scripts/docling.Dockerfile` to add the LibreOffice layer the published image omits — not for the legacy Office formats, which Docling 2.93.0 rejects with or without it, but for DrawingML/VML rendering inside DOCX. `DOCLING_SERVE_URL`, `DOCLING_SERVE_API_KEY` and `DOCLING_SERVE_TIMEOUT_MS` configure it and are optional: an unset or unreachable service degrades to empty extraction rather than blocking boot. The page cap and size cap that bound a conversion are container settings in `docker-compose.yml` (`DOCLING_SERVE_MAX_NUM_PAGES`, `DOCLING_SERVE_MAX_FILE_SIZE`) — both default to `sys.maxsize` upstream, so the compose file supplies the only limit there is.
@@ -289,6 +362,8 @@ must not be able to fail a reply the user already has.
 The app builds to a Next.js standalone bundle (`output: "standalone"` in `next.config.mjs`, which requires Windows Developer Mode or admin for local builds due to symlinks). Whatever hosts it must be configured for every backing service, since it hosts none of them itself: `REDIS_URL` — see [Redis](#redis) — `POSTGRES_URL` pointing at a reachable Postgres — see [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector) — and `NEO4J_URI` / `NEO4J_PASSWORD` pointing at a reachable Neo4j — see [Memory Graph (Neo4j)](#memory-graph-neo4j). Neo4j Community Edition is single-instance with no clustering or online backup, which the spec accepts explicitly. Garage must be reachable by the **browser**, not only from the app, because presigned URLs are fetched directly — see [Object Storage (Garage)](#object-storage-garage).
 
 The `docling-serve` sidecar is currently **local development only**, so a deployment has no `DOCLING_SERVE_URL` until a host for the sidecar exists. Until then nothing is parsed in production, and in chat that is deliberately not silent: plain-text attachments are still decoded directly because they bypass the sidecar, and a binary attachment produces a turn carrying an explicit notice that the file could not be read — so a misconfigured deployment makes itself visible in use rather than looking like a model that ignored the document. Agent documents go through the RAG path instead, where a conversion failure is logged and the document is attached unindexed. See [Document Parsing (Docling)](#document-parsing-docling).
+
+**The scheduled-execution driver is an external cron pointed at `POST /api/schedules/tick`**, authenticated with the same `CRON_SECRET` bearer the app has always used. The app holds no timer of its own — the endpoint runs one tick and returns — so the driver can be a system crontab, a container scheduler or a serverless cron with no change to the app. The route is exempted from the session proxy in `proxy.ts`, because an external driver has no session; its own bearer check is the whole gate. **Nothing pings `/api/cron` any more** — that route is deleted, so a deployment still configured to call it gets a silent 404 rather than an alert, and its schedules simply stop firing. See [Scheduling](#scheduling).
 
 ## Next.js 16 (Breaking Changes)
 
