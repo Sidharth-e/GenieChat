@@ -12,7 +12,7 @@ import { Annotation, MessagesAnnotation, Send, START, END, StateGraph } from "@l
 import { StructuredToolInterface } from "@langchain/core/tools";
 
 
-import { Message, MCPServerConfig } from "../types";
+import { Message, ConnectorConfig } from "../types";
 import { createMCPClient } from "./langchain-mcp";
 import { getModel } from "./model-factory";
 import { ModelOptions } from "./model-config";
@@ -237,13 +237,13 @@ export class SwarmAgentService {
 
     private async resolveTools(
         allowed: string[] | undefined,
-        allMcpTools: StructuredToolInterface[],
+        allConnectorTools: StructuredToolInterface[],
         customToolsLookup?: Map<string, StructuredToolInterface>,
         messages?: Message[],
     ) {
         let resolved: StructuredToolInterface[] = [];
         if (allowed) {
-            const mcpFiltered = allMcpTools.filter(tool =>
+            const filteredConnectorTools = allConnectorTools.filter(tool =>
                 allowed.some(a => {
                     const suffix = a.split(":").pop();
                     if (!suffix) return false;
@@ -254,7 +254,7 @@ export class SwarmAgentService {
                     );
                 })
             );
-            resolved = [...resolved, ...mcpFiltered];
+            resolved = [...resolved, ...filteredConnectorTools];
 
             const defaults = allowed
                 .filter(t => t.startsWith("default:"))
@@ -333,7 +333,7 @@ SELF-SELECTION: Before responding, evaluate whether this message is relevant to 
         messages: Message[];
         agents: SwarmAgentConfig[];
         defaultModelId: string;
-        mcpServers?: MCPServerConfig[];
+        connectors?: ConnectorConfig[];
         images?: { base64Data: string; mimeType: string }[];
         modelOptions?: Pick<ModelOptions, "temperature" | "topP">;
         userContext?: UserContext;
@@ -346,10 +346,10 @@ SELF-SELECTION: Before responding, evaluate whether this message is relevant to 
             }
 
             // 1. Initialize MCP tools
-            let allMcpTools: StructuredToolInterface[] = [];
-            if (params.mcpServers?.length) {
-                const mcpClient = createMCPClient(params.mcpServers);
-                if (mcpClient) allMcpTools = await mcpClient.getTools();
+            let allConnectorTools: StructuredToolInterface[] = [];
+            if (params.connectors?.length) {
+                const mcpClient = createMCPClient(params.connectors);
+                if (mcpClient) allConnectorTools = await mcpClient.getTools();
             }
 
             // 2. Build agent roster
@@ -378,7 +378,7 @@ SELF-SELECTION: Before responding, evaluate whether this message is relevant to 
                 });
                 const tools = await this.resolveTools(
                     config.allowedTools,
-                    allMcpTools,
+                    allConnectorTools,
                     params.customToolsLookup,
                     params.messages,
                 );

@@ -10,7 +10,7 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "prompts:write",
     "tools:write",
     "workflows:write",
-    "mcp:write",
+    "connector:write",
     "chat:use",
   ]),
   manager: new Set([
@@ -18,7 +18,7 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "prompts:write",
     "tools:write",
     "workflows:write",
-    "mcp:write",
+    "connector:write",
     "chat:use",
   ]),
   member: new Set([

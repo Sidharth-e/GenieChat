@@ -15,34 +15,34 @@ interface Tool {
   description: string;
 }
 
-interface McpToolsSectionProps {
+interface ConnectorToolsSectionProps {
   tools: string[];
   setTools: (tools: string[]) => void;
   search: string;
   setSearch: (value: string) => void;
   servers: Server[];
-  mcpTools: Record<string, Tool[]>;
+  connectorTools: Record<string, Tool[]>;
   isLoading: boolean;
 }
 
-export function McpToolsSection({
+export function ConnectorToolsSection({
   tools,
   setTools,
   search,
   setSearch,
   servers,
-  mcpTools,
+  connectorTools,
   isLoading,
-}: McpToolsSectionProps) {
+}: ConnectorToolsSectionProps) {
   const [expandedServers, setExpandedServers] = useState<
     Record<string, boolean>
   >({});
-  const selectedMcpCount = tools.filter(
+  const selectedConnectorCount = tools.filter(
     (t) => !t.startsWith("default:") && !t.startsWith("custom:"),
   ).length;
 
   return (
-    <section id="agent-mcp-tools" className="space-y-5 scroll-mt-6">
+    <section id="agent-connectors" className="space-y-5 scroll-mt-6">
       <div className="flex items-start gap-4">
         <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-primary/8 text-primary shrink-0 mt-0.5">
           <Layout className="h-4.5 w-4.5" />
@@ -52,9 +52,9 @@ export function McpToolsSection({
             <h2 className="text-lg font-semibold text-foreground tracking-tight">
               Connectors
             </h2>
-            {selectedMcpCount > 0 && (
+            {selectedConnectorCount > 0 && (
               <span className="px-2.5 py-1 rounded-md bg-primary/8 text-primary text-[11px] font-semibold tabular-nums">
-                {selectedMcpCount} selected
+                {selectedConnectorCount} selected
               </span>
             )}
           </div>
@@ -107,7 +107,7 @@ export function McpToolsSection({
             {/* Tools List */}
             <div className="space-y-4">
               {servers.map((server) => {
-                const serverTools = (mcpTools[server.id] || []).filter(
+                const serverTools = (connectorTools[server.id] || []).filter(
                   (tool) =>
                     tool.name
                       .toLowerCase()
@@ -209,7 +209,7 @@ export function McpToolsSection({
                 );
               })}
               {servers.every((server) => {
-                const serverTools = (mcpTools[server.id] || []).filter(
+                const serverTools = (connectorTools[server.id] || []).filter(
                   (tool) =>
                     tool.name
                       .toLowerCase()

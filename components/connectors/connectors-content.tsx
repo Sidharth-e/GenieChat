@@ -5,37 +5,37 @@ import { useRouter } from "next/navigation";
 import { Plus, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  useMCPServers,
-  useMCPToolsByServer,
-  useDeleteMCPServer,
-  useUpdateMCPServer,
-} from "@/hooks/use-mcp-queries";
+  useConnectors,
+  useConnectorTools,
+  useDeleteConnector,
+  useUpdateConnector,
+} from "@/hooks/use-connector-queries";
 import { useAgents } from "@/hooks/use-agents-queries";
-import { MCPServerConfig } from "@/lib/types";
-import { ServerCard } from "@/components/mcp/server-card";
-import { MCPToolsDialog } from "@/components/mcp/mcp-tools-dialog";
+import { ConnectorConfig } from "@/lib/types";
+import { ConnectorCard } from "@/components/connectors/connector-card";
+import { ConnectorToolsDialog } from "@/components/connectors/connector-tools-dialog";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 
 import { ContentLayout } from "@/components/common/content-layout";
 
-interface MCPContentProps {
-  initialServers?: MCPServerConfig[];
+interface ConnectorsContentProps {
+  initialServers?: ConnectorConfig[];
 }
 
-export function MCPContent({ initialServers = [] }: MCPContentProps) {
+export function ConnectorsContent({ initialServers = [] }: ConnectorsContentProps) {
   const {
     data: servers = [],
     isLoading,
     error,
-  } = useMCPServers(initialServers);
-  const { mutateAsync: deleteServer } = useDeleteMCPServer();
-  const { mutateAsync: updateServer } = useUpdateMCPServer();
+  } = useConnectors(initialServers);
+  const { mutateAsync: deleteServer } = useDeleteConnector();
+  const { mutateAsync: updateServer } = useUpdateConnector();
   const { data: agents = [] } = useAgents();
 
   const [searchQuery, setSearchQuery] = React.useState("");
   const [isToolsDialogOpen, setIsToolsDialogOpen] = React.useState(false);
   const [selectedServer, setSelectedServer] =
-    React.useState<MCPServerConfig | null>(null);
+    React.useState<ConnectorConfig | null>(null);
   const [isDeleting, setIsDeleting] = React.useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<
     string | null
@@ -50,14 +50,14 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
     [servers],
   );
   const { tools, isLoadingServerTools, toolsError, refreshTools } =
-    useMCPToolsByServer(enabledServerIds);
+    useConnectorTools(enabledServerIds);
 
-  const handleEdit = (server: MCPServerConfig) => {
-    router.push(`/mcp/${server.id}/edit`);
+  const handleEdit = (server: ConnectorConfig) => {
+    router.push(`/connectors/${server.id}/edit`);
   };
 
   const handleCreateNew = () => {
-    router.push("/mcp/new");
+    router.push("/connectors/new");
   };
 
   const handleDelete = async (id: string) => {
@@ -68,14 +68,14 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
   };
 
   const handleToggle = async (
-    server: MCPServerConfig,
+    server: ConnectorConfig,
     e?: React.MouseEvent,
   ) => {
     e?.stopPropagation();
     await updateServer({ id: server.id, updates: { enabled: !server.enabled } });
   };
 
-  const handleViewTools = (server: MCPServerConfig) => {
+  const handleViewTools = (server: ConnectorConfig) => {
     setSelectedServer(server);
     setIsToolsDialogOpen(true);
   };
@@ -85,7 +85,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
     return server.name.toLowerCase().includes(query);
   });
 
-  const isServerUsedInAgent = (server: MCPServerConfig) => {
+  const isServerUsedInAgent = (server: ConnectorConfig) => {
     return agents.some((agent) =>
       agent.tools?.some((t) => t.startsWith(`${server.name}:`)),
     );
@@ -148,7 +148,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
               <div className="hidden md:block col-span-1 text-right">Action</div>
             </div>
             {filteredServers.map((server, i) => (
-              <ServerCard
+              <ConnectorCard
                 key={server.id}
                 server={server}
                 index={i}
@@ -179,7 +179,7 @@ export function MCPContent({ initialServers = [] }: MCPContentProps) {
         </>
       )}
 
-      <MCPToolsDialog
+      <ConnectorToolsDialog
         isOpen={isToolsDialogOpen}
         onClose={() => setIsToolsDialogOpen(false)}
         server={selectedServer}

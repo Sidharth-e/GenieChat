@@ -1,5 +1,5 @@
-import { resolveMCPServerSecrets } from "@/lib/mcp/resolve-mcp-secrets";
-import type { MCPServerConfig } from "@/lib/types";
+import { resolveConnectorSecrets } from "@/lib/connectors/resolve-connector-secrets";
+import type { ConnectorConfig } from "@/lib/types";
 
 /**
  * Pure tooling helpers, kept out of `context.ts` on purpose.
@@ -35,29 +35,29 @@ export type CustomToolSelection = "allowed-only" | "all-enabled";
  * with at all.
  *
  * An empty tool list means no servers at all: every agent-driven caller
- * initialises `mcpServers` to `[]` and none of them rescues it. A tool list
+ * initialises `connectors` to `[]` and none of them rescues it. A tool list
  * where no entry carries a `<server>:` prefix means every enabled server, which
  * is how a mode that names tools without server scoping keeps working.
  */
-export function filterMcpServers(params: {
-  allServers: MCPServerConfig[];
+export function filterConnectors(params: {
+  allServers: ConnectorConfig[];
   secretMap: Record<string, string>;
   allowedTools?: string[];
   extraRequiredTools?: string[];
   /**
    * Bind every enabled server without naming one. Default chat is the only
-   * caller: an agent's `tools` list is what scopes MCP servers on the agent,
+   * caller: an agent's `tools` list is what scopes connectors on the agent,
    * multi-agent and swarm surfaces, and chat has no agent — so there is no list
    * to narrow with, and "no list means no servers" would leave a user's
    * configured servers unreachable in the one surface with no configuration of
    * its own. Disabled servers are still dropped.
    */
   includeAllEnabled?: boolean;
-}): MCPServerConfig[] {
+}): ConnectorConfig[] {
   const enabled = params.allServers.filter((s) => s.enabled);
 
   if (params.includeAllEnabled) {
-    return resolveMCPServerSecrets(enabled, params.secretMap);
+    return resolveConnectorSecrets(enabled, params.secretMap);
   }
 
   const required = new Set([
@@ -78,5 +78,5 @@ export function filterMcpServers(params: {
       ? enabled.filter((s) => serverNames.has(s.name))
       : enabled;
 
-  return resolveMCPServerSecrets(kept, params.secretMap);
+  return resolveConnectorSecrets(kept, params.secretMap);
 }

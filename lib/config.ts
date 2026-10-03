@@ -17,7 +17,7 @@ export const config = {
       threads: "threads",
       agents: "agents",
       prompts: "prompt",
-      mcpServers: "mcp_server",
+      connectors: "connectors",
       config: "config",
       logs: "logs",
       workflows: "workflows",

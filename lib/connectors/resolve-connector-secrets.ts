@@ -1,4 +1,4 @@
-import { MCPServerConfig } from "@/lib/types";
+import { ConnectorConfig } from "@/lib/types";
 
 const SECRET_REFERENCE_REGEX = /^env\.([A-Za-z0-9_]+)$/;
 const INPUT_PLACEHOLDER_REGEX = /\$\{input:([A-Za-z0-9_]+)\}/g;
@@ -23,10 +23,10 @@ function resolveEnvValue(
   return secretMap[secretName] ?? resolved;
 }
 
-export function resolveMCPServerSecrets(
-  servers: MCPServerConfig[],
+export function resolveConnectorSecrets(
+  servers: ConnectorConfig[],
   secretMap: Record<string, string>,
-): MCPServerConfig[] {
+): ConnectorConfig[] {
   if (servers.length === 0 || Object.keys(secretMap).length === 0) {
     return servers;
   }

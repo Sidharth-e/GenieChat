@@ -8,7 +8,7 @@ import { config } from "@/lib/config";
 import { StreamPipeline, type StreamContext } from "@/lib/api/stream-pipeline";
 import {
   loadAgentContext,
-  filterMcpServers,
+  filterConnectors,
   type AgentContext,
 } from "../context";
 import { buildAssistantPayload, type ProducerEvent } from "../events";
@@ -56,7 +56,7 @@ export function buildAgentMode(params: {
     ];
   }
 
-  const mcpServers = filterMcpServers({
+  const connectors = filterConnectors({
     allServers: agentContext.allServers,
     secretMap: agentContext.secretMap,
     allowedTools: agentContext.allowedTools,
@@ -67,7 +67,7 @@ export function buildAgentMode(params: {
       messages: context.messages,
       modelId: model,
       systemPrompt: effectiveSystemPrompt,
-      mcpServers,
+      connectors,
       allowedTools: agentContext.allowedTools,
       customTools: customToolsForAgent,
       images: context.imagesForAI,

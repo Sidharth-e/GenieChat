@@ -17,15 +17,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { MCPServerConfig } from "@/lib/types";
+import { ConnectorConfig } from "@/lib/types";
 
 export const transportIcons = {
   http: Globe,
   sse: Radio,
 };
 
-interface ServerCardProps {
-  server: MCPServerConfig;
+interface ConnectorCardProps {
+  server: ConnectorConfig;
   toolCount: number;
   isLoadingTools?: boolean;
   index?: number;
@@ -36,7 +36,7 @@ interface ServerCardProps {
   isUsedInAgent?: boolean;
 }
 
-export function ServerCard({
+export function ConnectorCard({
   server,
   toolCount,
   isLoadingTools,
@@ -45,7 +45,7 @@ export function ServerCard({
   onDelete,
   onViewTools,
   isUsedInAgent,
-}: ServerCardProps) {
+}: ConnectorCardProps) {
   const Icon = transportIcons[server.transportType] || Globe;
   const cannotDelete = isUsedInAgent;
   const cannotDisable = isUsedInAgent && server.enabled;

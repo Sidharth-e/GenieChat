@@ -3,28 +3,28 @@
 import { logger } from "@/lib/logger";
 import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { useMCPServers, useUpdateMCPServer } from "@/hooks/use-mcp-queries";
-import { MCPForm, type MCPFormData } from "@/components/mcp/mcp-form";
+import { useConnectors, useUpdateConnector } from "@/hooks/use-connector-queries";
+import { ConnectorForm, type ConnectorFormData } from "@/components/connectors/connector-form";
 import { Server, Loader2 } from "lucide-react";
 
-export default function EditMCPPage() {
+export default function EditConnectorPage() {
     const router = useRouter();
     const params = useParams();
     const serverId = params.id as string;
 
-    const { data: servers = [], isLoading } = useMCPServers();
-    const { mutateAsync: updateServer } = useUpdateMCPServer();
+    const { data: servers = [], isLoading } = useConnectors();
+    const { mutateAsync: updateServer } = useUpdateConnector();
     const [isSaving, setIsSaving] = useState(false);
 
     const server = servers.find((s) => s.id === serverId);
 
-    const handleSave = async (serverData: MCPFormData) => {
+    const handleSave = async (serverData: ConnectorFormData) => {
         setIsSaving(true);
         try {
             await updateServer({ id: serverId, updates: serverData });
-            router.push("/mcp");
+            router.push("/connectors");
         } catch (error) {
-            logger.error("Failed to update MCP server:", error);
+            logger.error("Failed to update connector:", error);
         } finally {
             setIsSaving(false);
         }
@@ -49,7 +49,7 @@ export default function EditMCPPage() {
                     The connector you are trying to edit does not exist.
                 </p>
                 <button
-                    onClick={() => router.push("/mcp")}
+                    onClick={() => router.push("/connectors")}
                     className="mt-4 text-sm font-medium text-primary hover:underline"
                 >
                     Back to Connectors
@@ -59,7 +59,7 @@ export default function EditMCPPage() {
     }
 
     return (
-        <MCPForm
+        <ConnectorForm
             title={`Edit ${server.name}`}
             initialData={server}
             onSave={handleSave}

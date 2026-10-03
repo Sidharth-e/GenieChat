@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Agent, AgentDocument, AgentSkill } from "@/lib/types";
-import { useMCPServers, useMCPToolsByServer } from "@/hooks/use-mcp-queries";
+import { useConnectors, useConnectorTools } from "@/hooks/use-connector-queries";
 import { useTools } from "@/hooks/use-tools-queries";
 import { TargetSchedules } from "@/components/schedules/target-schedules";
 import { DocumentUploadSection } from "./document-upload-section";
@@ -41,7 +41,7 @@ import { BasicInfoSection } from "./form-sections/basic-info-section";
 import { BehaviorSection } from "./form-sections/behavior-section";
 import { SystemToolsSection } from "./form-sections/system-tools-section";
 import { CustomToolsSection } from "./form-sections/custom-tools-section";
-import { McpToolsSection } from "./form-sections/mcp-tools-section";
+import { ConnectorToolsSection } from "./form-sections/connector-tools-section";
 import { PromptDialog } from "./form-sections/prompt-dialog";
 import { VariableDialog } from "./form-sections/variable-dialog";
 import { SubAgentsSection } from "./form-sections/sub-agents-section";
@@ -61,7 +61,7 @@ const SECTIONS = [
   { id: "agent-behavior", label: "Behavior", icon: Settings },
   { id: "agent-system-tools", label: "System Tools", icon: Zap },
   { id: "agent-custom-tools", label: "Custom Tools", icon: Wrench },
-  { id: "agent-mcp-tools", label: "Connectors", icon: Layout },
+  { id: "agent-connectors", label: "Connectors", icon: Layout },
   { id: "agent-sub-agents", label: "Sub Agents", icon: Users },
   { id: "agent-skills", label: "Skills", icon: Sparkles },
   { id: "agent-knowledge", label: "Knowledge", icon: BookOpen },
@@ -77,8 +77,8 @@ export function AgentForm({
   const router = useRouter();
   const { data: customTools = [], isLoading: isLoadingCustomTools } =
     useTools();
-  const { data: servers = [], isLoading: isLoadingMCP } = useMCPServers();
-  const { tools: mcpTools } = useMCPToolsByServer(
+  const { data: servers = [], isLoading: isLoadingConnectors } = useConnectors();
+  const { tools: connectorTools } = useConnectorTools(
     servers.map((server) => server.id),
   );
 
@@ -109,7 +109,7 @@ export function AgentForm({
   const [activeSection, setActiveSection] = useState("agent-basic-info");
   const [systemToolsSearch, setSystemToolsSearch] = useState("");
   const [customToolsSearch, setCustomToolsSearch] = useState("");
-  const [mcpToolsSearch, setMcpToolsSearch] = useState("");
+  const [connectorToolsSearch, setConnectorToolsSearch] = useState("");
 
   // Agent Generator State
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
@@ -138,24 +138,24 @@ export function AgentForm({
       source: "default",
     }));
 
-    const mcpToolOptions: AgentToolOption[] = servers.flatMap((server) =>
-      (mcpTools[server.id] || []).map((tool) => ({
+    const connectorToolOptions: AgentToolOption[] = servers.flatMap((server) =>
+      (connectorTools[server.id] || []).map((tool) => ({
         id: `${server.name}:${tool.name}`,
         name: tool.name,
         description: tool.description || "Connector tool",
-        source: "mcp" as const,
+        source: "connector" as const,
       })),
     );
 
     const deduped = new Map<string, AgentToolOption>();
-    [...defaultToolOptions, ...mcpToolOptions].forEach((tool) => {
+    [...defaultToolOptions, ...connectorToolOptions].forEach((tool) => {
       if (!deduped.has(tool.id)) {
         deduped.set(tool.id, tool);
       }
     });
 
     return Array.from(deduped.values());
-  }, [servers, mcpTools]);
+  }, [servers, connectorTools]);
 
   const generatorModelOptions = useMemo<AgentModelOption[]>(() => {
     return AVAILABLE_MODELS.filter((available) => available.supportsTools).map(
@@ -571,14 +571,14 @@ export function AgentForm({
               isLoading={isLoadingCustomTools}
             />
 
-            <McpToolsSection
+            <ConnectorToolsSection
               tools={tools}
               setTools={setTools}
-              search={mcpToolsSearch}
-              setSearch={setMcpToolsSearch}
+              search={connectorToolsSearch}
+              setSearch={setConnectorToolsSearch}
               servers={servers}
-              mcpTools={mcpTools}
-              isLoading={isLoadingMCP}
+              connectorTools={connectorTools}
+              isLoading={isLoadingConnectors}
             />
 
             <SubAgentsSection

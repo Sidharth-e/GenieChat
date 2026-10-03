@@ -8,7 +8,7 @@ import {
   createDeleteMemoryTool,
 } from "@/lib/tool/memory";
 import { convertCustomToolsToLangChain } from "@/lib/tool/custom-tool-converter";
-import { loadUserTooling, filterMcpServers, type UserTooling } from "../context";
+import { loadUserTooling, filterConnectors, type UserTooling } from "../context";
 import { handleError, api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
@@ -79,7 +79,7 @@ export function createChatMode(params: {
   }
 
   // Started here for the same reason as the retrieval above — the two database
-  // rounds overlap instead of queueing. Chat binds every enabled MCP server and
+  // rounds overlap instead of queueing. Chat binds every enabled connector and
   // every enabled custom tool, because unlike the agent surfaces it has no
   // record naming the subset it may use.
   const toolingPromise: Promise<UserTooling> = loadUserTooling({
@@ -103,7 +103,7 @@ export function createChatMode(params: {
       : (logger.info("[API] Memory disabled for this request"), []);
 
     const tooling = await toolingPromise;
-    const mcpServers = filterMcpServers({
+    const connectors = filterConnectors({
       allServers: tooling.allServers,
       secretMap: tooling.secretMap,
       includeAllEnabled: true,
@@ -124,7 +124,7 @@ export function createChatMode(params: {
       reasoningEffort,
       images: context.imagesForAI,
       customTools,
-      mcpServers,
+      connectors,
       forceWebSearch,
       userContext: {
         userId,

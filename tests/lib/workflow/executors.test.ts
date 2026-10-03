@@ -300,7 +300,7 @@ describe("runNode — Tool", () => {
     );
   });
 
-  it("names the MCP server when the tool cannot be loaded", async () => {
+  it("names the connector when the tool cannot be loaded", async () => {
     const deps: WorkflowDeps = {
       getModel: unusedDeps.getModel,
       loadTool: async () => undefined,
@@ -308,12 +308,12 @@ describe("runNode — Tool", () => {
     const data = {
       id: "search",
       description: "Search",
-      type: "mcp-tool",
+      type: "connector-tool",
       serverId: "s-1",
       serverName: "Acme MCP",
     };
     await expect(runNode(toolNode(data), input(), deps)).rejects.toThrow(
-      /Tool node "tool": tool "search" from MCP server "Acme MCP" could not be loaded\. It may have been removed or disabled\./,
+      /Tool node "tool": tool "search" from connector "Acme MCP" could not be loaded\. It may have been removed or disabled\./,
     );
   });
 });

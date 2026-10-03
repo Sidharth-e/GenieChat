@@ -4,14 +4,14 @@ import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import { AgentStore } from "@/lib/mongodb/agent-store";
 import { ChatHistoryStore } from "@/lib/mongodb/chat-history-store";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
-import { MCPStore } from "@/lib/mongodb/mcp-store";
+import { ConnectorStore } from "@/lib/mongodb/connector-store";
 import { SecretStore } from "@/lib/mongodb/secret-store";
-import { resolveMCPServerSecrets } from "@/lib/mcp/resolve-mcp-secrets";
+import { resolveConnectorSecrets } from "@/lib/connectors/resolve-connector-secrets";
 import { generateId } from "@/lib/utils";
 import type { Message, ToolSecret } from "@/lib/types";
 
 const agentStore = isDatabaseConfigured() ? new AgentStore() : null;
-const mcpStore = isDatabaseConfigured() ? new MCPStore() : null;
+const connectorStore = isDatabaseConfigured() ? new ConnectorStore() : null;
 const secretStore = isDatabaseConfigured() ? new SecretStore() : null;
 const chatHistoryStore = isDatabaseConfigured() ? new ChatHistoryStore() : null;
 
@@ -94,7 +94,7 @@ export function buildUserMessage(content: string, userId: string): Message {
 export async function runAgentTarget(
   options: AgentRunOptions,
 ): Promise<AgentRunResult> {
-  if (!agentStore || !mcpStore || !chatHistoryStore) {
+  if (!agentStore || !connectorStore || !chatHistoryStore) {
     throw new Error("Database not configured");
   }
 
@@ -125,11 +125,11 @@ export async function runAgentTarget(
 
   if (options.onStarted) await options.onStarted(thread.id);
 
-  const allMcpServers = await mcpStore.getMCPServers(options.userId);
-  const enabledMcpServers = allMcpServers.filter((s) => s.enabled);
+  const allConnectors = await connectorStore.getConnectors(options.userId);
+  const enabledConnectors = allConnectors.filter((s) => s.enabled);
   const secretMap = await loadUserSecrets(options.userId);
-  const resolvedMcpServers = resolveMCPServerSecrets(
-    enabledMcpServers,
+  const resolvedConnectors = resolveConnectorSecrets(
+    enabledConnectors,
     secretMap,
   );
 
@@ -140,7 +140,7 @@ export async function runAgentTarget(
     messages: [buildUserMessage(options.message, options.userId)],
     modelId,
     systemPrompt,
-    mcpServers: resolvedMcpServers,
+    connectors: resolvedConnectors,
     allowedTools: agent.tools,
   });
 

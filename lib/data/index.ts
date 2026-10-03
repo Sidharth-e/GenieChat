@@ -1,3 +1,3 @@
 export { getAgents } from "./agents";
-export { getMCPServers } from "./mcp";
+export { getConnectors } from "./connectors";
 export { getTools } from "./tools";

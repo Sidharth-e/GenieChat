@@ -373,7 +373,7 @@ async function executeToolNode(
   const tool = await deps.loadTool(data.tool);
   if (!tool) {
     const where =
-      data.tool.type === "mcp-tool" ? ` from MCP server "${data.tool.serverName}"` : "";
+      data.tool.type === "connector-tool" ? ` from connector "${data.tool.serverName}"` : "";
     throw new Error(
       `Tool node "${label}": tool "${data.tool.id}"${where} could not be loaded. It may have been removed or disabled.`,
     );

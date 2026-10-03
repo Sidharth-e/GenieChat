@@ -327,30 +327,30 @@ export interface StreamToken {
   parentToolCallId?: string;
 }
 
-// MCP Server Configuration types
-export type MCPTransportType = "http" | "sse";
+// Connector configuration types
+export type ConnectorTransportType = "http" | "sse";
 
 /**
- * A tool discovered on an MCP server, as `GET /api/mcp/[id]/tools` returns it.
+ * A tool discovered on a connector, as `GET /api/connectors/[id]/tools` returns it.
  * Structurally the same shape the server-side client in
  * `lib/langchain/langchain-mcp.ts` produces; this is the client's copy, so the
  * query hooks do not have to reach into the LangChain layer for a type.
  */
-export interface MCPToolInfo {
+export interface ConnectorToolInfo {
   name: string;
   description: string;
   serverName: string;
   inputSchema?: Record<string, unknown>;
 }
 
-export interface MCPServerConfig {
+export interface ConnectorConfig {
   id: string;
   userId: string;
   userName: string;
   userEmail: string;
   name: string; // Server label/name
   description?: string;
-  transportType: MCPTransportType;
+  transportType: ConnectorTransportType;
 
   // For HTTP/SSE transport
   serverUrl?: string;

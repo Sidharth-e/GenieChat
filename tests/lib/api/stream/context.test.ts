@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { filterMcpServers, toSnakeCase } from "@/lib/api/stream/tooling";
-import type { MCPServerConfig } from "@/lib/types";
+import { filterConnectors, toSnakeCase } from "@/lib/api/stream/tooling";
+import type { ConnectorConfig } from "@/lib/types";
 
-function server(overrides: Partial<MCPServerConfig> & { name: string }): MCPServerConfig {
+function server(overrides: Partial<ConnectorConfig> & { name: string }): ConnectorConfig {
   return {
     id: `srv-${overrides.name}`,
     userId: "u1",
@@ -39,13 +39,13 @@ describe("toSnakeCase", () => {
   });
 });
 
-describe("filterMcpServers", () => {
+describe("filterConnectors", () => {
   it("returns no servers when no tools are required", () => {
     const allServers = [server({ name: "github" })];
 
-    expect(filterMcpServers({ allServers, secretMap: {} })).toEqual([]);
+    expect(filterConnectors({ allServers, secretMap: {} })).toEqual([]);
     expect(
-      filterMcpServers({ allServers, secretMap: {}, allowedTools: [] }),
+      filterConnectors({ allServers, secretMap: {}, allowedTools: [] }),
     ).toEqual([]);
   });
 
@@ -56,7 +56,7 @@ describe("filterMcpServers", () => {
       server({ name: "jira", enabled: false }),
     ];
 
-    const kept = filterMcpServers({
+    const kept = filterConnectors({
       allServers,
       secretMap: {},
       allowedTools: ["github:create_issue", "jira:create_ticket"],
@@ -72,7 +72,7 @@ describe("filterMcpServers", () => {
       server({ name: "jira", enabled: false }),
     ];
 
-    const kept = filterMcpServers({
+    const kept = filterConnectors({
       allServers,
       secretMap: {},
       allowedTools: ["plain_tool"],
@@ -84,7 +84,7 @@ describe("filterMcpServers", () => {
   it("unions allowedTools with extraRequiredTools", () => {
     const allServers = [server({ name: "github" }), server({ name: "slack" })];
 
-    const kept = filterMcpServers({
+    const kept = filterConnectors({
       allServers,
       secretMap: {},
       allowedTools: ["github:create_issue"],
@@ -97,7 +97,7 @@ describe("filterMcpServers", () => {
   it("accepts extraRequiredTools with no allowedTools at all", () => {
     const allServers = [server({ name: "github" }), server({ name: "slack" })];
 
-    const kept = filterMcpServers({
+    const kept = filterConnectors({
       allServers,
       secretMap: {},
       extraRequiredTools: ["slack:post"],
@@ -109,7 +109,7 @@ describe("filterMcpServers", () => {
   it("lets a prefixed tool narrow the result even when an unprefixed one is also required", () => {
     const allServers = [server({ name: "github" }), server({ name: "slack" })];
 
-    const kept = filterMcpServers({
+    const kept = filterConnectors({
       allServers,
       secretMap: {},
       allowedTools: ["github:create_issue"],
@@ -126,7 +126,7 @@ describe("filterMcpServers", () => {
       server({ name: "jira", enabled: false }),
     ];
 
-    const kept = filterMcpServers({
+    const kept = filterConnectors({
       allServers,
       secretMap: {},
       includeAllEnabled: true,
@@ -142,7 +142,7 @@ describe("filterMcpServers", () => {
     ];
 
     expect(
-      filterMcpServers({ allServers, secretMap: {}, includeAllEnabled: true }),
+      filterConnectors({ allServers, secretMap: {}, includeAllEnabled: true }),
     ).toEqual([]);
   });
 
@@ -154,7 +154,7 @@ describe("filterMcpServers", () => {
       }),
     ];
 
-    const kept = filterMcpServers({
+    const kept = filterConnectors({
       allServers,
       secretMap: { GITHUB_TOKEN: "ghp_secret" },
       includeAllEnabled: true,

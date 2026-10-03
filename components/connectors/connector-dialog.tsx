@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { MCPServerConfig, MCPTransportType } from "@/lib/types";
+import { ConnectorConfig, ConnectorTransportType } from "@/lib/types";
 
 export const transportOptions = [
   { value: "http", label: "HTTP", icon: <Globe className="h-4 w-4" /> },
@@ -29,31 +29,31 @@ const approvalOptions = [
 
 type ApprovalType = "always" | "never" | "per_tool";
 
-interface ServerSaveData {
+interface ConnectorSaveData {
   name: string;
   description?: string;
-  transportType: MCPTransportType;
+  transportType: ConnectorTransportType;
   serverUrl?: string;
   timeout: number;
   requireApproval: ApprovalType;
 }
 
-interface ServerDialogProps {
+interface ConnectorDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: ServerSaveData) => Promise<void>;
-  initialData: Partial<MCPServerConfig> | null;
+  onSave: (data: ConnectorSaveData) => Promise<void>;
+  initialData: Partial<ConnectorConfig> | null;
   isSaving: boolean;
 }
 
 interface ServerDialogBodyProps {
   onClose: () => void;
-  onSave: (data: ServerSaveData) => Promise<void>;
-  initialData: Partial<MCPServerConfig> | null;
+  onSave: (data: ConnectorSaveData) => Promise<void>;
+  initialData: Partial<ConnectorConfig> | null;
   isSaving: boolean;
 }
 
-function ServerDialogBody({
+function ConnectorDialogBody({
   onClose,
   onSave,
   initialData,
@@ -61,7 +61,7 @@ function ServerDialogBody({
 }: ServerDialogBodyProps) {
   const [name, setName] = useState(initialData?.name || "");
   const [description, setDescription] = useState(initialData?.description || "");
-  const [transportType, setTransportType] = useState<MCPTransportType>(
+  const [transportType, setTransportType] = useState<ConnectorTransportType>(
     initialData?.transportType === "sse" ? "sse" : "http",
   );
   const [serverUrl, setServerUrl] = useState(initialData?.serverUrl || "");
@@ -135,7 +135,7 @@ function ServerDialogBody({
             </label>
             <Select
               value={transportType}
-              onChange={(v) => setTransportType(v as MCPTransportType)}
+              onChange={(v) => setTransportType(v as ConnectorTransportType)}
               options={transportOptions}
             />
           </div>
@@ -203,7 +203,7 @@ function ServerDialogBody({
             )}
           >
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Save Changes" : "Add Server"}
+            {isEditing ? "Save Changes" : "Add Connector"}
           </Button>
         </div>
       </DialogContent>
@@ -211,17 +211,17 @@ function ServerDialogBody({
   );
 }
 
-export function ServerDialog({
+export function ConnectorDialog({
   isOpen,
   onClose,
   onSave,
   initialData,
   isSaving,
-}: ServerDialogProps) {
+}: ConnectorDialogProps) {
   if (!isOpen) return null;
 
   return (
-    <ServerDialogBody
+    <ConnectorDialogBody
       key={initialData?.id ?? "new"}
       onClose={onClose}
       onSave={onSave}

@@ -181,8 +181,8 @@ describe("INDEX_SPECS", () => {
         collection: config.mongodb.collections.prompts,
         keys: { userId: 1, updatedAt: -1 },
       },
-      mcpServers_userId_updatedAt: {
-        collection: config.mongodb.collections.mcpServers,
+      connectors_userId_updatedAt: {
+        collection: config.mongodb.collections.connectors,
         keys: { userId: 1, updatedAt: -1 },
       },
       tools_userId_createdAt: {

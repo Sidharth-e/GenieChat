@@ -16,9 +16,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { MCPServerConfig, MCPTransportType } from "@/lib/types";
+import { ConnectorConfig, ConnectorTransportType } from "@/lib/types";
 import { useRouter } from "next/navigation";
-import { useMCPServers } from "@/hooks/use-mcp-queries";
+import { useConnectors } from "@/hooks/use-connector-queries";
 import { useTools } from "@/hooks/use-tools-queries";
 import { useSecrets } from "@/hooks/use-secrets-queries";
 import { SecretListDialog } from "@/components/tools/secret-list-dialog";
@@ -34,19 +34,19 @@ const approvalOptions = [
   { value: "per_tool", label: "Per Tool" },
 ];
 
-export interface MCPFormData {
+export interface ConnectorFormData {
   name: string;
   description?: string;
-  transportType: MCPTransportType;
+  transportType: ConnectorTransportType;
   serverUrl?: string;
   headers?: Record<string, string>;
   timeout: number;
   requireApproval: "always" | "never" | "per_tool";
 }
 
-interface MCPFormProps {
-  initialData?: Partial<MCPServerConfig> | null;
-  onSave: (serverData: MCPFormData) => Promise<void>;
+interface ConnectorFormProps {
+  initialData?: Partial<ConnectorConfig> | null;
+  onSave: (serverData: ConnectorFormData) => Promise<void>;
   isSaving: boolean;
   title: string;
 }
@@ -147,19 +147,19 @@ function configRowsToRecord(rows: ConfigRow[]): Record<string, string> {
   return result;
 }
 
-export function MCPForm({
+export function ConnectorForm({
   initialData,
   onSave,
   isSaving,
   title,
-}: MCPFormProps) {
+}: ConnectorFormProps) {
   const router = useRouter();
 
   const [name, setName] = useState(initialData?.name || "");
   const [description, setDescription] = useState(
     initialData?.description || "",
   );
-  const [transportType, setTransportType] = useState<MCPTransportType>(
+  const [transportType, setTransportType] = useState<ConnectorTransportType>(
     initialData?.transportType === "sse" ? "sse" : "http",
   );
   const [serverUrl, setServerUrl] = useState(initialData?.serverUrl || "");
@@ -181,7 +181,7 @@ export function MCPForm({
   const [nameError, setNameError] = useState<string | null>(null);
 
   // Fetch installed servers for validation
-  const { data: installedServers = [] } = useMCPServers();
+  const { data: installedServers = [] } = useConnectors();
 
   // Fetch custom tools for validation
   const { data: customTools } = useTools();
@@ -534,7 +534,7 @@ export function MCPForm({
                         key={option.value}
                         type="button"
                         onClick={() =>
-                          setTransportType(option.value as MCPTransportType)
+                          setTransportType(option.value as ConnectorTransportType)
                         }
                         className={cn(
                           "flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all",

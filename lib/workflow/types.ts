@@ -108,13 +108,13 @@ export type CodeNodeData = BaseWorkflowNodeData<{ kind: NodeKind.Code }> & {
   language: "python" | "bash";
 };
 
-type MCPTool = { type: "mcp-tool"; serverId: string; serverName: string };
+type ConnectorTool = { type: "connector-tool"; serverId: string; serverName: string };
 type AppTool = { type: "app-tool" };
 
 export type WorkflowToolKey = {
   id: string;
   description: string;
-} & (MCPTool | AppTool);
+} & (ConnectorTool | AppTool);
 
 export type ToolNodeData = BaseWorkflowNodeData<{ kind: NodeKind.Tool }> & {
   tool?: WorkflowToolKey;

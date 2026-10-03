@@ -1,9 +1,9 @@
 import "server-only";
 
 import { logger } from "@/lib/logger";
-import type { MCPServerConfig, RichWorkflow, WorkflowExecutionStep } from "../types";
+import type { ConnectorConfig, RichWorkflow, WorkflowExecutionStep } from "../types";
 import { isDatabaseConfigured } from "../mongodb/client";
-import { MCPStore } from "../mongodb/mcp-store";
+import { ConnectorStore } from "../mongodb/connector-store";
 import { WorkflowStore } from "../mongodb/workflow-store";
 import { buildWorkflowGraph, type WorkflowHooks } from "@/lib/workflow/build-graph";
 import { describeError } from "@/lib/workflow/errors";
@@ -97,16 +97,16 @@ export class WorkflowExecutionService {
       }
     }
 
-    let mcpServers: MCPServerConfig[] = [];
+    let connectors: ConnectorConfig[] = [];
     try {
-      mcpServers = await new MCPStore().getMCPServers(workflow.userId);
+      connectors = await new ConnectorStore().getConnectors(workflow.userId);
     } catch (err) {
-      logger.warn({ err }, "Failed to load MCP servers for a workflow run");
+      logger.warn({ err }, "Failed to load connectors for a workflow run");
     }
 
     const deps: WorkflowDeps = {
       getModel: (modelId) => getModel(modelId),
-      loadTool: (key) => resolveWorkflowTool(key, { userId: workflow.userId, mcpServers }),
+      loadTool: (key) => resolveWorkflowTool(key, { userId: workflow.userId, connectors }),
     };
 
     // The graph runs as one promise; the hooks below append events to this

@@ -23,27 +23,27 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { MCPServerConfig } from "@/lib/types";
-import { transportIcons } from "./server-card";
+import { ConnectorConfig } from "@/lib/types";
+import { transportIcons } from "./connector-card";
 
-export interface MCPTool {
+export interface ConnectorTool {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
 }
 
-export interface MCPToolsDialogProps {
+export interface ConnectorToolsDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  server: MCPServerConfig | null;
-  tools: MCPTool[];
+  server: ConnectorConfig | null;
+  tools: ConnectorTool[];
   isLoadingTools: boolean;
   toolsError: string | null;
   onRefresh: (serverId: string) => void;
-  onToggle: (server: MCPServerConfig) => void;
+  onToggle: (server: ConnectorConfig) => void;
 }
 
-export function MCPToolsDialog({
+export function ConnectorToolsDialog({
   isOpen,
   onClose,
   server,
@@ -52,7 +52,7 @@ export function MCPToolsDialog({
   toolsError,
   onRefresh,
   onToggle,
-}: MCPToolsDialogProps) {
+}: ConnectorToolsDialogProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedSchemas, setExpandedSchemas] = useState<Record<string, boolean>>({});
   const [schemaViewMode, setSchemaViewMode] = useState<Record<string, "params" | "raw">>({});

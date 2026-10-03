@@ -132,7 +132,7 @@ export function UserMenu({ variant = "pill" }: UserMenuProps) {
               Memories
             </Link>
             <Link
-              href="/mcp"
+              href="/connectors"
               className="flex w-full items-center gap-3 rounded-sm px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-tertiary/10"
               onClick={() => setIsProfileOpen(false)}
             >

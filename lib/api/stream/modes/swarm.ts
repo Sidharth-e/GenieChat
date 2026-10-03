@@ -22,7 +22,7 @@ import {
   processImages,
   getHistoricalImages,
 } from "@/lib/api/stream-helper";
-import { loadUserTooling, filterMcpServers } from "../context";
+import { loadUserTooling, filterConnectors } from "../context";
 import type { PersistedToolCall, ProducerEvent } from "../events";
 import {
   runTokenStream,
@@ -179,7 +179,7 @@ export async function handleSwarmStream(req: NextRequest): Promise<Response> {
       customToolSelection: "all-enabled",
     });
 
-    const mcpServers = filterMcpServers({
+    const connectors = filterConnectors({
       allServers: tooling.allServers,
       secretMap: tooling.secretMap,
       extraRequiredTools: validAgents.flatMap((a) => a.tools ?? []),
@@ -213,7 +213,7 @@ export async function handleSwarmStream(req: NextRequest): Promise<Response> {
         messages,
         agents: swarmAgentConfigs,
         defaultModelId: body.model,
-        mcpServers,
+        connectors,
         images: imagesForAI,
         modelOptions: {
           temperature: body.temperature,

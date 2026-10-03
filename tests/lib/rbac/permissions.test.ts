@@ -15,7 +15,7 @@ describe("getPermissionsForRole", () => {
     expect(perms).toContain("prompts:write");
     expect(perms).toContain("tools:write");
     expect(perms).toContain("workflows:write");
-    expect(perms).toContain("mcp:write");
+    expect(perms).toContain("connector:write");
     expect(perms).toContain("chat:use");
     expect(perms).toHaveLength(8);
   });

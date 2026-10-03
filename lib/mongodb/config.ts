@@ -9,7 +9,7 @@ const historyCollectionName = config.mongodb.collections.history;
 const threadCollectionName = config.mongodb.collections.threads;
 const agentCollectionName = config.mongodb.collections.agents;
 const promptCollectionName = config.mongodb.collections.prompts;
-const mcpServerCollectionName = config.mongodb.collections.mcpServers;
+const connectorCollectionName = config.mongodb.collections.connectors;
 const configCollectionName = config.mongodb.collections.config;
 const logCollectionName = config.mongodb.collections.logs;
 const workflowCollectionName = config.mongodb.collections.workflows;
@@ -32,7 +32,7 @@ export {
   threadCollectionName,
   agentCollectionName,
   promptCollectionName,
-  mcpServerCollectionName,
+  connectorCollectionName,
   configCollectionName,
   logCollectionName,
   workflowCollectionName,

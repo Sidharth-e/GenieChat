@@ -1,12 +1,12 @@
 import "server-only";
 import { logger } from "@/lib/logger";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
-import { MCPServerConfig, MCPTransportType } from "../types";
+import { ConnectorConfig, ConnectorTransportType } from "../types";
 
 // Map our transport types to LangChain transport types
 type LangChainTransport = "sse" | "http";
 
-function mapTransportType(type: MCPTransportType): LangChainTransport {
+function mapTransportType(type: ConnectorTransportType): LangChainTransport {
     switch (type) {
         case "sse":
             return "sse";
@@ -18,7 +18,7 @@ function mapTransportType(type: MCPTransportType): LangChainTransport {
 }
 
 // Build MCP client configuration from our server configs
-export function buildMCPClientConfig(servers: MCPServerConfig[]): Record<string, unknown> {
+export function buildMCPClientConfig(servers: ConnectorConfig[]): Record<string, unknown> {
     const config: Record<string, unknown> = {};
 
     for (const server of servers) {
@@ -39,7 +39,7 @@ export function buildMCPClientConfig(servers: MCPServerConfig[]): Record<string,
 }
 
 // Create MCP client from server configurations
-export function createMCPClient(servers: MCPServerConfig[]): MultiServerMCPClient | null {
+export function createMCPClient(servers: ConnectorConfig[]): MultiServerMCPClient | null {
     const enabledServers = servers.filter((s) => s.enabled);
     if (enabledServers.length === 0) {
         return null;
@@ -51,7 +51,7 @@ export function createMCPClient(servers: MCPServerConfig[]): MultiServerMCPClien
 }
 
 // Tool info returned from MCP servers
-export interface MCPToolInfo {
+export interface ConnectorToolInfo {
     name: string;
     description: string;
     serverName: string;
@@ -59,7 +59,7 @@ export interface MCPToolInfo {
 }
 
 // Get tools from all configured MCP servers
-export async function getMCPTools(servers: MCPServerConfig[]): Promise<MCPToolInfo[]> {
+export async function getMCPTools(servers: ConnectorConfig[]): Promise<ConnectorToolInfo[]> {
     const client = createMCPClient(servers);
     if (!client) {
         return [];
@@ -81,7 +81,7 @@ export async function getMCPTools(servers: MCPServerConfig[]): Promise<MCPToolIn
 }
 
 // Extract server name from tool (tools are prefixed with server name)
-function extractServerName(toolName: string, servers: MCPServerConfig[]): string {
+function extractServerName(toolName: string, servers: ConnectorConfig[]): string {
     for (const server of servers) {
         if (toolName.startsWith(`${server.name}_`) || toolName.includes(server.name)) {
             return server.name;
@@ -91,7 +91,7 @@ function extractServerName(toolName: string, servers: MCPServerConfig[]): string
 }
 
 // Get tools for a specific server
-export async function getToolsForServer(server: MCPServerConfig): Promise<MCPToolInfo[]> {
+export async function getToolsForServer(server: ConnectorConfig): Promise<ConnectorToolInfo[]> {
     if (!server.enabled) {
         return [];
     }

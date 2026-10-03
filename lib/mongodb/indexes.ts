@@ -25,7 +25,7 @@ const NAMES = {
   threads: "threads",
   agents: "agents",
   prompts: "prompt",
-  mcpServers: "mcp_server",
+  connectors: "connectors",
   config: "config",
   logs: "logs",
   workflows: "workflows",
@@ -549,9 +549,9 @@ export const INDEX_SPECS: IndexSpec[] = [
     name: "prompts_userId_updatedAt",
   },
   {
-    collection: NAMES.mcpServers,
+    collection: NAMES.connectors,
     keys: { userId: 1, updatedAt: -1 },
-    name: "mcpServers_userId_updatedAt",
+    name: "connectors_userId_updatedAt",
   },
   {
     collection: NAMES.tools,

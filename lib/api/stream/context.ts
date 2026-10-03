@@ -1,21 +1,21 @@
 import { logger } from "@/lib/logger";
 import { AgentStore } from "@/lib/mongodb/agent-store";
-import { MCPStore } from "@/lib/mongodb/mcp-store";
+import { ConnectorStore } from "@/lib/mongodb/connector-store";
 import { ToolStore } from "@/lib/mongodb/tool-store";
 import { SecretStore } from "@/lib/mongodb/secret-store";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
 import { convertCustomToolToLangChain } from "@/lib/tool/custom-tool-converter";
 import type { StructuredToolInterface } from "@langchain/core/tools";
-import type { Agent, MCPServerConfig, ToolSecret } from "@/lib/types";
+import type { Agent, ConnectorConfig, ToolSecret } from "@/lib/types";
 import { toSnakeCase, type CustomToolSelection } from "./tooling";
 
 // The two pure helpers live in `tooling.ts` so they stay importable without an
 // environment; re-exported here so adapters have one place to reach for.
-export { toSnakeCase, filterMcpServers } from "./tooling";
+export { toSnakeCase, filterConnectors } from "./tooling";
 export type { CustomToolSelection } from "./tooling";
 
 export interface UserTooling {
-  allServers: MCPServerConfig[];
+  allServers: ConnectorConfig[];
   customTools: StructuredToolInterface[];
   customToolsLookup: Map<string, StructuredToolInterface>;
   secretMap: Record<string, string>;
@@ -135,8 +135,8 @@ export async function loadUserTooling(params: {
 }): Promise<UserTooling> {
   const result = emptyTooling();
 
-  const mcpStore = isDatabaseConfigured() ? new MCPStore() : null;
-  if (!mcpStore) return result;
+  const connectorStore = isDatabaseConfigured() ? new ConnectorStore() : null;
+  if (!connectorStore) return result;
 
   try {
     const secretStore = new SecretStore();
@@ -147,7 +147,7 @@ export async function loadUserTooling(params: {
         ? secretStore.getSecrets(params.userId)
         : Promise.resolve([] as ToolSecret[]),
       toolStore.getTools(params.userId),
-      mcpStore.getMCPServers(params.userId),
+      connectorStore.getConnectors(params.userId),
     ]);
 
     result.allServers = allServers;
@@ -170,7 +170,7 @@ export async function loadUserTooling(params: {
       ),
     );
   } catch (err) {
-    logger.warn("Error fetching agent settings or MCP servers:", err);
+    logger.warn("Error fetching agent settings or connectors:", err);
   }
 
   return result;
@@ -198,14 +198,14 @@ export async function loadAgentContext(params: {
   };
 
   const agentStore = isDatabaseConfigured() ? new AgentStore() : null;
-  const mcpStore = isDatabaseConfigured() ? new MCPStore() : null;
-  if (!agentStore || !mcpStore) return result;
+  const connectorStore = isDatabaseConfigured() ? new ConnectorStore() : null;
+  if (!agentStore || !connectorStore) return result;
 
   try {
     const secretStore = new SecretStore();
     const toolStore = new ToolStore();
 
-    // Single round: secrets, agent config, tools and MCP servers are independent.
+    // Single round: secrets, agent config, tools and connectors are independent.
     const [userSecrets, fetchedAgent, userCustomTools, allServers] =
       await Promise.all([
         isDatabaseConfigured()
@@ -215,7 +215,7 @@ export async function loadAgentContext(params: {
           ? agentStore.getAgent(params.agentId)
           : Promise.resolve(null),
         toolStore.getTools(params.userId),
-        mcpStore.getMCPServers(params.userId),
+        connectorStore.getConnectors(params.userId),
       ]);
 
     result.allServers = allServers;
@@ -265,7 +265,7 @@ export async function loadAgentContext(params: {
       ),
     );
   } catch (err) {
-    logger.warn("Error fetching agent settings or MCP servers:", err);
+    logger.warn("Error fetching agent settings or connectors:", err);
   }
 
   return result;

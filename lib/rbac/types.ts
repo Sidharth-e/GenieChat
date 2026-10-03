@@ -8,7 +8,7 @@ export const PERMISSIONS = [
   "prompts:write",
   "tools:write",
   "workflows:write",
-  "mcp:write",
+  "connector:write",
   "chat:use",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];

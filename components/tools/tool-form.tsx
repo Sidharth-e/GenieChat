@@ -23,7 +23,7 @@ import { ToolGeneratorDialog } from "./tool-generator-dialog";
 import { Wand2 } from "lucide-react";
 import { DEFAULT_TOOLS_METADATA } from "@/lib/tool/default-tools-metadata";
 import { useTools } from "@/hooks/use-tools-queries";
-import { useMCPServers } from "@/hooks/use-mcp-queries";
+import { useConnectors } from "@/hooks/use-connector-queries";
 import { useSecrets } from "@/hooks/use-secrets-queries";
 import { SecretListDialog } from "./secret-list-dialog";
 import { AI_NAME } from "@/constants/main";
@@ -80,8 +80,8 @@ export function ToolForm({
   const { data: existingTools } = useTools();
   const { data: secrets = [], isLoading: isLoadingSecrets } = useSecrets();
 
-  // Fetch installed MCP servers for validation
-  const { data: installedMcpServers = [] } = useMCPServers();
+  // Fetch installed connectors for validation
+  const { data: installedConnectors = [] } = useConnectors();
 
   const validateToolName = (toolName: string): string | null => {
     const normalizedName = toolName.trim();
@@ -93,11 +93,11 @@ export function ToolForm({
     );
     if (isDefaultTool) return "This name is reserved by a default system tool.";
 
-    // Check against Installed MCP Tools
-    const isInstalledMcpTool = installedMcpServers.some(
+    // Check against installed connector tools
+    const isInstalledConnectorTool = installedConnectors.some(
       (s) => s.name.toLowerCase() === normalizedName.toLowerCase(),
     );
-    if (isInstalledMcpTool)
+    if (isInstalledConnectorTool)
       return "This name is reserved by an installed connector.";
 
     // Check against User Tools (exclude current tool if editing)

@@ -20,7 +20,7 @@ export interface AgentToolOption {
     id: string;
     name: string;
     description: string;
-    source: "default" | "mcp";
+    source: "default" | "connector";
 }
 
 export interface AgentModelOption {
@@ -78,7 +78,7 @@ export async function generateAgentAction(
 
         const toolsOutputGuidance = includeTools
             ? `,
-            "tools": ["default:web_search", "my-mcp-server:search_docs"]`
+            "tools": ["default:web_search", "my-connector:search_docs"]`
             : "";
         const modelOutputGuidance = includeModel
             ? `"modelId": "gemini-3-flash-preview"`

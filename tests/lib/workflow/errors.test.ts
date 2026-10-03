@@ -27,8 +27,8 @@ describe("describeError", () => {
 
   it("passes an ordinary Error's message through", () => {
     expect(
-      describeError(new Error('MCP server "weather" is not configured')),
-    ).toBe('MCP server "weather" is not configured');
+      describeError(new Error('Connector "weather" is not configured')),
+    ).toBe('Connector "weather" is not configured');
   });
 
   it("stringifies something that is not an Error", () => {

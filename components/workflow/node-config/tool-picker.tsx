@@ -13,8 +13,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useMCPServers, useMCPToolsByServer } from "@/hooks/use-mcp-queries";
-import type { MCPToolInfo } from "@/lib/types";
+import { useConnectors, useConnectorTools } from "@/hooks/use-connector-queries";
+import type { ConnectorToolInfo } from "@/lib/types";
 import {
   DEFAULT_TOOLS_METADATA,
   RESOLVABLE_DEFAULT_TOOLS,
@@ -27,7 +27,7 @@ interface ToolPickerProps {
 }
 
 export function ToolPicker({ value, onChange }: ToolPickerProps) {
-  const { data: servers = [] } = useMCPServers();
+  const { data: servers = [] } = useConnectors();
   const enabledServers = servers.filter((server) => server.enabled);
 
   // Discovery is lazy — the picker is opened far more often than a server's
@@ -36,7 +36,7 @@ export function ToolPicker({ value, onChange }: ToolPickerProps) {
   const [requestedServerIds, setRequestedServerIds] = React.useState<
     ReadonlySet<string>
   >(new Set());
-  const { tools } = useMCPToolsByServer(
+  const { tools } = useConnectorTools(
     enabledServers.map((server) => server.id),
     requestedServerIds,
   );
@@ -44,11 +44,11 @@ export function ToolPicker({ value, onChange }: ToolPickerProps) {
   const pickAppTool = (id: string, description: string) =>
     onChange({ id, description, type: "app-tool" });
 
-  const pickMCPTool = (serverId: string, serverName: string, tool: MCPToolInfo) =>
+  const pickConnectorTool = (serverId: string, serverName: string, tool: ConnectorToolInfo) =>
     onChange({
       id: tool.name,
       description: tool.description,
-      type: "mcp-tool",
+      type: "connector-tool",
       serverId,
       serverName,
     });
@@ -90,7 +90,7 @@ export function ToolPicker({ value, onChange }: ToolPickerProps) {
         {enabledServers.length > 0 && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>MCP tools</DropdownMenuLabel>
+            <DropdownMenuLabel>Connector tools</DropdownMenuLabel>
             {enabledServers.map((server) => {
               const serverTools = tools[server.id] ?? [];
               return (
@@ -116,7 +116,7 @@ export function ToolPicker({ value, onChange }: ToolPickerProps) {
                       serverTools.map((tool) => (
                         <DropdownMenuItem
                           key={tool.name}
-                          onSelect={() => pickMCPTool(server.id, server.name, tool)}
+                          onSelect={() => pickConnectorTool(server.id, server.name, tool)}
                         >
                           {tool.name}
                         </DropdownMenuItem>

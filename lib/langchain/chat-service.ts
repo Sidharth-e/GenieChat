@@ -6,7 +6,7 @@ import {
   AIMessageChunk,
 } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
-import { Message, MCPServerConfig } from "../types";
+import { Message, ConnectorConfig } from "../types";
 import defaultToolsMap, {
   createCodeSandboxTool,
   webSearch,
@@ -33,11 +33,11 @@ export class ChatService {
     images?: { base64Data: string; mimeType: string }[];
     customTools?: StructuredToolInterface[];
     /**
-     * Already filtered and secret-resolved upstream by `filterMcpServers`. Chat
+     * Already filtered and secret-resolved upstream by `filterConnectors`. Chat
      * is the one surface that binds every enabled server, because it has no
      * agent record to scope them with.
      */
-    mcpServers?: MCPServerConfig[];
+    connectors?: ConnectorConfig[];
     forceWebSearch?: boolean;
     userContext?: UserContext;
   }): AsyncGenerator<
@@ -125,14 +125,14 @@ export class ChatService {
 
     try {
       // A server that will not answer costs its own tools and nothing else, as
-      // a failing MCP server does on the agent surface.
-      const mcpTools: StructuredToolInterface[] = [];
-      if (params.mcpServers && params.mcpServers.length > 0) {
-        mcpClient = createMCPClient(params.mcpServers);
+      // a failing connector does on the agent surface.
+      const connectorTools: StructuredToolInterface[] = [];
+      if (params.connectors && params.connectors.length > 0) {
+        mcpClient = createMCPClient(params.connectors);
         if (mcpClient) {
           try {
-            mcpTools.push(...(await mcpClient.getTools()));
-            logger.info(`Loaded ${mcpTools.length} MCP tools for chat`);
+            connectorTools.push(...(await mcpClient.getTools()));
+            logger.info(`Loaded ${connectorTools.length} MCP tools for chat`);
           } catch (toolError) {
             logger.warn("Failed to load MCP tools:", toolError);
           }
@@ -142,10 +142,10 @@ export class ChatService {
       // One name, one tool. A duplicate is dropped rather than bound twice,
       // because two tools sharing a name reach the model as a single ambiguous
       // choice — the same check the agent service makes, in the same order:
-      // defaults win outright, then MCP, then the user's own tools.
+      // defaults win outright, then connectors, then the user's own tools.
       const reservedNames = new Set([
         ...Object.keys(defaultToolsMap),
-        ...mcpTools.map((t) => t.name),
+        ...connectorTools.map((t) => t.name),
       ]);
       const uniqueCustomTools = chatCustomTools.filter(
         (t) => !reservedNames.has(t.name),
@@ -161,7 +161,7 @@ export class ChatService {
 
       const allTools: StructuredToolInterface[] = [
         ...defaultToolsForChat,
-        ...mcpTools,
+        ...connectorTools,
         ...uniqueCustomTools,
       ];
 

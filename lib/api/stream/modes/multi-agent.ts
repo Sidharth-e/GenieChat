@@ -10,7 +10,7 @@ import { config } from "@/lib/config";
 import { StreamPipeline, type StreamContext } from "@/lib/api/stream-pipeline";
 import {
   loadAgentContext,
-  filterMcpServers,
+  filterConnectors,
   toSnakeCase,
   type AgentContext,
 } from "../context";
@@ -36,7 +36,7 @@ interface SubAgentParams {
 
 /**
  * The sub-agent records, fetched only once the main agent is known — this is
- * the ordering that keeps `loadAgentContext` and `filterMcpServers` separate
+ * the ordering that keeps `loadAgentContext` and `filterConnectors` separate
  * functions. A sub-agent that fails to load is dropped, not fatal.
  */
 async function loadSubAgents(
@@ -107,7 +107,7 @@ export async function buildMultiAgentMode(params: {
     customToolsLookup.set("use_skill", createUseSkillTool(agent.skills));
   }
 
-  const mcpServers = filterMcpServers({
+  const connectors = filterConnectors({
     allServers: agentContext.allServers,
     secretMap: agentContext.secretMap,
     allowedTools: agentContext.allowedTools,
@@ -134,7 +134,7 @@ export async function buildMultiAgentMode(params: {
       messages: context.messages,
       modelId: model,
       systemPrompt: effectiveSystemPrompt,
-      mcpServers,
+      connectors,
       images: context.imagesForAI,
       modelOptions: {
         temperature: effectiveTemperature,

@@ -4,7 +4,7 @@ import {
   Message,
   Agent,
   Prompt,
-  MCPServerConfig,
+  ConnectorConfig,
   WorkflowExecution,
   CustomTool,
   ToolSecret,
@@ -145,8 +145,8 @@ export interface PromptDocument extends Prompt {
   favoriteUserIds?: string[];
 }
 
-export interface MCPServerDocument extends MCPServerConfig {
-  type: "mcp_server";
+export interface ConnectorDocument extends ConnectorConfig {
+  type: "connector";
 }
 
 export interface RichWorkflowDocument extends RichWorkflow {

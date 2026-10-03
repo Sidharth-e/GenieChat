@@ -4,7 +4,7 @@ import { createAgent } from "langchain";
 import {
   SystemMessage,
 } from "@langchain/core/messages";
-import { Message, MCPServerConfig } from "../types";
+import { Message, ConnectorConfig } from "../types";
 import { createMCPClient } from "./langchain-mcp";
 import { StructuredToolInterface } from "@langchain/core/tools";
 import { getModel } from "./model-factory";
@@ -45,7 +45,7 @@ export class AgentService {
     messages: Message[];
     modelId: string;
     systemPrompt: string;
-    mcpServers?: MCPServerConfig[];
+    connectors?: ConnectorConfig[];
     allowedTools?: string[];
     customTools?: StructuredToolInterface[];
     images?: { base64Data: string; mimeType: string }[];
@@ -81,11 +81,11 @@ export class AgentService {
 
       // Get MCP tools if servers are provided
       let tools: StructuredToolInterface[] = [];
-      if (params.mcpServers && params.mcpServers.length > 0) {
-        mcpClient = createMCPClient(params.mcpServers);
+      if (params.connectors && params.connectors.length > 0) {
+        mcpClient = createMCPClient(params.connectors);
         if (mcpClient) {
           try {
-            // mcpServers are already pre-filtered upstream by allowed server selection.
+            // connectors are already pre-filtered upstream by allowed server selection.
             // Load all tools from those servers to avoid runtime failures when the model
             // requests a sibling tool from the same server (e.g. auth/introspection tools).
             tools = await mcpClient.getTools();

@@ -46,8 +46,8 @@ Package manager is **pnpm** (v11.1.2, `node-linker=hoisted`). Node >= 20 require
 
 ### Route Groups (App Router)
 
-- `app/(main)/` — authenticated pages: chat, agent-chat, multi-agent-chat, swarm-chat, auto, agents, tools, MCP, webhooks, artifacts, memories, workflow, workspace, admin, settings
-- `app/(forms)/` — form-based CRUD pages: agents, tools, MCP, webhooks, workflow (separate layout, no chat sidebar)
+- `app/(main)/` — authenticated pages: chat, agent-chat, multi-agent-chat, swarm-chat, auto, agents, tools, connectors, webhooks, artifacts, memories, workflow, workspace, admin, settings
+- `app/(forms)/` — form-based CRUD pages: agents, tools, connectors, webhooks, workflow (separate layout, no chat sidebar)
 - `app/api/` — API routes for chat streaming, agents, workflows, arena, secrets, storage, etc.
 - `app/login/` — login page
 - `app/preview/` — standalone views
@@ -112,23 +112,23 @@ Two options exist because chat is the only surface that needs them: `extraScroll
 
 ### MCP Tool Binding
 
-Every surface that can call an MCP tool resolves the servers it will connect to
-through `filterMcpServers` (`lib/api/stream/tooling.ts`), which drops disabled
-servers and resolves their stored secrets. What differs is the required-tool
+Every surface that can call an MCP tool resolves the connectors it will connect
+to through `filterConnectors` (`lib/api/stream/tooling.ts`), which drops disabled
+connectors and resolves their stored secrets. What differs is the required-tool
 list each surface hands it. Agent, multi-agent and swarm pass the agent records'
-own `tools`, so a server is reachable only where an agent names it. **Default
-chat passes `includeAllEnabled` and binds every enabled server** — it is the one
-surface with no agent record to scope them with, and no configuration of its own
-in which a narrower choice could be expressed. It binds every enabled custom tool
-for the same reason. This is a deliberate cost: each chat request opens a client
-against each enabled server and lists its tools.
+own `tools`, so a connector is reachable only where an agent names it. **Default
+chat passes `includeAllEnabled` and binds every enabled connector** — it is the
+one surface with no agent record to scope them with, and no configuration of its
+own in which a narrower choice could be expressed. It binds every enabled custom
+tool for the same reason. This is a deliberate cost: each chat request opens a
+client against each enabled connector and lists its tools.
 
 `chat-service.streamChat` owns its MCP client and releases it in a `finally`, so
 a throw, the streaming fallback, or a consumer that stops iterating cannot leak
 the connection; `agent-service` owns its client the same way. One name resolves
 to one tool, in a fixed precedence — the built-in defaults win outright, then
-MCP, then the user's own tools — because two tools sharing a name reach the model
-as a single ambiguous choice.
+connectors, then the user's own tools — because two tools sharing a name reach
+the model as a single ambiguous choice.
 
 See [Conversation Surfaces](#conversation-surfaces) for the four surfaces that
 render a conversation.
@@ -476,7 +476,7 @@ This project uses **Next.js 16**, which has breaking changes from earlier versio
   (`threads_userId_lastMessageAt` is `{ userId: 1, lastMessageAt: -1 }`).
   **This is a convention, not an invariant the store layer enforces.** Accessors
   addressed by an unguessable identifier take no `userId` at all — `getTool(toolId)`,
-  `getMCPServer(serverId)`, `deleteThread(threadId)` — and ownership for those is
+  `getConnector(serverId)`, `deleteThread(threadId)` — and ownership for those is
   enforced by hand at the route, which makes that route check load-bearing rather
   than belt-and-braces. The memory store is the counter-example: `getMemory(id,
   userId)`, `updateMemory(id, userId)` and `deleteMemory(id, userId)` carry the

@@ -6,7 +6,7 @@ import {
   threadCollectionName,
   agentCollectionName,
   promptCollectionName,
-  mcpServerCollectionName,
+  connectorCollectionName,
   configCollectionName,
   logCollectionName,
   workflowCollectionName,
@@ -29,7 +29,7 @@ import type {
   MessageDocument,
   AgentDocument,
   PromptDocument,
-  MCPServerDocument,
+  ConnectorDocument,
   ConfigDocument,
   LogDocument,
   WorkflowExecutionDocument,
@@ -94,8 +94,8 @@ export function getPromptCollection(): Collection<WithMongoId<PromptDocument>> {
   return getDb().collection<WithMongoId<PromptDocument>>(promptCollectionName);
 }
 
-export function getMcpServerCollection(): Collection<WithMongoId<MCPServerDocument>> {
-  return getDb().collection<WithMongoId<MCPServerDocument>>(mcpServerCollectionName);
+export function getConnectorCollection(): Collection<WithMongoId<ConnectorDocument>> {
+  return getDb().collection<WithMongoId<ConnectorDocument>>(connectorCollectionName);
 }
 
 export function getConfigCollection(): Collection<WithMongoId<ConfigDocument>> {

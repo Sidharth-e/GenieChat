@@ -10,7 +10,7 @@ import {
 import { createSupervisor } from "@langchain/langgraph-supervisor";
 import { StructuredToolInterface } from "@langchain/core/tools";
 
-import { Message, MCPServerConfig } from "../types";
+import { Message, ConnectorConfig } from "../types";
 import { createMCPClient } from "./langchain-mcp";
 import { getModel } from "./model-factory";
 import { ModelOptions } from "./model-config";
@@ -225,13 +225,13 @@ export class MultiAgentService {
      */
     private async resolveTools(
         allowed: string[] | undefined,
-        allMcpTools: StructuredToolInterface[],
+        allConnectorTools: StructuredToolInterface[],
         customToolsLookup?: Map<string, StructuredToolInterface>,
         userId?: string,
     ) {
         let resolved: StructuredToolInterface[] = [];
         if (allowed) {
-            const mcpFiltered = allMcpTools.filter(tool => 
+            const filteredConnectorTools = allConnectorTools.filter(tool => 
                 allowed.some(a => {
                     const suffix = a.split(":").pop();
                     if (!suffix) return false;
@@ -242,7 +242,7 @@ export class MultiAgentService {
                     );
                 })
             );
-            resolved = [...resolved, ...mcpFiltered];
+            resolved = [...resolved, ...filteredConnectorTools];
 
             const defaults = allowed
                 .filter(t => t.startsWith('default:'))
@@ -297,7 +297,7 @@ export class MultiAgentService {
         messages: Message[];
         modelId: string;
         systemPrompt: string;
-        mcpServers?: MCPServerConfig[];
+        connectors?: ConnectorConfig[];
         images?: { base64Data: string; mimeType: string }[];
         modelOptions?: Pick<ModelOptions, "temperature" | "topP">;
         userContext?: UserContext;
@@ -320,11 +320,11 @@ export class MultiAgentService {
 
             const supervisorModel = getModel(params.modelId, params.modelOptions);
             
-            // 1. Initialize MCP Tools
-            let allMcpTools: StructuredToolInterface[] = [];
-            if (params.mcpServers?.length) {
-                const mcpClient = createMCPClient(params.mcpServers);
-                if (mcpClient) allMcpTools = await mcpClient.getTools();
+            // 1. Initialize connector tools
+            let allConnectorTools: StructuredToolInterface[] = [];
+            if (params.connectors?.length) {
+                const mcpClient = createMCPClient(params.connectors);
+                if (mcpClient) allConnectorTools = await mcpClient.getTools();
             }
 
             // 2. Prepare Sub-Agent (Worker) Configurations using createReactAgent
@@ -335,7 +335,7 @@ export class MultiAgentService {
             const compiledAgents = await Promise.all(params.subAgents.map(async (sa) => {
                 const subTools = await this.resolveTools(
                     sa.allowedTools,
-                    allMcpTools,
+                    allConnectorTools,
                     params.customToolsLookup,
                     params.userContext?.userId,
                 );

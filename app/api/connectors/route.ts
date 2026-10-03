@@ -1,23 +1,23 @@
 import { NextRequest } from "next/server";
-import { MCPStore } from "@/lib/mongodb/mcp-store";
+import { ConnectorStore } from "@/lib/mongodb/connector-store";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
 import { getSessionUser } from "@/lib/auth/get-session-user";
 import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
 
-const mcpStore = isDatabaseConfigured() ? new MCPStore() : null;
+const connectorStore = isDatabaseConfigured() ? new ConnectorStore() : null;
 
 export async function GET() {
     try {
         const user = await getSessionUser();
         if (!user) return api.unauthorized();
-        if (!mcpStore) return api.serviceUnavailable("Database not configured");
+        if (!connectorStore) return api.serviceUnavailable("Database not configured");
 
-        const servers = await mcpStore.getMCPServers(user.id);
+        const servers = await connectorStore.getConnectors(user.id);
         return api.success(servers);
     } catch (error) {
-        return handleError(error, "Fetch MCP servers");
+        return handleError(error, "Fetch connectors");
     }
 }
 
@@ -25,10 +25,10 @@ export async function POST(request: NextRequest) {
     try {
         const user = await getSessionUser();
         if (!user) return api.unauthorized();
-        if (!mcpStore) return api.serviceUnavailable("Database not configured");
+        if (!connectorStore) return api.serviceUnavailable("Database not configured");
 
         const rateLimit = await checkRateLimit(request, {
-            namespace: "mcp_write",
+            namespace: "connector_write",
             identifier: user.id,
             ...config.rateLimit.standard,
         });
@@ -59,10 +59,10 @@ export async function POST(request: NextRequest) {
         }
 
         if ((transportType === "http" || transportType === "sse") && !serverUrl) {
-            return api.badRequest("Server URL is required for HTTP/SSE transport");
+            return api.badRequest("Connector URL is required for HTTP/SSE transport");
         }
 
-        const server = await mcpStore.createMCPServer({
+        const server = await connectorStore.createConnector({
             userId: user.id,
             userName: user.name,
             userEmail: user.email,
@@ -78,6 +78,6 @@ export async function POST(request: NextRequest) {
 
         return api.created(server);
     } catch (error) {
-        return handleError(error, "Create MCP server");
+        return handleError(error, "Create connector");
     }
 }

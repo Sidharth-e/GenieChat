@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
 import { agentService } from "@/lib/langchain/agent-service";
 import { AgentStore } from "@/lib/mongodb/agent-store";
-import { MCPStore } from "@/lib/mongodb/mcp-store";
+import { ConnectorStore } from "@/lib/mongodb/connector-store";
 import { ToolStore } from "@/lib/mongodb/tool-store";
 import { SecretStore } from "@/lib/mongodb/secret-store";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
@@ -11,8 +11,8 @@ import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
 import { convertCustomToolToLangChain } from "@/lib/tool/custom-tool-converter";
-import { resolveMCPServerSecrets } from "@/lib/mcp/resolve-mcp-secrets";
-import { MCPServerConfig, ToolSecret, Message } from "@/lib/types";
+import { resolveConnectorSecrets } from "@/lib/connectors/resolve-connector-secrets";
+import { ConnectorConfig, ToolSecret, Message } from "@/lib/types";
 import { StructuredToolInterface } from "@langchain/core/tools";
 import { generateId } from "@/lib/utils";
 import {
@@ -25,7 +25,7 @@ import { store } from "@/lib/store";
 export const runtime = "nodejs";
 
 const agentStore = isDatabaseConfigured() ? new AgentStore() : null;
-const mcpStore = isDatabaseConfigured() ? new MCPStore() : null;
+const connectorStore = isDatabaseConfigured() ? new ConnectorStore() : null;
 
 function toSnakeCase(name: string): string {
   return name
@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Load agent
-    if (!agentStore || !mcpStore) {
+    if (!agentStore || !connectorStore) {
       return api.serviceUnavailable("Agent service is not configured");
     }
 
@@ -159,8 +159,8 @@ export async function POST(req: NextRequest) {
       (clientSystemPrompt ? "\n" + clientSystemPrompt : "") +
       identityPrompt;
 
-    // 8. Load tools (MCP servers + custom tools)
-    let mcpServers: MCPServerConfig[] = [];
+    // 8. Load tools (connectors + custom tools)
+    let connectors: ConnectorConfig[] = [];
     let customToolsForAgent: StructuredToolInterface[] = [];
 
     try {
@@ -210,10 +210,10 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Load MCP servers, filter by allowed tool server names
-      const allServers = await mcpStore.getMCPServers(apiKey.userId);
+      // Load connectors, filter by allowed tool server names
+      const allServers = await connectorStore.getConnectors(apiKey.userId);
       const enabledServers = allServers.filter(
-        (s: MCPServerConfig) => s.enabled,
+        (s: ConnectorConfig) => s.enabled,
       );
 
       if (agent.tools && agent.tools.length > 0) {
@@ -227,20 +227,20 @@ export async function POST(req: NextRequest) {
         );
 
         if (allowedServerNames.size > 0) {
-          mcpServers = enabledServers.filter((s) =>
+          connectors = enabledServers.filter((s) =>
             allowedServerNames.has(s.name),
           );
         } else {
-          mcpServers = enabledServers;
+          connectors = enabledServers;
         }
       } else if (agent.tools && agent.tools.length === 0) {
-        mcpServers = [];
+        connectors = [];
       }
 
-      mcpServers = resolveMCPServerSecrets(mcpServers, secretMap);
+      connectors = resolveConnectorSecrets(connectors, secretMap);
     } catch (err) {
       logger.warn(
-        "[AgentsAPI] Error fetching agent settings or MCP servers:",
+        "[AgentsAPI] Error fetching agent settings or connectors:",
         err,
       );
     }
@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
       messages: internalMessages,
       modelId: agent.modelId || "gemini-3-flash-preview",
       systemPrompt: effectiveSystemPrompt,
-      mcpServers,
+      connectors,
       allowedTools: agent.tools,
       customTools: customToolsForAgent,
       modelOptions: {
