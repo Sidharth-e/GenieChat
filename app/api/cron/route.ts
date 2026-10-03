@@ -3,24 +3,16 @@ import crypto from "crypto";
 import { logger } from "@/lib/logger";
 import { env } from "@/lib/env";
 import { WorkflowStore } from "@/lib/mongodb/workflow-store";
-import { AgentStore } from "@/lib/mongodb/agent-store";
-import { MCPStore } from "@/lib/mongodb/mcp-store";
-import { SecretStore } from "@/lib/mongodb/secret-store";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
 import { workflowExecutionService } from "@/lib/langchain/workflow-execution-service";
-import { Agent, ToolSecret } from "@/lib/types";
 import { api, handleError } from "@/lib/api-utils";
-import { resolveMCPServerSecrets } from "@/lib/mcp/resolve-mcp-secrets";
-import { CronExpressionParser } from "cron-parser";
-import { validateWorkflowSteps } from "@/lib/workflow/validation";
+import { nextRunAtFor } from "@/lib/workflow/schedule";
 
 const workflowStore = isDatabaseConfigured() ? new WorkflowStore() : null;
-const agentStore = isDatabaseConfigured() ? new AgentStore() : null;
-const mcpStore = isDatabaseConfigured() ? new MCPStore() : null;
 
 export async function GET(request: NextRequest) {
   try {
-    if (!workflowStore || !agentStore || !mcpStore) {
+    if (!workflowStore) {
       return api.serviceUnavailable("Database not configured");
     }
 
@@ -40,133 +32,73 @@ export async function GET(request: NextRequest) {
       return api.unauthorized("Invalid cron secret");
     }
 
-    const scheduledWorkflows = await workflowStore.getScheduledWorkflows();
     const now = new Date();
     const nowISO = now.toISOString();
+    // One clock read for the whole tick: `nowISO` is both the due-window bound
+    // and the `lastRunAt` the claim writes, so they cannot disagree by a
+    // millisecond.
+    const scheduledWorkflows =
+      await workflowStore.getScheduledRichWorkflows(nowISO);
     const triggeredWorkflowIds: string[] = [];
 
     for (const workflow of scheduledWorkflows) {
-      if (!workflow.trigger?.config?.cronExpression) continue;
+      const cronExpression = workflow.trigger?.config?.cronExpression;
+      if (!cronExpression) continue;
 
-      const validation = validateWorkflowSteps(workflow.steps);
-      if (!validation.valid) {
-        logger.error(
-          `Skipping invalid workflow ${workflow.id}: ${validation.errors[0]}`,
-        );
-        continue;
-      }
-
-      const cronExpression = workflow.trigger.config.cronExpression;
-
+      let nextRunAt: string;
       try {
-        // Calculate the NEXT occurrence after the current execution
-        const interval = CronExpressionParser.parse(cronExpression, {
-          currentDate: now,
-        });
-        const nextRunAt = interval.next().toISOString();
-
-        // Atomic Claim: Try to update the schedule.
-        // This claims via the store's `updatedAt` version token, so only one instance wins.
-        const claimed = await workflowStore.updateWorkflowSchedule(
-          workflow.id,
-          workflow.userId,
-          nowISO,
-          nextRunAt,
-        );
-
-        if (!claimed) {
-          // Another instance (or the internal scheduler) already picked this up
-          continue;
-        }
-
-        logger.info(`Triggering scheduled workflow ${workflow.id}`);
-        triggeredWorkflowIds.push(workflow.id);
-
-        // Fetch resources required to run the workflow
-        const userId = workflow.userId;
-
-        const agentMap = new Map<string, Agent>();
-        let hasMissingAgents = false;
-        for (const step of workflow.steps) {
-          const stepAgentId = step.agentId?.trim();
-          if (!stepAgentId) {
-            logger.error(
-              `Step "${step.name}" is missing agent in workflow ${workflow.id}`,
-            );
-            hasMissingAgents = true;
-            continue;
-          }
-
-          if (!agentMap.has(stepAgentId)) {
-            const agent = await agentStore.getAgent(stepAgentId);
-            if (agent) {
-              agentMap.set(stepAgentId, agent);
-            } else {
-              logger.error(
-                `Agent "${stepAgentId}" not found for workflow ${workflow.id}`,
-              );
-              hasMissingAgents = true;
-            }
-          }
-        }
-
-        if (hasMissingAgents) {
-          continue;
-        }
-
-        const allMcpServers = await mcpStore.getMCPServers(userId);
-        const mcpServers = allMcpServers.filter((server) => server.enabled);
-        let userSecrets: ToolSecret[] = [];
-        if (isDatabaseConfigured()) {
-          const secretStore = new SecretStore();
-          userSecrets = await secretStore.getSecrets(userId);
-        }
-
-        const secretMap = userSecrets.reduce(
-          (acc, secret) => {
-            acc[secret.name] = secret.value;
-            return acc;
-          },
-          {} as Record<string, string>,
-        );
-        const resolvedMcpServers = resolveMCPServerSecrets(
-          mcpServers,
-          secretMap,
-        );
-
-        // Start execution
-        const eventGenerator = workflowExecutionService.executeWorkflow({
-          workflowId: workflow.id,
-          workflowName: workflow.name,
-          userId,
-          steps: workflow.steps,
-          agents: agentMap,
-          initialMessage: "Triggered via scheduled cron job",
-          mcpServers: resolvedMcpServers,
-        });
-
-        // Fire and forget
-        const processStream = async () => {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            for await (const event of eventGenerator) {
-              // iterate to consume and run the steps
-            }
-          } catch (error) {
-            logger.error(
-              { err: error },
-              `Scheduled workflow execution error for ${workflow.id}`,
-            );
-          }
-        };
-
-        processStream();
+        // `nextRunAtFor` is the write path's own helper (Task 11, already
+        // landed). Reusing it here keeps one definition of "the next fire
+        // time" instead of a third inline copy of the same parse.
+        const computed = nextRunAtFor(workflow.trigger, now);
+        if (!computed) continue;
+        nextRunAt = computed;
       } catch {
         logger.error(
           `Invalid cron expression for workflow ${workflow.id}: ${cronExpression}`,
         );
         continue;
       }
+
+      // Claim before running. The store filters on the `updatedAt` this read
+      // observed, so of two runners on the same tick exactly one is told it won
+      // — and the loser skips the run rather than duplicating it.
+      const claimed = await workflowStore.claimRichWorkflowSchedule(
+        workflow.id,
+        workflow.userId,
+        nowISO,
+        nextRunAt,
+      );
+      if (!claimed) continue;
+
+      logger.info(`Triggering scheduled workflow ${workflow.id}`);
+      triggeredWorkflowIds.push(workflow.id);
+
+      const eventGenerator = workflowExecutionService.executeRichWorkflow({
+        workflow,
+        query: { message: "Triggered via scheduled cron job" },
+      });
+
+      // Fire and forget: the run writes its own execution record, and the cron
+      // caller must not wait on a model.
+      void (async () => {
+        try {
+          // The binding itself is unused — draining the generator is what runs
+          // the workflow. Keep this disable: `no-unused-vars` comes from
+          // `eslint-config-next/typescript` and does **not** ignore an
+          // underscore prefix, so without it `pnpm lint` fails. The code being
+          // replaced carries the same comment for the same reason.
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          for await (const _event of eventGenerator) {
+            // Draining the generator is what runs the workflow.
+          }
+        } catch (error) {
+          logger.error(
+            { err: error },
+            `Scheduled workflow execution error for ${workflow.id}`,
+          );
+        }
+      })();
     }
 
     return api.success({
