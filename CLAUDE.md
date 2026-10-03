@@ -87,7 +87,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - **State management**: Zustand stores in `lib/stores/` with `persist` middleware for local storage. Auth store in `lib/auth/store.ts`. Machine state store in `lib/stores/machine-state-store.ts`.
 - **Data fetching**: TanStack React Query. Custom hooks in `hooks/` (`use-*-queries.ts` pattern) wrap API calls with query/mutation logic.
 - **Chat hooks**: `hooks/use-chat.ts` (standard), `hooks/use-agent-chat.ts` (agent), `hooks/use-multi-agent-chat.ts` (multi-agent), `hooks/use-arena-chat.ts` (arena mode) — the four stream hooks described in [Conversation Surfaces](#conversation-surfaces).
-- **Navigation**: Permanent 64px icon rail (`components/layout/nav-rail.tsx`) with flyout groups replaces collapsible sidebar. Machine State panel (`components/chat/machine-state-panel.tsx`) provides inspector panel on conversation routes.
+- **Navigation**: Permanent 64px icon rail (`components/layout/nav-rail.tsx`) with flyout groups. Machine State panel (`components/chat/machine-state-panel.tsx`) provides inspector panel on conversation routes.
 - **List-page frame**: every list page is composed through `components/common/content-layout.tsx` — one title row carrying the action button and the search field, then a borderless filter strip, then the content. It is full-bleed by default (the rail to the right edge), so a form-shaped page has to opt back into the centred column with `width="bounded"` (only `app/(main)/auto/page.tsx` does). The filter strip comes from `components/common/content-filter-pills.tsx`, generic over the page's own tab union, so tab styling is not re-invented per page.
 - **UI components**: `components/ui/` (primitives via Radix UI + CVA), domain components organized by feature (`components/chat/`, `components/agents/`, `components/workflow/`, etc.).
 - **Rich text**: BlockNote editor for rich text input, React Markdown for message rendering (with remark-gfm, remark-math, rehype-katex, mermaid, syntax highlighting).
@@ -108,15 +108,11 @@ The pending-message handoff is deliberately two effects. The first latches the p
 
 Two options exist because chat is the only surface that needs them: `extraScrollDependencies` (chat also scrolls on research-state, status-history and report-length changes) and `shouldRegisterThread` (chat's thread record is written by the send for a not-yet-persisted conversation, so the shell must not register one there — its `threadId` is the empty string in that case). `clearDelayMs` preserves swarm's 1000 ms pending-clear window.
 
-**Regeneration appends a version, up to a cap.** Regenerating adds to `message.versions` rather than replacing, so `MAX_MESSAGE_VERSIONS` (`constants/config.ts`) bounds it. `hasReachedVersionLimit` (`lib/conversation.ts`) is the one predicate; the stream pipeline refuses a regeneration past the cap *before* calling the model (so a refused attempt costs no tokens), and `MessageActions` disables the control with the reason as its title. **The hooks' `error` is rendered**, by `ConversationShell` above the composer — a rejected stream (a rate limit, a refusal) used to be invisible, which made it look like a control that did nothing. `handleRegenerate`'s guards report through a toast for the same reason.
+**Regeneration appends a version, up to a cap.** Regenerating adds to `message.versions` rather than replacing, so `MAX_MESSAGE_VERSIONS` (`constants/config.ts`) bounds it. `hasReachedVersionLimit` (`lib/conversation.ts`) is the one predicate; the stream pipeline refuses a regeneration past the cap *before* calling the model (so a refused attempt costs no tokens), and `MessageActions` disables the control with the reason as its title. **The hooks' `error` is rendered**, by `ConversationShell` above the composer — a rejected stream (a rate limit, a refusal) was invisible, which makes a broken control look like one that does nothing. `handleRegenerate`'s guards report through a toast for the same reason.
 
 ### Authentication Flow
 
 Middleware in `proxy.ts` (not `middleware.ts`) protects all routes except `/login`, `/api/auth`, `/api/agents/v1`, and static assets. GitHub OAuth with JWT strategy, 30-day sessions. There is no token refresh — a GitHub OAuth App token does not expire and issues no refresh token, so the session carries no provider tokens. Roles are resolved from the `GITHUB_ADMIN_USERNAMES` / `GITHUB_MANAGER_USERNAMES` / `GITHUB_VIEWER_USERNAMES` allowlists, with the role already stored on the user record taking precedence; an unlisted login falls back to the default role.
-
-### Removed With the Provider Change
-
-The switch to GitHub OAuth deleted the Microsoft Graph integration and the workspace surface built on it: inbox mail, meetings, reminders, DevOps, repo-context, CrossLayer, and AD-group-based sharing. The AI header notification feed (its store, the header bell and its settings block) and the sidebar entries pointing at the deleted routes went with them. Chat, agents, prompts, tools, webhooks, workflows, memories, notes and deep research remain.
 
 ### Environment Variables
 
@@ -140,7 +136,7 @@ Chat attachments, generated images, agent documents and deep-research reports li
 
 ### Knowledge RAG (Postgres + pgvector)
 
-Agent- and chat-document retrieval runs on PostgreSQL with pgvector. One table, `knowledge_chunks`, is keyed by `(owner_type, owner_id)` where the owner is an agent or a chat thread; `user_id` is stamped on every row and `source_id` names the originating document, so deleting one uploaded document removes only its chunks. `lib/embeddings/` still calls Ollama — the change is the store, not the provider.
+Agent- and chat-document retrieval runs on PostgreSQL with pgvector. One table, `knowledge_chunks`, is keyed by `(owner_type, owner_id)` where the owner is an agent or a chat thread; `user_id` is stamped on every row and `source_id` names the originating document, so deleting one uploaded document removes only its chunks.
 
 Retrieval is one statement: a pgvector cosine branch and a Postgres full-text branch over the generated `content_tsv` column, `LEFT JOIN`ed back to the rows so either arm can contribute, then fused by `combineRrf` (`lib/knowledge/ranking.ts`). Fusion uses ranks, not scores, which is why a cosine distance and a `ts_rank_cd` never need normalising. The lexical branch uses `websearch_to_tsquery`, not `to_tsquery` — the query is user text, and `to_tsquery` raises a syntax error on `(` or `&`. Each branch carries an explicit `ORDER BY` above its `ROW_NUMBER()` window, because it is the `ORDER BY` that decides which rows the `LIMIT` keeps.
 
@@ -152,7 +148,7 @@ Deleting a document deletes its chunks, and a stored object is no longer enough 
 
 `pnpm db:setup:pg` creates the schema and indexes. `pnpm knowledge:check` exercises the store end to end against a live database. `pnpm knowledge:backfill` re-chunks and re-embeds documents already in MongoDB.
 
- Memory Graph (Neo4j)
+### Memory Graph (Neo4j)
 
 Memories are a graph in Neo4j and nowhere else. Two node labels carry everything:
 `:Memory` and `:Entity`. Edges are
@@ -161,8 +157,7 @@ Memories are a graph in Neo4j and nowhere else. Two node labels carry everything
 `RELATION` (LLM-written).
 
 **Tenant isolation is a `userId` property, checked inside the query.** Neo4j has
-no collection scoping, so the old "a query that omits `userId` is a cross-user
-read" rule now lives in the `MATCH` clauses: the seed `SEARCH` filters in-index
+no collection scoping, so the boundary lives in the `MATCH` clauses: the seed `SEARCH` filters in-index
 (`WHERE m.userId = $userId` inside the `SEARCH`, not after it — a post-filter
 would let another tenant's nearer matches consume the top-K), and `EXPAND_CYPHER`
 re-checks `userId` on every node and edge of every hop, so a shared `:Entity` can
@@ -182,14 +177,14 @@ as the enrichment.
 
 Recall is a vector seed plus a bounded traversal, ranked in TypeScript
 (`lib/memory/recall.ts`): the seed's cosine score and the path weight, decayed
-per hop, plus a recency bonus. Seeds are vector-only. Degradation follows spec
-§7.6 — no seeds or any error returns an **empty** result with `mode:
+per hop, plus a recency bonus. Seeds are vector-only. No seeds, or any error, returns an **empty** result with
+`mode:
 "vector"`, never `slice(0, top)`, because the first `top` rows of a corpus are
 not an answer to a question. An unconfigured or unreachable Neo4j is an error
 for CRUD rather than a silent empty list: memories *are* the feature, so the
 store being down has to surface as a failure.
 
-Two structural notes that outlive this branch. `lib/memory/cypher.ts` holds every
+Two structural notes. `lib/memory/cypher.ts` holds every
 statement specifically so `scripts/check-memory.ts` can execute the same SQL the
 store does — the store is `"server-only"`, a check script cannot import it, and a
 script carrying its own copy would be verifying the copy. And the `"server-only"`
@@ -252,7 +247,7 @@ Two documents, and the split is the feature. A **`Schedule`** is the user's
 intent — "every weekday at 9am, run this workflow with this input" — and a
 **`ScheduleRun`** is one attempt at it. They are separate because retries and
 history need a record per attempt: rolling them into one document makes "last
-status" the only thing expressible, which is the shape this replaces. `runs`
+status" the only thing expressible. `runs`
 carries the attempt state machine (`pending` → `running` → `succeeded` /
 `failed`, with `skipped` and `cancelled` for the paths that never execute),
 while `schedules` carries the intent plus `nextRunAt` and a `skippedRuns` count.
@@ -341,11 +336,11 @@ but the seam is session-scoped, and the seam carries the `CRON_SECRET` bearer
 check in `lib/api/cron-guard.ts` — the credential the tick already uses, because
 its caller is a worker rather than a browser.
 
-**The dispatch seam's path is `/api/schedules/execute/[runId]`, not the spec's
-`/api/schedules/runs/[runId]/execute`.** `proxy.ts`'s `publicPaths` is
-prefix-matched, so exempting `/api/schedules/runs/` would also have exempted the
-session-scoped `GET /api/schedules/runs/[runId]` beside it; a namespace created
-solely for the cron seam cannot accrete a session-scoped sibling.
+**The dispatch seam lives at `/api/schedules/execute/[runId]`.** `proxy.ts`'s
+`publicPaths` is prefix-matched, so a seam under `/api/schedules/runs/` would
+also exempt the session-scoped `GET /api/schedules/runs/[runId]` beside it; a
+namespace created solely for the cron seam cannot accrete a session-scoped
+sibling.
 
 **`lib/schedules/run-agent.ts` holds the ownership check that
 `AgentStore.getAgent` cannot.** That accessor is addressed by an unguessable id
@@ -393,8 +388,8 @@ the only thing that imports the encoder on the client, so it rides in that
 component's lazy chunk. `constants/prompt.ts` is what teaches the model the
 fence, so a rename has to change both together.
 
-**The fence's former name, `barcode`, is still accepted** — by the renderer's
-dispatch and by `extractScancodeFences`. Renaming in the prompt changes only what
+**`barcode` is accepted as a fence name too** — by the renderer's dispatch and by
+`extractScancodeFences`. Renaming in the prompt changes only what
 the model is told from then on: it does not rewrite threads already on disk, nor
 the earlier turns of the conversation the model is currently reading, so a model
 that sees its own past `barcode` fences goes on emitting them. Without the alias
@@ -420,11 +415,11 @@ must not be able to fail a reply the user already has.
 
 ### Deployment
 
-The app builds to a Next.js standalone bundle (`output: "standalone"` in `next.config.mjs`, which requires Windows Developer Mode or admin for local builds due to symlinks). Whatever hosts it must be configured for every backing service, since it hosts none of them itself: `REDIS_URL` — see [Redis](#redis) — `POSTGRES_URL` pointing at a reachable Postgres — see [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector) — and `NEO4J_URI` / `NEO4J_PASSWORD` pointing at a reachable Neo4j — see [Memory Graph (Neo4j)](#memory-graph-neo4j). Neo4j Community Edition is single-instance with no clustering or online backup, which the spec accepts explicitly. Garage must be reachable by the **browser**, not only from the app, because presigned URLs are fetched directly — see [Object Storage (Garage)](#object-storage-garage).
+The app builds to a Next.js standalone bundle (`output: "standalone"` in `next.config.mjs`, which requires Windows Developer Mode or admin for local builds due to symlinks). Whatever hosts it must be configured for every backing service, since it hosts none of them itself: `REDIS_URL` — see [Redis](#redis) — `POSTGRES_URL` pointing at a reachable Postgres — see [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector) — and `NEO4J_URI` / `NEO4J_PASSWORD` pointing at a reachable Neo4j — see [Memory Graph (Neo4j)](#memory-graph-neo4j). Neo4j Community Edition is single-instance with no clustering or online backup. Garage must be reachable by the **browser**, not only from the app, because presigned URLs are fetched directly — see [Object Storage (Garage)](#object-storage-garage).
 
 The `docling-serve` sidecar is currently **local development only**, so a deployment has no `DOCLING_SERVE_URL` until a host for the sidecar exists. Until then nothing is parsed in production, and in chat that is deliberately not silent: plain-text attachments are still decoded directly because they bypass the sidecar, and a binary attachment produces a turn carrying an explicit notice that the file could not be read — so a misconfigured deployment makes itself visible in use rather than looking like a model that ignored the document. Agent documents go through the RAG path instead, where a conversion failure is logged and the document is attached unindexed. See [Document Parsing (Docling)](#document-parsing-docling).
 
-**The scheduled-execution driver is an external cron pointed at `POST /api/schedules/tick`**, authenticated with the same `CRON_SECRET` bearer the app has always used. The app holds no timer of its own — the endpoint runs one tick and returns — so the driver can be a system crontab, a container scheduler or a serverless cron with no change to the app. `docker-compose.yml` ships one for local development (the `schedule-tick` sidecar — see [Scheduling](#scheduling)); a deployment supplies its own, and can override where the sidecar points with `SCHEDULE_TICK_URL`. The route is exempted from the session proxy in `proxy.ts`, because an external driver has no session; its own bearer check is the whole gate. **Nothing pings `/api/cron` any more** — that route is deleted, so a deployment still configured to call it gets a silent 404 rather than an alert, and its schedules simply stop firing. See [Scheduling](#scheduling).
+**The scheduled-execution driver is an external cron pointed at `POST /api/schedules/tick`**, authenticated with the same `CRON_SECRET` bearer the app has always used. The app holds no timer of its own — the endpoint runs one tick and returns — so the driver can be a system crontab, a container scheduler or a serverless cron with no change to the app. `docker-compose.yml` ships one for local development (the `schedule-tick` sidecar — see [Scheduling](#scheduling)); a deployment supplies its own, and can override where the sidecar points with `SCHEDULE_TICK_URL`. The route is exempted from the session proxy in `proxy.ts`, because an external driver has no session; its own bearer check is the whole gate. **`/api/cron` does not exist** — a deployment still configured to call it gets a silent 404 rather than an alert, and its schedules simply stop firing. See [Scheduling](#scheduling).
 
 ## Next.js 16 (Breaking Changes)
 
