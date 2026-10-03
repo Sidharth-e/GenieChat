@@ -2,42 +2,8 @@
 
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useBrowserTimezone } from "@/hooks/use-browser-timezone";
 import type { ScheduleCadence } from "@/lib/types";
-
-/**
- * The zones offered.
- *
- * A short list with the browser's own zone first, rather than an IANA picker: the
- * overwhelming majority of schedules are "when I am at work", and the full list is
- * six hundred entries. `Intl` resolves the browser's zone, and `validateCadence`
- * accepts any real zone -- so a hand-built cadence from the API is not limited to
- * this list.
- */
-function zoneOptions(): { value: string; label: string }[] {
-  let local = "UTC";
-  try {
-    local = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    local = "UTC";
-  }
-  const zones = Array.from(
-    new Set([
-      local,
-      "UTC",
-      "America/New_York",
-      "America/Los_Angeles",
-      "Europe/London",
-      "Europe/Berlin",
-      "Asia/Kolkata",
-      "Asia/Singapore",
-      "Australia/Sydney",
-    ]),
-  );
-  return zones.map((zone) => ({
-    value: zone,
-    label: zone === local ? `${zone} (your timezone)` : zone,
-  }));
-}
 
 interface CadenceEditorProps {
   value: ScheduleCadence;
@@ -46,7 +12,18 @@ interface CadenceEditorProps {
   idPrefix: string;
 }
 
+/**
+ * The kind of cadence, and the fields that describe it.
+ *
+ * There is deliberately no timezone control. Every instant in this subsystem is
+ * authored and displayed in the browser's own zone, so the zone is resolved from
+ * the browser and stamped onto the cadence here rather than offered as a second
+ * clock for the user to reconcile — an expression typed against their own clock
+ * but filed under a different zone fires at an hour they never picked. The zone
+ * in use is named below the fields, so it is still visible, just not a choice.
+ */
 export function CadenceEditor({ value, onChange, idPrefix }: CadenceEditorProps) {
+  const viewerTimezone = useBrowserTimezone();
   const kindOptions = [
     { value: "cron", label: "Repeats" },
     { value: "once", label: "Once" },
@@ -60,8 +37,15 @@ export function CadenceEditor({ value, onChange, idPrefix }: CadenceEditorProps)
         onChange={(kind) =>
           onChange(
             kind === "once"
-              ? { kind: "once", runAt: new Date(Date.now() + 3_600_000).toISOString() }
-              : { kind: "cron", expression: "0 9 * * 1-5", timezone: zoneOptions()[0].value },
+              ? {
+                  kind: "once",
+                  runAt: new Date(Date.now() + 3_600_000).toISOString(),
+                }
+              : {
+                  kind: "cron",
+                  expression: "0 9 * * 1-5",
+                  timezone: viewerTimezone,
+                },
           )
         }
         options={kindOptions}
@@ -69,33 +53,18 @@ export function CadenceEditor({ value, onChange, idPrefix }: CadenceEditorProps)
       />
 
       {value.kind === "cron" ? (
-        <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
-          <div className="space-y-1">
-            <label htmlFor={`${idPrefix}-expression`} className="text-xs text-text-secondary">
-              Cron expression
-            </label>
-            <Input
-              id={`${idPrefix}-expression`}
-              value={value.expression}
-              onChange={(e) => onChange({ ...value, expression: e.target.value })}
-              placeholder="0 9 * * 1-5"
-              className="font-mono"
-              spellCheck={false}
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor={`${idPrefix}-timezone`} className="text-xs text-text-secondary">
-              Timezone
-            </label>
-            <Select
-              id={`${idPrefix}-timezone`}
-              value={value.timezone}
-              onChange={(timezone) => onChange({ ...value, timezone })}
-              options={zoneOptions()}
-              searchable
-              size="sm"
-            />
-          </div>
+        <div className="space-y-1">
+          <label htmlFor={`${idPrefix}-expression`} className="text-xs text-text-secondary">
+            Cron expression
+          </label>
+          <Input
+            id={`${idPrefix}-expression`}
+            value={value.expression}
+            onChange={(e) => onChange({ ...value, expression: e.target.value })}
+            placeholder="0 9 * * 1-5"
+            className="font-mono"
+            spellCheck={false}
+          />
         </div>
       ) : (
         <div className="space-y-1">
@@ -119,6 +88,10 @@ export function CadenceEditor({ value, onChange, idPrefix }: CadenceEditorProps)
           />
         </div>
       )}
+
+      <p className="text-xs text-text-secondary">
+        Times are in {viewerTimezone}, your browser&apos;s timezone.
+      </p>
     </div>
   );
 }

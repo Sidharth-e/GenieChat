@@ -4,12 +4,9 @@ import Link from "next/link";
 import { CalendarClock, Play, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScheduleStatusPill } from "@/components/schedules/schedule-status-pill";
-import {
-  cadenceTimezone,
-  describeCadence,
-  formatInstant,
-} from "@/lib/schedules/cadence";
+import { describeCadence, formatInstant } from "@/lib/schedules/cadence";
 import type { ScheduleListItem } from "@/hooks/use-schedule-queries";
+import { useBrowserTimezone } from "@/hooks/use-browser-timezone";
 
 interface ScheduleCardProps {
   schedule: ScheduleListItem;
@@ -19,12 +16,14 @@ interface ScheduleCardProps {
   isRunning: boolean;
 }
 
-/** The next run, in the zone the cadence was written in. */
-function nextRunLabel(schedule: ScheduleListItem): string {
+/** The next run, in the viewer's zone -- the one zone this UI shows times in. */
+function nextRunLabel(
+  schedule: ScheduleListItem,
+  viewerTimezone: string,
+): string {
   if (!schedule.nextRunAt) return "No next run";
-  if (!schedule.enabled)
-    return `Paused — would run ${formatInstant(schedule.nextRunAt, cadenceTimezone(schedule.cadence))}`;
-  return formatInstant(schedule.nextRunAt, cadenceTimezone(schedule.cadence));
+  const at = formatInstant(schedule.nextRunAt, viewerTimezone);
+  return schedule.enabled ? at : `Paused — would run ${at}`;
 }
 
 export function ScheduleCard({
@@ -33,6 +32,7 @@ export function ScheduleCard({
   onDelete,
   isRunning,
 }: ScheduleCardProps) {
+  const viewerTimezone = useBrowserTimezone();
   const target = schedule.targetName ?? schedule.target.id;
 
   return (
@@ -80,9 +80,9 @@ export function ScheduleCard({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-secondary">
         <span className="inline-flex items-center gap-1.5">
           <CalendarClock className="h-3.5 w-3.5" />
-          {describeCadence(schedule.cadence)}
+          {describeCadence(schedule.cadence, viewerTimezone)}
         </span>
-        <span>{nextRunLabel(schedule)}</span>
+        <span>{nextRunLabel(schedule, viewerTimezone)}</span>
         {schedule.skippedRuns > 0 && <span>{schedule.skippedRuns} skipped</span>}
       </div>
     </div>

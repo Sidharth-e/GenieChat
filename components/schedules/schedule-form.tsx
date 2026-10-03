@@ -17,8 +17,10 @@ import {
   useSchedule,
   useUpdateSchedule,
 } from "@/hooks/use-schedule-queries";
+import { inViewerTimezone } from "@/lib/schedules/cadence";
 import { buildInputForm, coerceInputValues } from "@/lib/schedules/input-form";
 import { targetInputSchema } from "@/lib/schedules/input-schemas";
+import { useBrowserTimezone } from "@/hooks/use-browser-timezone";
 import type { ScheduleCadence, TriggerTargetType } from "@/lib/types";
 
 export interface ScheduleFormProps {
@@ -33,6 +35,16 @@ const TARGET_OPTIONS = [
   { value: "workflow", label: "Workflow" },
 ];
 
+/**
+ * The cadence the form opens with, before the user has touched anything.
+ *
+ * The `UTC` here is a placeholder, not a choice: there is no timezone control,
+ * and the zone this subsystem authors and fires in is the browser's. It is
+ * replaced before the value is ever observable -- the editor stamps the viewer's
+ * zone when the kind changes, and `submit` stamps it again on the way out -- so
+ * what is stored is always the browser's zone. The initial value exists only so
+ * the preview has something to compute from on the first render.
+ */
 const DEFAULT_CADENCE: ScheduleCadence = {
   kind: "cron",
   expression: "0 9 * * 1-5",
@@ -41,6 +53,7 @@ const DEFAULT_CADENCE: ScheduleCadence = {
 
 export function ScheduleForm({ scheduleId, defaultTarget }: ScheduleFormProps) {
   const router = useRouter();
+  const viewerTimezone = useBrowserTimezone();
   const existing = useSchedule(scheduleId ?? null);
   const create = useCreateSchedule();
   const update = useUpdateSchedule(scheduleId ?? "");
@@ -139,7 +152,12 @@ export function ScheduleForm({ scheduleId, defaultTarget }: ScheduleFormProps) {
       description: description.trim(),
       target: { type: targetType, id: targetId },
       input: coerced.value,
-      cadence,
+      // Stamped with the browser's zone on the way out. A cron cadence stores a
+      // zone and the tick hands it to `cron-parser` to decide when this fires, so
+      // the zone it fires in has to be the one the user typed the expression
+      // against -- otherwise "9am" is filed under a clock they never looked at.
+      // A `once` cadence names an absolute instant and passes through untouched.
+      cadence: inViewerTimezone(cadence, viewerTimezone),
       enabled,
       overlapPolicy,
       catchUpPolicy,

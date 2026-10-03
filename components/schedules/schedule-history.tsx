@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { ScheduleStatusPill } from "@/components/schedules/schedule-status-pill";
 import {
   useRunSchedule,
-  useSchedule,
   useScheduleRun,
   useScheduleRuns,
 } from "@/hooks/use-schedule-queries";
-import { cadenceTimezone, formatInstant } from "@/lib/schedules/cadence";
+import { formatInstant } from "@/lib/schedules/cadence";
 import { isRunOpen } from "@/lib/schedules/retry";
+import { useBrowserTimezone } from "@/hooks/use-browser-timezone";
 
 const PAGE_SIZE = 20;
 
@@ -25,7 +25,6 @@ export function ScheduleHistory({ scheduleId }: { scheduleId: string }) {
   const [offset, setOffset] = useState(0);
   const [watchedRunId, setWatchedRunId] = useState<string | null>(null);
 
-  const schedule = useSchedule(scheduleId);
   const { data, isLoading, error } = useScheduleRuns(scheduleId, {
     limit: PAGE_SIZE,
     offset,
@@ -37,7 +36,7 @@ export function ScheduleHistory({ scheduleId }: { scheduleId: string }) {
 
   const runs = data?.runs ?? [];
   const total = data?.total ?? 0;
-  const zone = schedule.data ? cadenceTimezone(schedule.data.cadence) : "UTC";
+  const viewerTimezone = useBrowserTimezone();
 
   return (
     <div className="space-y-4">
@@ -99,7 +98,7 @@ export function ScheduleHistory({ scheduleId }: { scheduleId: string }) {
                     <ScheduleStatusPill status={run.status} />
                   </td>
                   <td className="py-2 pr-3 font-mono text-xs">
-                    {formatInstant(run.scheduledFor, zone)}
+                    {formatInstant(run.scheduledFor, viewerTimezone)}
                   </td>
                   <td className="py-2 pr-3 text-xs text-text-secondary">
                     {duration(run)}

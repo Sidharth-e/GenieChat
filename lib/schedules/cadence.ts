@@ -169,9 +169,23 @@ export function nextOccurrences(
 /** Two digits, so `9` renders `09` and a preview column lines up. */
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export function describeCadence(cadence: ScheduleCadence): string {
+/**
+ * A cadence in words, for a list row.
+ *
+ * The two kinds differ in which clock they are read on, and that is deliberate.
+ * A cron cadence carries the zone it fires in, so the line names that zone and
+ * is left alone -- a schedule the user wrote as "09:00" keeps reading as 09:00
+ * wherever they open it. A `once` cadence has no zone of its own: it is one
+ * absolute instant, so it is rendered in the viewer's zone. Rendering it as a
+ * UTC ISO string instead put a second, disagreeing clock on the same card as the
+ * next-run label beside it.
+ */
+export function describeCadence(
+  cadence: ScheduleCadence,
+  viewerTimezone: string,
+): string {
   if (cadence.kind === "once") {
-    return `Once on ${new Date(cadence.runAt).toISOString()}`;
+    return `Once on ${formatInstant(cadence.runAt, viewerTimezone)}`;
   }
 
   const field = cadence.expression.trim().split(/\s+/);
@@ -241,21 +255,42 @@ export function cadencePreview(
 }
 
 /**
- * The zone a cadence's instants should be read in. A cron cadence carries its
- * own; a `once` cadence is an absolute instant and has none, so it renders in
- * UTC rather than in whatever zone the rendering process happens to be in.
+ * A cadence as this UI authors it: with the browser's zone stamped in.
+ *
+ * There is exactly one zone in this subsystem, and it is the browser's. The UI
+ * never asks for one and shows no zone control, because a second zone to choose
+ * is a second clock to reconcile: an expression typed against the user's own
+ * clock but filed under a different zone fires at an hour they never picked.
+ *
+ * A cron cadence still *stores* a zone, and that zone is what the tick hands
+ * `cron-parser` to decide when the schedule fires. Stamping it from the browser
+ * rather than collecting it is what keeps the clock it was written against and
+ * the clock it fires on identical. A `once` cadence is an absolute instant with
+ * no zone field, and its editor is a `datetime-local` -- which the browser
+ * already reads and writes in its own zone -- so there is nothing to stamp and
+ * it passes through untouched.
+ *
+ * The fallback is not cosmetic: `validateCadence` rejects an empty zone, so a
+ * blank here would surface at save time as a complaint about a field the user
+ * was never shown.
  */
-export function cadenceTimezone(cadence: ScheduleCadence): string {
-  return cadence.kind === "cron" ? cadence.timezone : "UTC";
+export function inViewerTimezone(
+  cadence: ScheduleCadence,
+  viewerTimezone: string,
+): ScheduleCadence {
+  if (cadence.kind === "once") return cadence;
+  return { ...cadence, timezone: viewerTimezone || "UTC" };
 }
 
 /**
- * An instant in a fixed zone.
+ * An instant in a given zone.
  *
  * The zone is always passed in rather than defaulted, because a component
  * renders once on the server and again on the client: `toLocaleString()` with a
  * locale-default zone renders in each process's own zone and hydrates against
- * itself with a mismatch. Every caller has a zone from the cadence.
+ * itself with a mismatch. Every caller passes the viewer's zone, from
+ * `useBrowserTimezone` -- which resolves it on the client only, so both passes
+ * agree.
  */
 export function formatInstant(iso: string, timezone: string): string {
   return new Intl.DateTimeFormat("en-GB", {

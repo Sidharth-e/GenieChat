@@ -286,6 +286,21 @@ downtime yields one occurrence, not a week of them), and DST is correct, because
 the cadence carries its own IANA zone rather than a fixed offset. `cadence.ts`
 is where both live.
 
+**The zone is the browser's, and there is exactly one.** A cron cadence does store
+the IANA zone the tick hands `cron-parser`, but the UI never asks for it:
+`CadenceEditor` stamps the browser's zone onto the cadence it emits,
+`schedule-form`'s submit stamps it again on the way out, and every display site
+renders through `formatInstant` with the zone from `useBrowserTimezone`
+(`hooks/use-browser-timezone.ts` — `useSyncExternalStore` with a `UTC` server
+snapshot, because a zone read during render would otherwise hydrate the server's
+against the browser's). A second selectable zone is a second clock to reconcile:
+an expression typed against the user's own clock but filed under another zone
+fires at an hour they never picked. A `once` cadence has no zone field — it is
+one absolute instant, and its `datetime-local` editor is already read and written
+by the browser in the browser's zone — so nothing is stamped for it and it is
+rendered in the viewer's. `describeCadence` follows the same split, naming a
+cron's own zone but rendering a `once` in the viewer's.
+
 **The lease is the at-least-once boundary.** A claimed run holds a lease
 (`leaseExpiresAt`) that the tick renews while it works. Past it another tick may
 take the run back, and the reaper either returns it to `pending` with backoff or

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ScheduleStatusPill } from "@/components/schedules/schedule-status-pill";
 import { useSchedules } from "@/hooks/use-schedule-queries";
 import { describeCadence } from "@/lib/schedules/cadence";
+import { useBrowserTimezone } from "@/hooks/use-browser-timezone";
 import type { TriggerTargetType } from "@/lib/types";
 
 /**
@@ -23,6 +24,7 @@ export function TargetSchedules({
   targetId: string;
 }) {
   const { data, isLoading } = useSchedules({ targetType, targetId });
+  const viewerTimezone = useBrowserTimezone();
   const schedules = data ?? [];
 
   return (
@@ -57,7 +59,7 @@ export function TargetSchedules({
                     {schedule.name}
                   </span>
                   <span className="block truncate text-xs text-text-secondary">
-                    {describeCadence(schedule.cadence)}
+                    {describeCadence(schedule.cadence, viewerTimezone)}
                     {!schedule.enabled && " · paused"}
                   </span>
                 </span>

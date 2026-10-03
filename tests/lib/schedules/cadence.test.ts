@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   cadencePreview,
-  cadenceTimezone,
   describeCadence,
   formatInstant,
+  inViewerTimezone,
   nextClaim,
   nextOccurrence,
   nextOccurrences,
@@ -168,20 +168,40 @@ describe("nextOccurrences", () => {
 });
 
 describe("describeCadence", () => {
-  it("renders a weekday cron in words with its zone", () => {
-    expect(describeCadence(cron("0 9 * * 1-5", "Asia/Kolkata"))).toBe(
-      "Weekdays at 09:00, Asia/Kolkata",
-    );
+  // A cron names the zone it fires in, so the viewer's zone does not override it:
+  // the line reads as written, and the card's next-run label beside it is the
+  // same instant in the viewer's zone.
+  it("renders a weekday cron in words with its own zone", () => {
+    expect(
+      describeCadence(cron("0 9 * * 1-5", "Asia/Kolkata"), "Europe/Berlin"),
+    ).toBe("Weekdays at 09:00, Asia/Kolkata");
   });
 
   it("falls back to the raw expression for a shape it has no words for", () => {
-    expect(describeCadence(cron("*/7 3 * * *"))).toBe("*/7 3 * * * (UTC)");
+    expect(describeCadence(cron("*/7 3 * * *"), "UTC")).toBe(
+      "*/7 3 * * * (UTC)",
+    );
   });
 
   it("renders a once cadence as a date", () => {
     expect(
-      describeCadence({ kind: "once", runAt: "2026-10-05T09:00:00.000Z" }),
+      describeCadence(
+        { kind: "once", runAt: "2026-10-05T09:00:00.000Z" },
+        "UTC",
+      ),
     ).toContain("2026");
+  });
+
+  // The card shows this line beside a next-run label in the viewer's zone. A
+  // once cadence has no zone of its own, so rendering it as a UTC ISO string put
+  // two different clocks for one instant on the same card.
+  it("renders a once cadence in the viewer's zone, not as a UTC instant", () => {
+    const text = describeCadence(
+      { kind: "once", runAt: "2026-10-03T17:05:00.000Z" },
+      "Asia/Kolkata",
+    );
+    expect(text).toContain("22:35");
+    expect(text).not.toContain("17:05");
   });
 });
 
@@ -265,17 +285,52 @@ describe("cadencePreview", () => {
   });
 });
 
-describe("cadenceTimezone", () => {
-  it("is the cadence's own zone for a cron cadence", () => {
-    expect(cadenceTimezone(cron("0 9 * * *", "Asia/Kolkata"))).toBe(
-      "Asia/Kolkata",
-    );
+describe("inViewerTimezone", () => {
+  it("stamps the viewer's zone onto a cron cadence", () => {
+    // A repeating cadence has to store *a* zone, because that zone is what decides
+    // when it fires -- but the user never picks it. Every expression is authored
+    // against the browser's clock, so stamping the browser's zone here is what
+    // makes the clock it was written against and the clock it fires on the same
+    // one.
+    expect(
+      inViewerTimezone(cron("0 9 * * 1-5", "UTC"), "Asia/Kolkata"),
+    ).toEqual({
+      kind: "cron",
+      expression: "0 9 * * 1-5",
+      timezone: "Asia/Kolkata",
+    });
   });
 
-  it("falls back to UTC for a once cadence, which has no zone", () => {
-    expect(
-      cadenceTimezone({ kind: "once", runAt: "2026-10-05T09:00:00.000Z" }),
-    ).toBe("UTC");
+  it("leaves a once cadence alone, because it names no zone", () => {
+    // A `once` cadence is an absolute instant, and its editor is a
+    // `datetime-local` -- which the browser already reads and writes in the
+    // browser's zone. There is no field here to stamp.
+    const once: ScheduleCadence = {
+      kind: "once",
+      runAt: "2026-10-05T09:00:00.000Z",
+    };
+    expect(inViewerTimezone(once, "Asia/Kolkata")).toEqual(once);
+  });
+
+  it("falls back to UTC when the browser's zone cannot be resolved", () => {
+    // A blank must not reach the stored cadence: `validateCadence` rejects an
+    // empty zone, so a form the user can submit would fail at save time with a
+    // message about a field they never saw.
+    expect(inViewerTimezone(cron("0 9 * * *", ""), "")).toEqual({
+      kind: "cron",
+      expression: "0 9 * * *",
+      timezone: "UTC",
+    });
+  });
+});
+
+describe("the time a once schedule shows", () => {
+  it("is the wall clock it was entered at, not that instant read in UTC", () => {
+    // Regression pin for the reported bug: a run entered as 22:35 IST was stored
+    // correctly as 17:05Z, but the preview read it back in UTC while the input
+    // above it read it back in local time. Both sides now use one zone.
+    const runAt = "2026-10-03T17:05:00.000Z"; // 22:35 IST
+    expect(formatInstant(runAt, "Asia/Kolkata")).toContain("22:35");
   });
 });
 
