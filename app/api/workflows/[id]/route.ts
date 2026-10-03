@@ -5,8 +5,6 @@ import { getSessionUser } from "@/lib/auth/get-session-user";
 import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
-import { CronExpressionParser } from "cron-parser";
-import { validateWorkflowSteps } from "@/lib/workflow/validation";
 import { nextRunAtFor } from "@/lib/workflow/schedule";
 
 const workflowStore = isDatabaseConfigured() ? new WorkflowStore() : null;
@@ -23,13 +21,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return api.serviceUnavailable("Database not configured");
 
     const { id } = await params;
-
-    // Try step-based workflow first, then fall back to rich workflow
-    const workflow = await workflowStore.getWorkflow(id);
-    if (workflow) {
-      if (workflow.userId !== user.id) return api.forbidden();
-      return api.success(workflow);
-    }
 
     const richWorkflow = await workflowStore.getRichWorkflow(id);
     if (richWorkflow) {
@@ -65,48 +56,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const body = await request.json();
 
-    // Try step-based workflow first
-    const existingWorkflow = await workflowStore.getWorkflow(id);
-    if (existingWorkflow) {
-      if (existingWorkflow.userId !== user.id) return api.forbidden();
-
-      const updates = { ...body };
-
-      if (body.steps !== undefined) {
-        if (!Array.isArray(body.steps) || body.steps.length === 0) {
-          return api.badRequest("At least one step is required");
-        }
-
-        const validation = validateWorkflowSteps(body.steps);
-        if (!validation.valid) {
-          return api.badRequest(validation.errors[0]);
-        }
-      }
-
-      if (body.trigger) {
-        if (
-          body.trigger.type === "schedule" &&
-          body.trigger.config?.cronExpression
-        ) {
-          try {
-            const interval = CronExpressionParser.parse(
-              body.trigger.config.cronExpression,
-            );
-            updates.nextRunAt = interval.next().toISOString();
-          } catch {
-            return api.badRequest("Invalid cron expression");
-          }
-        } else {
-          updates.nextRunAt = null;
-        }
-      }
-
-      const workflow = await workflowStore.updateWorkflow(id, updates);
-      if (!workflow) return api.serverError("Failed to update workflow");
-      return api.success(workflow);
-    }
-
-    // Fall back to rich workflow metadata update
     const richWorkflow = await workflowStore.getRichWorkflow(id);
     if (richWorkflow) {
       if (richWorkflow.userId !== user.id) return api.forbidden();
@@ -162,16 +111,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Try step-based workflow first
-    const existingWorkflow = await workflowStore.getWorkflow(id);
-    if (existingWorkflow) {
-      if (existingWorkflow.userId !== user.id) return api.forbidden();
-      const success = await workflowStore.deleteWorkflow(id);
-      if (!success) return api.serverError("Failed to delete workflow");
-      return api.success({ success: true });
-    }
-
-    // Fall back to rich workflow
     const richWorkflow = await workflowStore.getRichWorkflow(id);
     if (richWorkflow) {
       if (richWorkflow.userId !== user.id) return api.forbidden();

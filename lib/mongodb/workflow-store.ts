@@ -1,12 +1,10 @@
 import { logger } from "@/lib/logger";
 import { Collection } from "mongodb";
 import {
-  getWorkflowCollection,
   getWorkflowExecutionCollection,
   getRichWorkflowsCollection,
 } from "./client";
 import {
-  Workflow,
   WorkflowExecution,
   RichWorkflow,
   RichWorkflowNode,
@@ -15,7 +13,6 @@ import {
 import { generateId } from "../utils";
 import {
   WithMongoId,
-  WorkflowDocument,
   WorkflowExecutionDocument,
   RichWorkflowDocument,
   hydrateDocument,
@@ -25,7 +22,7 @@ import {
  * Cosmos stored documents as JSON, so an `undefined` `nextRunAt` was dropped
  * from the stored document and read back as absent (`IS_DEFINED(c.nextRunAt) =
  * false`). The Mongo driver would write it as `null` instead, and the two are
- * not interchangeable to `getScheduledWorkflows`: a workflow that has never run
+ * not interchangeable to `getScheduledRichWorkflows`: a workflow that has never run
  * is due through its `{ nextRunAt: { $exists: false } }` branch, and `$lte`
  * does not compare across BSON types, so a stored `null` is never `<=` an ISO
  * string. Deleting the key keeps the stored shape — and therefore the due
@@ -56,9 +53,8 @@ export function dropUnsetNextRunAt<T extends { nextRunAt?: string }>(doc: T): T 
  * same applies on insert, where an omitted optional field would be stored as
  * `null` in a document whose absent-key shape is what the readers test for.
  *
- * `null` is kept deliberately. It is a value a caller chose to send — the legacy
- * schedule path writes it to mean "no longer on a schedule" — not a missing
- * field. Only exact `undefined` is a hole.
+ * `null` is kept deliberately. It is a value a caller chose to send, not a
+ * missing field. Only exact `undefined` is a hole.
  */
 export function dropUndefinedFields<T extends object>(doc: T): T {
   const record = doc as Record<string, unknown>;
@@ -119,7 +115,7 @@ export function mergeRichWorkflowUpdate(
  * `previous`, in which case it is advanced to the next millisecond so it still
  * differs.
  *
- * `updateWorkflowSchedule` claims a due run with a compare-and-swap on
+ * `claimRichWorkflowSchedule` claims a due run with a compare-and-swap on
  * `updatedAt` (Mongo has no Cosmos `_etag`), so it only detects a competing
  * writer if a write always *changes* `updatedAt`. An ISO string has
  * millisecond resolution, so two writes inside one millisecond would otherwise
@@ -148,233 +144,16 @@ export function nextUpdatedAt(previous: string): string {
 }
 
 export class WorkflowStore {
-  private workflowCollection: Collection<WithMongoId<WorkflowDocument>>;
   /**
-   * Rich workflows live in the same `workflows` collection as plain ones but
-   * are a different document shape, so they get their own accessor rather than
-   * a reuse of `this.workflowCollection`: that one is typed
-   * `WithMongoId<WorkflowDocument>`, whose `Condition` rejects
-   * `type: "rich_workflow"` outright.
+   * Rich workflows live in the `workflows` collection and are accessed through
+   * their own accessor, typed `WithMongoId<RichWorkflowDocument>`.
    */
   private richWorkflowCollection: Collection<WithMongoId<RichWorkflowDocument>>;
   private executionCollection: Collection<WithMongoId<WorkflowExecutionDocument>>;
 
   constructor() {
-    this.workflowCollection = getWorkflowCollection();
     this.richWorkflowCollection = getRichWorkflowsCollection();
     this.executionCollection = getWorkflowExecutionCollection();
-  }
-
-  // Create a new workflow
-  async createWorkflow(
-    workflow: Omit<Workflow, "id" | "createdAt" | "updatedAt">,
-  ): Promise<Workflow> {
-    const now = new Date().toISOString();
-
-    // Ensure each step has an id
-    const stepsWithIds = workflow.steps.map((step, index) => ({
-      ...step,
-      id: step.id || generateId(),
-      order: index,
-      status: "pending" as const,
-    }));
-
-    const id = generateId();
-    const newWorkflow: WithMongoId<WorkflowDocument> = {
-      ...workflow,
-      steps: stepsWithIds,
-      id,
-      _id: id,
-      type: "workflow",
-      createdAt: now,
-      updatedAt: now,
-    };
-    dropUnsetNextRunAt(newWorkflow);
-
-    await this.workflowCollection.insertOne(newWorkflow);
-    return hydrateDocument(newWorkflow);
-  }
-
-  // Get all workflows for a user
-  async getWorkflows(userId: string): Promise<Workflow[]> {
-    const docs = await this.workflowCollection
-      .find({ userId, type: "workflow" })
-      .sort({ createdAt: -1 })
-      .toArray();
-
-    return docs.map((doc) => hydrateDocument(doc));
-  }
-
-  // Get all scheduled workflows that are due to run
-  async getScheduledWorkflows(): Promise<Workflow[]> {
-    const now = new Date().toISOString();
-
-    const docs = await this.workflowCollection
-      .find({
-        type: "workflow",
-        "trigger.type": "schedule",
-        $or: [
-          { nextRunAt: { $exists: false } },
-          { nextRunAt: { $lte: now } },
-        ],
-      })
-      .toArray();
-
-    return docs.map((doc) => hydrateDocument(doc));
-  }
-
-  // Atomically update the schedule for a workflow to prevent duplicate runs
-  async updateWorkflowSchedule(
-    workflowId: string,
-    // `userId` is kept only for signature compatibility with the Cosmos store:
-    // `_id` is a globally unique uuidv7, so the update no longer needs it. No
-    // eslint-disable directive is needed: the rule's default `after-used`
-    // option only reports arguments *after* the last one that is used.
-    userId: string,
-    lastRunAt: string,
-    nextRunAt: string | null,
-  ): Promise<boolean> {
-    try {
-      const existingDoc = await this.getWorkflowDocument(workflowId);
-      if (!existingDoc) return false;
-
-      const updated: WithMongoId<WorkflowDocument> = {
-        ...existingDoc,
-        lastRunAt,
-        nextRunAt: nextRunAt || undefined,
-        updatedAt: nextUpdatedAt(existingDoc.updatedAt),
-      };
-      dropUnsetNextRunAt(updated);
-
-      // Cosmos claimed this run with an `IfMatch` access condition on the
-      // document's `_etag`, so a concurrent claim lost with a 412 rather than
-      // overwriting the winner. Mongo has no `_etag`, so this is the substitute:
-      // a compare-and-swap that replaces the document only while `updatedAt`
-      // still holds the value that was just read. `matchedCount === 0` means it
-      // no longer does, i.e. another writer moved the document on between the
-      // read and the write — the contention Cosmos reported as 412.
-      //
-      // What it guarantees, measured: of two claimers that read the same
-      // version, at most one matches, because `nextUpdatedAt` guarantees the
-      // winner stores a value different from the one the loser's filter compares
-      // against. Forcing both claimers to read before either wrote gave exactly
-      // one winner in 25/25 rounds; the same loop before that guarantee existed
-      // double-claimed 4/25. An `_etag` is still the stronger token, though, and
-      // two limits remain:
-      //
-      //  1. A claimer whose *read* lands after another claimer's *write* accepts,
-      //     and both run the workflow. That is the read-then-CAS protocol, not
-      //     this token: the document the second claimer reads is already
-      //     current, and the fact that the run was claimed exists only in the
-      //     caller's earlier `getScheduledWorkflows()` list. Cosmos's `_etag`
-      //     had the same limit.
-      //  2. A writer outside this compare-and-swap that stores the identical
-      //     `updatedAt` value is undetectable — it can only do that by writing in
-      //     the same millisecond as the value it read, which is the resolution
-      //     limit of an ISO string and the reason an ETag is strictly stronger.
-      const { _id, ...rest } = updated;
-      const result = await this.workflowCollection.replaceOne(
-        { _id, updatedAt: existingDoc.updatedAt },
-        rest,
-      );
-      if (result.matchedCount === 0) {
-        // Normal contention, not a fault: another scheduler instance claimed
-        // this run first (or the workflow was updated or deleted) after the
-        // schedule was read. Cosmos logged its 412 branch at info and returned
-        // false; the caller only needs to skip this run, so neither a throw nor
-        // an error-level entry is warranted. A genuine fault — a driver error
-        // from the read or the replace — is still caught and logged as an error
-        // below.
-        logger.info(
-          `Workflow ${workflowId} schedule update skipped: already claimed by another instance.`,
-        );
-        return false;
-      }
-
-      return true;
-    } catch (error: unknown) {
-      logger.error("Error updating workflow schedule:", error);
-      return false;
-    }
-  }
-
-  // Get a single workflow
-  async getWorkflow(workflowId: string): Promise<Workflow | null> {
-    try {
-      const doc = await this.workflowCollection.findOne({
-        _id: workflowId,
-        type: "workflow",
-      });
-
-      return doc ? hydrateDocument(doc) : null;
-    } catch (error) {
-      logger.error("Error getting workflow:", error);
-      return null;
-    }
-  }
-
-  // Get raw document for update/delete
-  private async getWorkflowDocument(
-    workflowId: string,
-  ): Promise<WithMongoId<WorkflowDocument> | null> {
-    try {
-      return await this.workflowCollection.findOne({
-        _id: workflowId,
-        type: "workflow",
-      });
-    } catch (error) {
-      logger.error("Error getting workflow document:", error);
-      return null;
-    }
-  }
-
-  // Update a workflow
-  async updateWorkflow(
-    workflowId: string,
-    updates: Partial<Workflow>,
-  ): Promise<Workflow | null> {
-    try {
-      const existingDoc = await this.getWorkflowDocument(workflowId);
-      if (!existingDoc) return null;
-
-      const updated: WithMongoId<WorkflowDocument> = {
-        ...existingDoc,
-        ...updates,
-        // Re-asserted after the caller's spread, so a body cannot re-own the
-        // workflow or move it in a listing.
-        userId: existingDoc.userId,
-        type: "workflow",
-        createdAt: existingDoc.createdAt,
-        updatedAt: nextUpdatedAt(existingDoc.updatedAt),
-      };
-      dropUnsetNextRunAt(updated);
-
-      // The filter comes from the read, not the merge.
-      const { _id, ...rest } = updated;
-      const result = await this.workflowCollection.replaceOne({ _id: existingDoc._id }, rest);
-      if (result.matchedCount === 0) {
-        throw new Error(`Workflow not found: ${_id}`);
-      }
-
-      return hydrateDocument(updated);
-    } catch (error) {
-      logger.error("Error updating workflow:", error);
-      return null;
-    }
-  }
-
-  // Delete a workflow
-  async deleteWorkflow(workflowId: string): Promise<boolean> {
-    try {
-      const existingDoc = await this.getWorkflowDocument(workflowId);
-      if (!existingDoc) return false;
-
-      await this.workflowCollection.deleteOne({ _id: workflowId });
-      return true;
-    } catch (error) {
-      logger.error("Error deleting workflow:", error);
-      return false;
-    }
   }
 
   // --- Execution Methods ---
@@ -631,11 +410,10 @@ export class WorkflowStore {
   }
 
   /**
-   * The schedule driver's read. Identical due-window semantics to
-   * `getScheduledWorkflows`, but over the rich collection: a workflow is due
-   * when it is on a schedule and either has never run or its next fire time has
-   * passed. `$exists: false` is why `dropUnsetNextRunAt` has to run on every
-   * write — an explicit `null` would match neither arm.
+   * The schedule driver's read: a workflow is due when it is on a schedule and
+   * either has never run or its next fire time has passed. `$exists: false` is
+   * why `dropUnsetNextRunAt` has to run on every write — an explicit `null`
+   * would match neither arm.
    */
   async getScheduledRichWorkflows(nowISO: string): Promise<RichWorkflow[]> {
     const docs = await this.richWorkflowCollection

@@ -366,19 +366,6 @@ export type ServerActionResponse<T> =
   | { status: "NOT_FOUND"; errors: { message: string }[] };
 
 // Workflow types for agentic workflows
-export interface WorkflowStep {
-  id: string;
-  name: string;
-  agentId: string;
-  agentName?: string;
-  order: number;
-  input?: string; // Optional custom input for this step
-  position?: { x: number; y: number }; // Canvas coordinates in workflow editor
-  status: "pending" | "running" | "completed" | "error";
-  result?: string;
-  nextSteps?: string[]; // IDs of the next steps to execute after this one
-}
-
 export interface WorkflowTrigger {
   type: "manual" | "webhook" | "schedule";
   config?: {
@@ -386,29 +373,6 @@ export interface WorkflowTrigger {
     cronExpression?: string;
     position?: { x: number; y: number };
   };
-}
-
-export type WorkflowOutputType = "markdown" | "text" | "json";
-
-export interface WorkflowOutputConfig {
-  type: WorkflowOutputType;
-}
-
-export interface Workflow {
-  id: string;
-  userId: string;
-  userName: string;
-  userEmail: string;
-  name: string;
-  description?: string;
-  trigger?: WorkflowTrigger;
-  output?: WorkflowOutputConfig;
-  outputPosition?: { x: number; y: number };
-  steps: WorkflowStep[];
-  lastRunAt?: string;
-  nextRunAt?: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface WorkflowExecutionStep {
@@ -447,36 +411,6 @@ export interface WorkflowExecution {
   tokenUsage?: { prompt: number; completion: number; total: number };
   createdAt: string;
   updatedAt: string;
-}
-
-export interface WorkflowExecutionStreamEvent {
-  type:
-    | "workflow_start"
-    | "step_start"
-    | "step_thinking"
-    | "step_token"
-    | "tool_call_start"
-    | "tool_result"
-    | "step_complete"
-    | "step_error"
-    | "workflow_complete"
-    | "workflow_error";
-  workflowId?: string;
-  stepId?: string;
-  stepIndex?: number;
-  stepName?: string;
-  agentId?: string;
-  agentName?: string;
-  content?: string;
-  result?: string;
-  error?: string;
-  toolName?: string;
-  toolArgs?: Record<string, unknown>;
-  toolCallId?: string;
-  toolResult?: string;
-  duration?: number;
-  finalResult?: string;
-  tokens?: { prompt: number; completion: number };
 }
 
 // Custom Tool type for user-defined tools

@@ -611,7 +611,7 @@ export const INDEX_SPECS: IndexSpec[] = [
     },
     name: "tools_keyhash",
   },
-  // `getScheduledWorkflows`, on every scheduler tick. The `$or` over
+  // `getScheduledRichWorkflows`, on every scheduler tick. The `$or` over
   // `nextRunAt` (`$exists: false` / `$lte`) is served by the trailing key.
   {
     collection: NAMES.workflows,
