@@ -7,7 +7,7 @@ import type { RichWorkflowMetadataUpdate } from "@/lib/mongodb/workflow-store";
  * Scope is deliberately these functions only. The store's own methods are
  * I/O-bound (`findOne`/`replaceOne` against Mongo), which CLAUDE.md classifies
  * as an integration-test candidate rather than something to unit-test with
- * mocks; the concurrency guarantee of `updateWorkflowSchedule` is exercised
+ * mocks; the concurrency guarantee of `claimRichWorkflowSchedule` is exercised
  * against a live container instead.
  */
 
@@ -38,10 +38,9 @@ function scheduleDoc(nextRunAt?: string): { nextRunAt?: string } {
 }
 
 /**
- * The same carrier holding an explicit `null`, which is the value the PATCH
- * path actually produces: `app/api/workflows/[id]/route.ts` sets
- * `updates.nextRunAt = null` when a workflow's trigger stops being a schedule,
- * and `updateWorkflow` spreads that straight into the document it replaces.
+ * The same carrier holding an explicit `null`, which `dropUndefinedFields` must
+ * retain: `null` is a value a caller chose to send, not a missing field, and the
+ * helper's contract is to drop exact `undefined` only.
  *
  * The helper's parameter is typed `{ nextRunAt?: string }`, so the cast is the
  * only way to hand it that value — and it is the point of the test: the helper's
