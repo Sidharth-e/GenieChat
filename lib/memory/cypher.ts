@@ -684,3 +684,14 @@ export const FACT_RECONCILE_CYPHER = `
   ORDER BY f.createdAt ASC
   LIMIT toInteger($limit)
 `;
+
+/**
+ * Users with outstanding work: a capture not yet extracted, or a fact with no
+ * vector. Both are cheap index reads, so the union is too.
+ */
+export const SWEEP_WORKLIST_CYPHER = `
+  MATCH (n)
+  WHERE (n:Capture AND n.attempts < $maxAttempts) OR (n:Fact AND n.embedding IS NULL)
+  RETURN DISTINCT n.userId AS userId
+  LIMIT toInteger($limit)
+`;

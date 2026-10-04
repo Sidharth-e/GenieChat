@@ -9,7 +9,10 @@ import {
   MEMORY_FACT_TOP,
   MEMORY_GRAPH_MEMORY_LIMIT,
   MEMORY_LLM_EDGE_TYPES,
+  MEMORY_PREDICATE_CLUSTER_THRESHOLD,
   MEMORY_PREDICATE_MERGE_THRESHOLD,
+  MEMORY_RECONCILE_LIMIT,
+  FUNCTIONAL_PREDICATES,
   memorySeedLimit,
 } from "@/constants/memory";
 import { generateEmbedding, isEmbeddingDimensionError } from "@/lib/embeddings";
@@ -32,11 +35,14 @@ import {
   FACT_COUNT_CYPHER,
   FACT_CURRENT_CYPHER,
   FACT_DELETE_CYPHER,
+  FACT_EMBEDDING_CYPHER,
   FACT_EXPAND_CYPHER,
   FACT_GET_CYPHER,
   FACT_LIST_CYPHER,
   FACT_PREDECESSOR_CYPHER,
+  FACT_RECONCILE_CYPHER,
   FACT_SEED_CYPHER,
+  FACT_VECTORLESS_CYPHER,
   type FactEndLabel,
   GRAPH_ABOUT_CYPHER,
   GRAPH_ENTITY_RELATIONS_CYPHER,
@@ -47,6 +53,7 @@ import {
   PREDICATE_CREATE_CYPHER,
   PREDICATE_EXACT_CYPHER,
   PREDICATE_LIST_CYPHER,
+  PREDICATE_MERGE_CYPHER,
   PREDICATE_NEAREST_CYPHER,
   USER_UPSERT_CYPHER,
   VALUE_MERGE_CYPHER,
@@ -55,11 +62,13 @@ import { normalizeEntityName } from "./extract";
 import {
   decideFactWrite,
   renderRecalledFact,
+  selectSuperseded,
   toRecallCandidate,
   type ExtractedFact,
 } from "./facts";
 import type { MemoryGraphRows } from "./graph-view";
 import { extractFacts } from "./llm-facts";
+import { selectMergePairs } from "./merge";
 import { createMemoryModel } from "./model";
 import { mergeRecallCandidates, rankRecall } from "./recall";
 import { normalizeQueryForRetrieval } from "./text";
@@ -67,6 +76,7 @@ import type {
   FactRecallMode,
   FactRecallResult,
   RecalledFact,
+  SweepSummary,
 } from "./types";
 
 export class MemoryGraphStore {
@@ -437,6 +447,134 @@ export class MemoryGraphStore {
     }
 
     return consumed;
+  }
+
+  /**
+   * Close facts the extractor could not settle.
+   *
+   * Scope is deliberately narrow: only facts under a **functional** predicate
+   * whose `(subject, predicate)` carries more than one current fact. A
+   * functional predicate holds one value — two current `WORKS_AS` facts on the
+   * same subject means one of them is stale, and the newer one wins. A
+   * multi-valued predicate ("likes apple", "likes banana") never matches, which
+   * is the whole reason the query is gated on the predicate name.
+   */
+  async reconcileFacts(
+    userId: string,
+    limit: number = MEMORY_RECONCILE_LIMIT,
+  ): Promise<number> {
+    const functional = [...FUNCTIONAL_PREDICATES];
+    if (functional.length === 0) return 0;
+
+    const driver = await this.requireDriver();
+    const result = await driver.executeQuery(FACT_RECONCILE_CYPHER, {
+      userId,
+      predicates: functional,
+      limit,
+    });
+
+    const byGroup = new Map<string, { id: string; createdAt: string }[]>();
+    for (const record of result.records) {
+      const key = `${record.get("subjectId")}::${record.get("predicateId")}`;
+      const rows = byGroup.get(key) ?? [];
+      rows.push({
+        id: String(record.get("id")),
+        createdAt: String(record.get("createdAt") ?? ""),
+      });
+      byGroup.set(key, rows);
+    }
+
+    const now = new Date().toISOString();
+    let closed = 0;
+
+    for (const rows of byGroup.values()) {
+      const superseded = selectSuperseded(rows);
+      if (superseded.length === 0) continue;
+      const outcome = await driver.executeQuery(FACT_CLOSE_CYPHER, {
+        userId,
+        factIds: superseded,
+        now,
+      });
+      closed += Number(outcome.records[0]?.get("closed") ?? 0);
+    }
+
+    return closed;
+  }
+
+  /**
+   * Fold near-duplicate predicates into one, rewiring their facts.
+   *
+   * The candidate set and its embeddings come from `PREDICATE_LIST_CYPHER`;
+   * which pairs to merge is `selectMergePairs`, which is pure and tested. The
+   * statement is idempotent per pair — a pair that no longer exists merges
+   * nothing — so a crash mid-sweep costs a re-run, not a corrupt vocabulary.
+   */
+  async mergePredicates(
+    userId: string,
+    threshold: number = MEMORY_PREDICATE_CLUSTER_THRESHOLD,
+  ): Promise<number> {
+    const driver = await this.requireDriver();
+    const listed = await driver.executeQuery(PREDICATE_LIST_CYPHER, { userId });
+
+    const candidates = listed.records.map((record) => ({
+      id: String(record.get("id")),
+      canonicalName: String(record.get("canonicalName") ?? ""),
+      embedding: (record.get("embedding") as number[] | null) ?? null,
+      factCount: Number(record.get("factCount") ?? 0),
+    }));
+
+    const pairs = selectMergePairs(candidates, threshold);
+    let merged = 0;
+
+    for (const pair of pairs) {
+      await driver.executeQuery(PREDICATE_MERGE_CYPHER, {
+        userId,
+        keepId: pair.keepId,
+        dupId: pair.dupId,
+      });
+      merged += 1;
+    }
+
+    if (merged > 0) await this.gcOrphans(userId);
+    return merged;
+  }
+
+  /** Facts written during an embedding outage, waiting for the vector recall needs. */
+  async embedVectorlessFacts(
+    userId: string,
+    limit: number = MEMORY_CAPTURE_SWEEP_LIMIT,
+  ): Promise<number> {
+    const driver = await this.requireDriver();
+    const pending = await driver.executeQuery(FACT_VECTORLESS_CYPHER, {
+      userId,
+      limit,
+    });
+
+    let filled = 0;
+    for (const record of pending.records) {
+      const id = String(record.get("id"));
+      const text = String(record.get("sourceText") ?? "");
+      const embedding = await this.embedOrThrowOnMismatch(text, "memory fact");
+      if (embedding === null) continue;
+      await driver.executeQuery(FACT_EMBEDDING_CYPHER, { id, userId, embedding });
+      filled += 1;
+    }
+
+    return filled;
+  }
+
+  /**
+   * One pass of everything that keeps the graph current, in order.
+   *
+   * Captures first: a sentence the user just typed deserves its facts before the
+   * vocabulary work that will decide which predicate those facts use.
+   */
+  async sweep(userId: string): Promise<SweepSummary> {
+    const captures = await this.extractPendingCaptures(userId);
+    const reconciled = await this.reconcileFacts(userId);
+    const merged = await this.mergePredicates(userId);
+    const embedded = await this.embedVectorlessFacts(userId);
+    return { captures, reconciled, merged, embedded };
   }
 
   /**

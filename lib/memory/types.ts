@@ -39,3 +39,15 @@ export interface FactRecallResult {
   facts: RecalledFact[];
   metadata: FactRecallMetadata;
 }
+
+/**
+ * What one sweep pass did for one user. Every count can be zero, and a pass
+ * where all four are zero is the ordinary case rather than a failure: it means
+ * the user had nothing pending.
+ */
+export interface SweepSummary {
+  captures: number;
+  reconciled: number;
+  merged: number;
+  embedded: number;
+}

@@ -494,3 +494,9 @@ export const MEMORY_GRAPH_LAYOUT_TEMPERATURE_DECAY = 0.985;
  */
 export const MEMORY_GRAPH_LAYOUT_WIDTH = 1400;
 export const MEMORY_GRAPH_LAYOUT_HEIGHT = 900;
+
+/**
+ * Users one sweep pass touches. The worklist is users with something pending
+ * rather than every user, so this bounds a drip, not a thundering herd.
+ */
+export const MEMORY_SWEEP_USER_LIMIT = 50;

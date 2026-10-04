@@ -1,7 +1,8 @@
 # Local development services: Redis, PostgreSQL + pgvector for knowledge RAG,
 # Neo4j for graph memory, Garage for S3-compatible object storage,
-# docling-serve for document parsing, and the schedule-tick driver that makes
-# scheduled runs actually fire.
+# docling-serve for document parsing, and the two drivers that make the app's
+# periodic work actually fire: schedule-tick for scheduled runs and memory-sweep
+# for memory extraction.
 #
 #   docker compose up -d      # start
 #   docker compose ps         # health
@@ -19,13 +20,15 @@
 # degrades to empty extraction rather than erroring, so a developer who skips
 # it gets chat that works and silently reads nothing from attachments.
 #
-# The schedule-tick driver calls the app on the host over host.docker.internal,
-# so it needs the app listening on a port the container can reach (the default is
-# http://host.docker.internal:3000 -- override with SCHEDULE_TICK_URL). It
-# authenticates with CRON_SECRET, and the app reads that same value from .env:
-# if the two disagree the endpoint answers 401 and no schedule ever fires, which
-# is why compose refuses to start without it. The driver needs the app already
-# running -- it is not one of the services the app depends on, it is a caller.
+# The schedule-tick and memory-sweep drivers call the app on the host over
+# host.docker.internal, so they need the app listening on a port the container
+# can reach (the defaults are http://host.docker.internal:3000/api/schedules/tick
+# and .../api/memories/sweep -- override with SCHEDULE_TICK_URL and
+# MEMORY_SWEEP_URL). Both authenticate with CRON_SECRET, and the app reads that
+# same value from .env: if the two disagree the endpoints answer 401 and nothing
+# ever fires, which is why compose refuses to start without it. The drivers need
+# the app already running -- they are not services the app depends on, they are
+# callers.
 services:
   redis:
     image: redis:7-alpine
@@ -531,6 +534,41 @@ services:
       SCHEDULE_TICK_URL: ${SCHEDULE_TICK_URL:-http://host.docker.internal:3000/api/schedules/tick}
       # Required, like NEO4J_PASSWORD: a driver with no secret loops on 401s
       # forever, which looks exactly like a driver that is working.
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # The memory sweep, driven the same way as the tick and for the same reason:
+  # captures, reconciliation, the predicate merge and the vectorless backfill are
+  # a periodic worker, and nothing in the app runs on a timer of its own.
+  #
+  # It is a second service rather than another line in the tick's loop because
+  # the two cadences answer to different things: a tick that is slow delays
+  # schedules, while a sweep pass makes model calls and can take much longer.
+  #
+  # Like the tick, a deployment does NOT use this: it points a real cron at the
+  # endpoint. See the Deployment section of CLAUDE.md.
+  memory-sweep:
+    image: curlimages/curl:8.11.1
+    container_name: geniechat-memory-sweep
+    # Same entrypoint override as the tick: curl's own entrypoint IS curl, so a
+    # bare `command:` arrives as curl's arguments and the loop never runs.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl -sS -X POST "$$MEMORY_SWEEP_URL" \
+            -H "Authorization: Bearer $$CRON_SECRET" \
+            -w "\n[memory-sweep] HTTP %{http_code}\n" \
+            || echo "[memory-sweep] curl failed (exit $$?)"
+          sleep 300
+        done
+    environment:
+      MEMORY_SWEEP_URL: ${MEMORY_SWEEP_URL:-http://host.docker.internal:3000/api/memories/sweep}
+      # Required, like the tick's: a driver with no secret loops on 401s forever,
+      # which looks exactly like a driver that is working.
       CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in .env}
     extra_hosts:
       - "host.docker.internal:host-gateway"

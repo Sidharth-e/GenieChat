@@ -294,7 +294,7 @@ Ports are chosen to avoid clashing with personal instances — MongoDB on `27018
 | `pnpm knowledge:check` | Exercise the knowledge store end to end |
 | `pnpm knowledge:backfill` | Re-chunk and re-embed existing documents |
 | `pnpm memory:check` | Exercise the memory graph |
-| `pnpm memory:enrich` | Re-run enrichment for pending memories |
+| `pnpm memory:sweep` | Run one memory sweep pass (calls the running app's `CRON_SECRET` endpoint) |
 | `pnpm memory:migrate` | One-off importer for pre-graph memories |
 | `pnpm schedules:check` | Exercise scheduling concurrency properties |
 | `pnpm schedules:migrate` | Convert legacy workflow cron triggers into schedules |

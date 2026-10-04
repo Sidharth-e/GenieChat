@@ -30,6 +30,13 @@ const publicPaths = [
   // session-scoped route added *under* `/api/schedules/execute/` would be exempted
   // just as silently. What protects this namespace is convention, not mechanism.
   "/api/schedules/execute",
+  // The memory sweep. Same caller as the tick — an external worker with a
+  // `CRON_SECRET` bearer and no session — and the same reasoning. The prefix is
+  // safe here because `/api/memories/[id]`, the session-scoped route beside it,
+  // is a dynamic *sibling* rather than a child of this name; the match is still
+  // a prefix, so a route added under `/api/memories/sweep/` would be exempted
+  // silently. What protects the namespace is convention, not mechanism.
+  "/api/memories/sweep",
 ];
 const STATIC_ASSET_PATH =
   /\/[^/]+\.(?:avif|bmp|css|csv|eot|gif|ico|jpeg|jpg|js|json|map|mp3|mp4|mjs|otf|pdf|png|svg|txt|wav|webm|webmanifest|webp|woff|woff2|xml)$/i;

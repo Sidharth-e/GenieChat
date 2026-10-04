@@ -31,7 +31,7 @@ pnpm embeddings:check # Exercises the Ollama embedding path: short, over-budget 
 pnpm knowledge:check  # Exercises the knowledge store: lexical, vector, fusion, replace semantics
 pnpm knowledge:backfill # Re-chunks and re-embeds documents already in MongoDB
 pnpm memory:check     # Exercises the memory graph: writes, recall, delete, enrichment
-pnpm memory:enrich    # Re-runs enrichment for memories left pending (honours ENRICH_LIMIT)
+pnpm memory:sweep    # Runs one sweep pass against the running app's CRON_SECRET endpoint
 pnpm memory:migrate   # One-off: moves the `memories` collection into the Neo4j graph
 pnpm schedules:check  # Exercises the scheduling concurrency properties: claim race, lease reaper, retry exhaustion, overlap
 pnpm schedules:migrate # One-off: converts legacy workflow cron triggers into `schedules`
