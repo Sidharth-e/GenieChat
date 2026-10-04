@@ -6,6 +6,7 @@ import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
 import { handleError, api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
+import { MEMORY_FACT_TOP } from "@/constants/memory";
 import { storageRefSchema } from "@/lib/storage/ref";
 import { z } from "zod";
 import {
@@ -166,12 +167,12 @@ export async function POST(req: NextRequest) {
         const { MemoryGraphStore } =
           await import("@/lib/memory/graph-store");
         const memoryStore = new MemoryGraphStore();
-        const result = await memoryStore.searchRelevantMemoriesWithGraph(
+        const recall = await memoryStore.recallFacts(
           userId,
           message,
-          5,
+          MEMORY_FACT_TOP,
         );
-        memoryStrings = result.memories.map((m) => `- ${m.content}`);
+        memoryStrings = recall.facts.map((fact) => `- ${fact.text}`);
       } catch (err) {
         logger.warn({ err }, "Failed to load memories for arena");
       }

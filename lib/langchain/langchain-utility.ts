@@ -50,7 +50,14 @@ export interface UserContext {
 
 /**
  * Replaces variable placeholders in a prompt with their actual values.
- * Supported variables: {date}, {time}, {datetime}, {weekday}, {month}, {year}, {iso_timestamp}, {uuid}, {user_name}, {user_email}, {timezone}, {local_datetime}
+ * Supported variables: {date}, {time}, {datetime}, {weekday}, {month}, {year}, {iso_timestamp}, {uuid}, {user_name}, {user_email}, {timezone}, {local_datetime}, {user_memories}
+ *
+ * Every arm that interpolates a user-supplied string passes a **function** to
+ * `replace`, never a string. `String.prototype.replace` reads `$&`, `$'` and `$n`
+ * in a string replacement as substitution patterns, so a memory the user phrased
+ * with a `$`, a GitHub display name containing `$&`, or a `$'` in the timezone
+ * header would rewrite the prompt around itself instead of appearing in it. A
+ * function's return value is inserted literally.
  *
  * @param content - The prompt content containing placeholders.
  * @param userContext - Optional user context for {user_name}, {user_email}, and {timezone} variables.
@@ -85,12 +92,11 @@ export const replacePromptVariables = (
     .replace(/{year}/g, format(now, "yyyy"))
     .replace(/{iso_timestamp}/g, now.toISOString())
     .replace(/{uuid}/g, () => uuidv4())
-    .replace(/{user_name}/g, userContext?.name || "User")
-    .replace(/{user_email}/g, userContext?.email || "user@example.com")
-    .replace(/{timezone}/g, timezone)
-    .replace(/{local_datetime}/g, localDatetimeWithTz)
-    .replace(
-      /{user_memories}/g,
+    .replace(/{user_name}/g, () => userContext?.name || "User")
+    .replace(/{user_email}/g, () => userContext?.email || "user@example.com")
+    .replace(/{timezone}/g, () => timezone)
+    .replace(/{local_datetime}/g, () => localDatetimeWithTz)
+    .replace(/{user_memories}/g, () =>
       userContext?.memories?.length
         ? userContext.memories.join("\n")
         : "None recorded yet.",

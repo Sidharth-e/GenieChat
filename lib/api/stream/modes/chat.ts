@@ -8,6 +8,7 @@ import { loadUserTooling, filterConnectors, type UserTooling } from "../context"
 import { handleError, api } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
+import { MEMORY_FACT_TOP } from "@/constants/memory";
 import { StreamPipeline, type StreamContext } from "@/lib/api/stream-pipeline";
 import { buildAssistantPayload, type ProducerEvent } from "../events";
 import {
@@ -46,16 +47,15 @@ export function createChatMode(params: {
     ? (async () => {
         try {
           const memoryStore = new MemoryGraphStore();
-          const retrievalResult =
-            await memoryStore.searchRelevantMemoriesWithGraph(
-              userId,
-              message,
-              5,
-            );
-          const strings = retrievalResult.memories.map((m) => `- ${m.content}`);
+          const recall = await memoryStore.recallFacts(
+            userId,
+            message,
+            MEMORY_FACT_TOP,
+          );
+          const strings = recall.facts.map((fact) => `- ${fact.text}`);
           if (strings.length > 0) {
             logger.info(
-              `[API] Retrieved ${strings.length} memory item(s) via ${retrievalResult.metadata.mode} (semanticSeeds=${retrievalResult.metadata.semanticSeedCount}, lexicalSeeds=${retrievalResult.metadata.lexicalSeedCount}, graphExpanded=${retrievalResult.metadata.graphExpandedCount})`,
+              `[API] Retrieved ${strings.length} memory item(s) via ${recall.metadata.mode} (seeds=${recall.metadata.seedCount}, expanded=${recall.metadata.expandedCount}, candidates=${recall.metadata.totalCandidates})`,
             );
           }
           return strings;
