@@ -1,237 +1,177 @@
 /**
- * Positions a memory graph without a layout library.
+ * Positions the drawn graph with d3-force.
  *
- * A force-directed simulation is the honest choice for this data: it has no
- * natural hierarchy (so a layered layout like dagre would invent one), and the
- * structure worth seeing — dense clusters of related memories, entities shared
- * between them — is exactly what a force layout surfaces.
+ * Pure, deterministic and renderer-unaware, like the module it replaces: the
+ * simulation owns the geometry and knows nothing about a canvas, so the
+ * decisions worth testing — where a node starts, what a tick changes, what
+ * "settled" means — need no browser.
  *
- * Hand-rolled rather than `d3-force` for two reasons. It stays a pure function,
- * so it lives under `lib/` with the rest of the logic and gets unit tests rather
- * than being a library call nothing covers. And it is *deterministic*: there is
- * no `Math.random` anywhere, so the same graph lays out identically every time
- * the component mounts. A layout that reshuffled on every render would make the
- * graph unreadable across a single session, which is the entire point of drawing
- * it.
+ * It is a *stepper* rather than a one-shot call. The renderer owns the frame
+ * loop and asks for ticks while the simulation is hot, which is what keeps a
+ * layout of thousands of nodes off the render path: the work is spread across
+ * frames instead of blocking the one that mounted the component.
  *
- * The cost is O(n²) per iteration, which is why the view caps total nodes —
- * see `MEMORY_GRAPH_NODE_LIMIT`.
+ * `forceSimulation()` starts a timer of its own the moment it is constructed.
+ * That timer is stopped here and never restarted — a `restart()` would tick the
+ * graph in the background while the renderer also ticks it, and the two would
+ * fight over the same nodes.
  */
 import {
-  MEMORY_GRAPH_LAYOUT_CENTER_PULL,
-  MEMORY_GRAPH_LAYOUT_HEIGHT,
-  MEMORY_GRAPH_LAYOUT_ITERATIONS,
-  MEMORY_GRAPH_LAYOUT_MAX_STEP,
-  MEMORY_GRAPH_LAYOUT_TEMPERATURE_DECAY,
-  MEMORY_GRAPH_LAYOUT_WIDTH,
+  forceCenter,
+  forceCollide,
+  forceLink,
+  forceManyBody,
+  forceSimulation,
+  type Simulation,
+} from "d3-force";
+import {
+  MEMORY_GRAPH_ALPHA_DECAY,
+  MEMORY_GRAPH_CHARGE_STRENGTH,
+  MEMORY_GRAPH_COLLIDE_PADDING,
+  MEMORY_GRAPH_LINK_DISTANCE,
+  MEMORY_GRAPH_SEED_RADIUS_FRACTION,
+  MEMORY_GRAPH_VELOCITY_DECAY,
 } from "@/constants/memory";
 
-export interface GraphLayoutInput {
+/** One node the layout positions. The renderer paints the same array it hands in. */
+export interface MemoryLayoutNode {
   id: string;
-  /**
-   * Rough half-width of the drawn node, in layout units. Bigger nodes push
-   * harder, so a row of long memory cards does not overlap itself.
-   */
+  radius: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  /** d3's pin: a node with both set does not move. */
+  fx?: number | null;
+  fy?: number | null;
+}
+
+export interface MemoryLayoutInput {
+  id: string;
   radius: number;
 }
 
-export interface GraphLayoutPoint {
-  x: number;
-  y: number;
+export interface MemoryLayoutEdge {
+  source: string;
+  target: string;
 }
 
-export interface GraphLayoutOptions {
-  width?: number;
-  height?: number;
-  iterations?: number;
+export interface MemoryLayoutOptions {
+  width: number;
+  height: number;
 }
 
-/** The radius a node is assumed to have when scaling repulsion. */
-const BASE_RADIUS = 60;
+export interface MemoryLayoutSimulation {
+  /** The same array the caller seeded, mutated in place. */
+  readonly nodes: MemoryLayoutNode[];
+  alpha(): number;
+  tick(iterations?: number): void;
+  /** Wake a settled simulation, e.g. after a drag, a resize or a filter change. */
+  reheat(alpha?: number): void;
+  /** Hold a node at a point, or release it back to the simulation when `y` is null. */
+  pin(id: string, x: number, y: number | null): void;
+}
 
 /**
- * Padding kept between a node and the canvas edge, in layout units. A fixed
- * value rather than a fraction of the ideal spacing: the ideal spacing shrinks
- * as `1/√n`, so a margin derived from it would crowd a dense graph against the
- * boundary exactly when there is least room to spare.
- */
-const CANVAS_MARGIN = 40;
-
-/**
- * The seeded spiral's outer radius, as a fraction of the shorter canvas side.
- * The seed has to land *inside* the box: a spiral that overshoots gets clamped
- * on the first iteration, and nodes pinned to an edge have their repulsion
- * cancelled by the clamp — the graph then never opens up.
- */
-const SEED_RADIUS_FRACTION = 0.35;
-
-/**
- * The golden angle, in radians. Used for the seeded start positions: stepping
- * a spiral by it packs points without ever aligning them, so no two nodes start
- * coincident and the simulation never has to escape a degenerate stack.
+ * The angle between successive points of a phyllotaxis spiral — the golden
+ * angle, which is what keeps the seeds from lining up on spokes.
  */
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
 /**
- * Returns one point per node id, inside `width` × `height`.
+ * Places every node on a golden-angle spiral out to a fraction of the viewport's
+ * short side, centred.
  *
- * The algorithm is Fruchterman–Reingold: repulsion `k²/d`, attraction `d²/k`,
- * both against `k` — the ideal edge length that the canvas area and the node
- * count imply. The two forces are equal at `d = k`, which is what makes the
- * result need no per-graph tuning. Three departures from the textbook version,
- * each for a reason worth naming:
- *
- * 1. **Radius-scaled repulsion.** Otherwise a memory node carrying a sentence
- *    occupies the same space as an entity pill and the two draw on top of each
- *    other.
- * 2. **A per-iteration step cap.** Repulsion diverges as `d → 0`, so a pair that
- *    drifts coincident is flung across the canvas in one step, dragging its
- *    neighbours behind it. The cooling schedule already limits travel; the cap
- *    bounds the early iterations where the temperature is still high.
- * 3. **A fixed iteration count.** A convergence test on a graph that never fully
- *    settles would not terminate; 160 iterations is where the picture stops
- *    visibly moving at the cap size.
+ * Every position is assigned explicitly, so nothing depends on d3's own
+ * initialization and the same input always produces the same picture — a
+ * remount must not reshuffle the graph.
  */
-export function layoutMemoryGraph(
-  nodes: GraphLayoutInput[],
-  edges: { source: string; target: string }[],
-  options: GraphLayoutOptions = {},
-): Record<string, GraphLayoutPoint> {
-  const count = nodes.length;
-  if (count === 0) return {};
+export function seedMemoryLayout(
+  inputs: MemoryLayoutInput[],
+  width: number,
+  height: number,
+): MemoryLayoutNode[] {
+  const maxRadius = MEMORY_GRAPH_SEED_RADIUS_FRACTION * (Math.min(width, height) / 2);
+  const centerX = width / 2;
+  const centerY = height / 2;
 
-  const width = options.width ?? MEMORY_GRAPH_LAYOUT_WIDTH;
-  const height = options.height ?? MEMORY_GRAPH_LAYOUT_HEIGHT;
-  const iterations = options.iterations ?? MEMORY_GRAPH_LAYOUT_ITERATIONS;
-
-  const index = new Map<string, number>();
-  for (let i = 0; i < count; i += 1) index.set(nodes[i].id, i);
-
-  // The ideal edge length: the space each node would get if the canvas were
-  // divided evenly. Every force below is expressed against it, which is why the
-  // simulation does not need retuning when the panel is resized.
-  const ideal = Math.sqrt((width * height) / count);
-  const idealSquared = ideal * ideal;
-
-  const xs = new Float64Array(count);
-  const ys = new Float64Array(count);
-  const dxs = new Float64Array(count);
-  const dys = new Float64Array(count);
-  const radiusScale = new Float64Array(count);
-
-  const centreX = width / 2;
-  const centreY = height / 2;
-
-  // Seeded on a golden-angle spiral, bounded to `SEED_RADIUS_FRACTION` of the
-  // shorter side so every start point is inside the canvas. `Math.sqrt(i / count)`
-  // rather than a linear ramp in `i`: it spaces the seeds evenly by *area*, which
-  // is the distribution the simulation aims for, so the first iterations refine a
-  // roughly right picture instead of spreading a clump outwards.
-  const seedRadius = Math.min(width, height) * SEED_RADIUS_FRACTION;
-  for (let i = 0; i < count; i += 1) {
-    const distance = seedRadius * Math.sqrt((i + 0.5) / count);
-    const angle = i * GOLDEN_ANGLE;
-    xs[i] = centreX + distance * Math.cos(angle);
-    ys[i] = centreY + distance * Math.sin(angle);
-    radiusScale[i] = Math.max(nodes[i].radius, 1) / BASE_RADIUS;
-  }
-
-  // Edge endpoints resolved once, not per iteration: `index.get` on every pass
-  // would be the most expensive thing in the loop for no benefit.
-  const springs: { a: number; b: number }[] = [];
-  for (const edge of edges) {
-    const a = index.get(edge.source);
-    const b = index.get(edge.target);
-    // A self-edge or a dangling reference is skipped rather than thrown on: the
-    // assembler already guarantees both endpoints exist, and a layout is not
-    // the place to discover otherwise.
-    if (a === undefined || b === undefined || a === b) continue;
-    springs.push({ a, b });
-  }
-
-  // Kept inside the canvas, and never more than a quarter of the shorter side so
-  // a deliberately small canvas cannot produce an inverted clamp range.
-  const margin = Math.min(CANVAS_MARGIN, Math.min(width, height) / 4);
-
-  let temperature = Math.min(width, height) / 10;
-
-  for (let step = 0; step < iterations; step += 1) {
-    dxs.fill(0);
-    dys.fill(0);
-
-    for (let i = 0; i < count; i += 1) {
-      for (let j = i + 1; j < count; j += 1) {
-        let dx = xs[i] - xs[j];
-        let dy = ys[i] - ys[j];
-        let distanceSquared = dx * dx + dy * dy;
-
-        if (distanceSquared < 1e-6) {
-          // Coincident. The nudge is derived from the indices rather than
-          // random, so determinism survives the degenerate case.
-          dx = ((i % 7) + 1) * 0.01;
-          dy = ((j % 7) + 1) * 0.01;
-          distanceSquared = dx * dx + dy * dy;
-        }
-
-        const distance = Math.sqrt(distanceSquared);
-        const scale = (radiusScale[i] + radiusScale[j]) / 2;
-        const force = (idealSquared * scale) / distance;
-        const fx = (dx / distance) * force;
-        const fy = (dy / distance) * force;
-
-        dxs[i] += fx;
-        dys[i] += fy;
-        dxs[j] -= fx;
-        dys[j] -= fy;
-      }
-    }
-
-    for (const { a, b } of springs) {
-      const dx = xs[a] - xs[b];
-      const dy = ys[a] - ys[b];
-      const distance = Math.sqrt(dx * dx + dy * dy) || 1e-6;
-      // The pull, against the repulsion's push. The two are equal at `d = ideal`,
-      // which is what settles a connected pair at the ideal spacing rather than
-      // wherever the constants happen to balance.
-      const force = (distance * distance) / ideal;
-      const fx = (dx / distance) * force;
-      const fy = (dy / distance) * force;
-
-      dxs[a] -= fx;
-      dys[a] -= fy;
-      dxs[b] += fx;
-      dys[b] += fy;
-    }
-
-    for (let i = 0; i < count; i += 1) {
-      dxs[i] += (centreX - xs[i]) * MEMORY_GRAPH_LAYOUT_CENTER_PULL;
-      dys[i] += (centreY - ys[i]) * MEMORY_GRAPH_LAYOUT_CENTER_PULL;
-
-      const magnitude = Math.sqrt(dxs[i] * dxs[i] + dys[i] * dys[i]);
-      if (magnitude < 1e-9) continue;
-
-      const travel = Math.min(magnitude, temperature, MEMORY_GRAPH_LAYOUT_MAX_STEP);
-      xs[i] += (dxs[i] / magnitude) * travel;
-      ys[i] += (dys[i] / magnitude) * travel;
-
-      // Clamped to the canvas so a runaway node cannot leave the drawing area.
-      // React Flow fits the result to the panel afterwards, so this is a
-      // sanity bound, not the visible extent.
-      xs[i] = Math.min(Math.max(xs[i], margin), width - margin);
-      ys[i] = Math.min(Math.max(ys[i], margin), height - margin);
-    }
-
-    temperature *= MEMORY_GRAPH_LAYOUT_TEMPERATURE_DECAY;
-  }
-
-  const positions: Record<string, GraphLayoutPoint> = {};
-  for (let i = 0; i < count; i += 1) {
-    positions[nodes[i].id] = {
-      // Rounded to whole units: a sub-pixel difference is invisible, and it
-      // keeps a snapshot of the output stable enough to assert on.
-      x: Math.round(xs[i]),
-      y: Math.round(ys[i]),
+  return inputs.map((input, index) => {
+    // sqrt spreads the seeds evenly by *area* rather than by radius, so the
+    // outer ring is not crowded while the middle is empty.
+    const radius = maxRadius * Math.sqrt(index / Math.max(inputs.length, 1));
+    const angle = index * GOLDEN_ANGLE;
+    return {
+      id: input.id,
+      radius: input.radius,
+      x: centerX + radius * Math.cos(angle),
+      y: centerY + radius * Math.sin(angle),
+      vx: 0,
+      vy: 0,
     };
-  }
-  return positions;
+  });
+}
+
+/**
+ * Builds the simulation over an already-seeded node array.
+ *
+ * `nodes` is returned as-is, so the renderer keeps painting the array it handed
+ * in. The edges are copied and filtered first: `forceLink` rewrites each link's
+ * `source` and `target` from ids to node objects, and doing that to the caller's
+ * edge list would mutate the view it came from. It also *throws* on a link
+ * naming a node that is not in the array, so an edge whose endpoint the node
+ * ceiling dropped has to be removed here rather than left to fail at
+ * initialization.
+ */
+export function createMemoryLayout(
+  nodes: MemoryLayoutNode[],
+  edges: MemoryLayoutEdge[],
+  options: MemoryLayoutOptions,
+): MemoryLayoutSimulation {
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const links = edges
+    .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+    .map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+    }));
+
+  const simulation: Simulation<MemoryLayoutNode, undefined> = forceSimulation(nodes)
+    .force(
+      "link",
+      forceLink<MemoryLayoutNode, { source: string; target: string }>(links)
+        .id((node) => node.id)
+        .distance(MEMORY_GRAPH_LINK_DISTANCE),
+    )
+    .force("charge", forceManyBody().strength(MEMORY_GRAPH_CHARGE_STRENGTH))
+    .force(
+      "collide",
+      forceCollide<MemoryLayoutNode>((node) => node.radius + MEMORY_GRAPH_COLLIDE_PADDING),
+    )
+    .force("center", forceCenter(options.width / 2, options.height / 2))
+    .alphaDecay(MEMORY_GRAPH_ALPHA_DECAY)
+    .velocityDecay(MEMORY_GRAPH_VELOCITY_DECAY)
+    // d3 starts its own timer on construction — the renderer drives ticks.
+    .stop();
+
+  return {
+    nodes,
+    alpha: () => simulation.alpha(),
+    tick: (iterations = 1) => simulation.tick(iterations),
+    reheat: (alpha = 0.6) => {
+      simulation.alpha(alpha);
+    },
+    pin: (id, x, y) => {
+      const node = nodes.find((candidate) => candidate.id === id);
+      if (!node) return;
+      if (y === null) {
+        node.fx = null;
+        node.fy = null;
+        return;
+      }
+      node.fx = x;
+      node.fy = y;
+      node.x = x;
+      node.y = y;
+    },
+  };
 }

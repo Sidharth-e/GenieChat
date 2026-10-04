@@ -1,136 +1,100 @@
 import { describe, expect, it } from "vitest";
-import {
-  layoutMemoryGraph,
-  type GraphLayoutInput,
-} from "@/lib/memory/graph-layout";
-import {
-  MEMORY_GRAPH_LAYOUT_HEIGHT,
-  MEMORY_GRAPH_LAYOUT_WIDTH,
-} from "@/constants/memory";
+import { createMemoryLayout, seedMemoryLayout } from "@/lib/memory/graph-layout";
 
-const node = (id: string, radius = 60): GraphLayoutInput => ({ id, radius });
+const inputs = [
+  { id: "a", radius: 4 },
+  { id: "b", radius: 4 },
+  { id: "c", radius: 4 },
+];
+const edges = [
+  { source: "a", target: "b" },
+  { source: "b", target: "c" },
+];
+const options = { width: 800, height: 600 };
 
-/** A run of nodes, named so a failure message identifies one. */
-const nodes = (count: number): GraphLayoutInput[] =>
-  Array.from({ length: count }, (_, index) => node(`n${index}`));
+const finite = (nodes: { x: number; y: number }[]) =>
+  nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y));
 
-/** A chain: n0—n1—n2—…, which is connected without being a single hub. */
-const chain = (count: number) =>
-  Array.from({ length: count - 1 }, (_, index) => ({
-    source: `n${index}`,
-    target: `n${index + 1}`,
-  }));
-
-const span = (values: number[]) => Math.max(...values) - Math.min(...values);
-
-describe("layoutMemoryGraph", () => {
-  it("returns nothing for an empty graph", () => {
-    expect(layoutMemoryGraph([], [])).toEqual({});
-  });
-
-  it("returns a point for every node, and none for anything else", () => {
-    const positions = layoutMemoryGraph(nodes(6), []);
-    expect(Object.keys(positions).sort()).toEqual(
-      nodes(6).map((entry) => entry.id).sort(),
-    );
+describe("seedMemoryLayout", () => {
+  it("gives every node a finite position, all distinct", () => {
+    const nodes = seedMemoryLayout(inputs, 800, 600);
+    expect(nodes).toHaveLength(3);
+    expect(finite(nodes)).toBe(true);
+    expect(new Set(nodes.map((n) => `${n.x},${n.y}`)).size).toBe(3);
   });
 
   it("is deterministic, so a remount does not reshuffle the picture", () => {
-    // The whole point of drawing the graph is that it stays put. A single
-    // `Math.random` anywhere in the simulation would break this.
-    const graph = nodes(24);
-    const edges = chain(24);
-    expect(layoutMemoryGraph(graph, edges)).toEqual(layoutMemoryGraph(graph, edges));
-  });
-
-  it("keeps every node inside the canvas", () => {
-    const graph = nodes(40);
-    const positions = layoutMemoryGraph(graph, chain(40));
-    for (const point of Object.values(positions)) {
-      expect(Number.isFinite(point.x)).toBe(true);
-      expect(Number.isFinite(point.y)).toBe(true);
-      expect(point.x).toBeGreaterThanOrEqual(0);
-      expect(point.x).toBeLessThanOrEqual(MEMORY_GRAPH_LAYOUT_WIDTH);
-      expect(point.y).toBeGreaterThanOrEqual(0);
-      expect(point.y).toBeLessThanOrEqual(MEMORY_GRAPH_LAYOUT_HEIGHT);
-    }
-  });
-
-  it("spreads the graph out instead of collapsing it to a point", () => {
-    // The failure this guards against is not a crash: a centre pull that
-    // outweighs the repulsion lays every node down in the same place, and the
-    // canvas renders one dot.
-    const positions = Object.values(layoutMemoryGraph(nodes(20), chain(20)));
-    const xs = positions.map((point) => point.x);
-    const ys = positions.map((point) => point.y);
-    expect(span(xs)).toBeGreaterThan(100);
-    expect(span(ys)).toBeGreaterThan(100);
-  });
-
-  it("settles a connected pair closer together than an unconnected one", () => {
-    // Fruchterman–Reingold is only doing its job if the springs pull: the edge
-    // has to mean something in the picture.
-    const positions = layoutMemoryGraph(
-      [node("a"), node("b"), node("c")],
-      [{ source: "a", target: "b" }],
+    expect(seedMemoryLayout(inputs, 800, 600)).toEqual(
+      seedMemoryLayout(inputs, 800, 600),
     );
-    const distance = (from: string, to: string) =>
-      Math.hypot(
-        positions[from].x - positions[to].x,
-        positions[from].y - positions[to].y,
-      );
-    expect(distance("a", "b")).toBeLessThan(distance("a", "c"));
   });
 
-  it("skips a self-edge and an edge naming a node that is not there", () => {
-    // The assembler already guarantees both endpoints exist; a layout is not the
-    // place to discover otherwise, so these are dropped rather than thrown on.
-    const positions = layoutMemoryGraph(
-      [node("a"), node("b")],
-      [
-        { source: "a", target: "a" },
-        { source: "a", target: "absent" },
-      ],
-    );
-    expect(Object.keys(positions).sort()).toEqual(["a", "b"]);
+  it("handles an empty graph", () => {
+    expect(seedMemoryLayout([], 800, 600)).toEqual([]);
+  });
+});
+
+describe("createMemoryLayout", () => {
+  it("does not advance on its own — d3 starts a timer and it must be stopped", async () => {
+    const sim = createMemoryLayout(seedMemoryLayout(inputs, 800, 600), edges, options);
+    const before = sim.alpha();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sim.alpha()).toBe(before);
   });
 
-  it("lays out within a custom canvas when one is given", () => {
-    const positions = Object.values(
-      layoutMemoryGraph(nodes(10), chain(10), { width: 400, height: 300 }),
-    );
-    for (const point of positions) {
-      expect(point.x).toBeGreaterThanOrEqual(0);
-      expect(point.x).toBeLessThanOrEqual(400);
-      expect(point.y).toBeGreaterThanOrEqual(0);
-      expect(point.y).toBeLessThanOrEqual(300);
-    }
+  it("settles to finite positions", () => {
+    const sim = createMemoryLayout(seedMemoryLayout(inputs, 800, 600), edges, options);
+    sim.tick(300);
+    expect(finite(sim.nodes)).toBe(true);
+    expect(sim.alpha()).toBeLessThan(0.05);
   });
 
-  it("moves the nodes much further in 160 iterations than in one", () => {
-    // Proves the iteration count is actually read, rather than the option being
-    // accepted and ignored.
-    const graph = nodes(12);
-    const edges = chain(12);
-    const brief = layoutMemoryGraph(graph, edges, { iterations: 1 });
-    const settled = layoutMemoryGraph(graph, edges);
-    const moved = Object.keys(settled).some(
-      (id) => brief[id].x !== settled[id].x || brief[id].y !== settled[id].y,
-    );
-    expect(moved).toBe(true);
+  it("is deterministic across two independent runs", () => {
+    const run = () => {
+      const sim = createMemoryLayout(seedMemoryLayout(inputs, 800, 600), edges, options);
+      sim.tick(300);
+      return sim.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y }));
+    };
+    expect(run()).toEqual(run());
   });
 
-  it("gives a larger node room to breathe", () => {
-    // Radius scaling exists so a memory card does not sit on top of a pill.
-    // Measured as the total spread: pushing the big node away opens the graph.
-    const small = Object.values(
-      layoutMemoryGraph([node("a", 10), node("b", 10)], [{ source: "a", target: "b" }]),
+  it("pulls linked nodes together", () => {
+    const mean = (nodes: { id: string; x: number; y: number }[]) =>
+      (Math.hypot(nodes[0].x - nodes[1].x, nodes[0].y - nodes[1].y) +
+        Math.hypot(nodes[1].x - nodes[2].x, nodes[1].y - nodes[2].y)) /
+      2;
+    const seeded = seedMemoryLayout(inputs, 800, 600);
+    const before = mean(seeded);
+    const sim = createMemoryLayout(seeded, edges, options);
+    sim.tick(300);
+    expect(mean(sim.nodes)).toBeLessThan(before);
+  });
+
+  it("reheat raises alpha, so a drag can wake a settled graph", () => {
+    const sim = createMemoryLayout(seedMemoryLayout(inputs, 800, 600), edges, options);
+    sim.tick(300);
+    sim.reheat();
+    expect(sim.alpha()).toBeGreaterThan(0.5);
+  });
+
+  it("holds a pinned node where it was put", () => {
+    const sim = createMemoryLayout(seedMemoryLayout(inputs, 800, 600), edges, options);
+    sim.pin("a", 111, 222);
+    sim.tick(100);
+    const a = sim.nodes.find((n) => n.id === "a");
+    expect(a?.x).toBeCloseTo(111, 5);
+    expect(a?.y).toBeCloseTo(222, 5);
+    sim.pin("a", 111, null); // release back to the simulation
+    expect(finite(sim.nodes)).toBe(true);
+  });
+
+  it("ignores an edge naming a node that is not drawn", () => {
+    const sim = createMemoryLayout(
+      seedMemoryLayout(inputs, 800, 600),
+      [...edges, { source: "a", target: "gone" }],
+      options,
     );
-    const large = Object.values(
-      layoutMemoryGraph([node("a", 400), node("b", 10)], [{ source: "a", target: "b" }]),
-    );
-    const distance = (points: { x: number; y: number }[]) =>
-      Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-    expect(distance(large)).toBeGreaterThanOrEqual(distance(small));
+    expect(() => sim.tick(50)).not.toThrow();
+    expect(finite(sim.nodes)).toBe(true);
   });
 });

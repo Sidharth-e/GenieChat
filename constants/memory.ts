@@ -328,45 +328,37 @@ export const MEMORY_GRAPH_DEGREE_RADIUS_SCALE = 1.6;
 export const MEMORY_GRAPH_MAX_NODE_RADIUS = 20;
 
 /**
- * Layout tuning, and the reason each number is what it is.
+ * d3-force tuning, and the reason each number is what it is.
  *
- * The forces are Fruchterman–Reingold's, which is what makes the numbers here
- * few: every force is expressed against `k`, the ideal edge length derived from
- * the canvas area and the node count, so there is nothing to retune when the
- * panel is resized. Repulsion is `k²/d` and attraction is `d²/k`; the two cross
- * at exactly `d = k`, so a connected pair settles at the ideal spacing rather
- * than at a distance some constant happened to pick.
- *
- * `LAYOUT_CENTER_PULL` — gravity toward the middle, applied as a fraction of
- * each node's distance from it. It is what keeps a graph of several disconnected
- * components from drifting off-canvas, and it must stay well *below* the
- * repulsion at a typical distance or it collapses the layout to a point: at a
- * distance of `k` repulsion is `k` itself, so a pull of 0.01 is two orders of
- * magnitude weaker. That margin is the whole reason the value looks so small.
- * `LAYOUT_MAX_STEP` — an absolute ceiling on one iteration's movement, on top of
- * the cooling temperature. Repulsion diverges as `d → 0`, so a pair that drifts
- * coincident would otherwise fling both nodes across the canvas in a single
- * step and drag the rest of the graph after them.
- * `LAYOUT_TEMPERATURE_DECAY` — the cooling schedule, from `min(width, height)/10`
- * down to roughly a tenth of that over `LAYOUT_ITERATIONS`. A layout that cools
- * too fast freezes in its seeded spiral; one that never cools oscillates.
- * `LAYOUT_ITERATIONS` — a fixed count rather than a convergence test, because a
- * graph that never fully settles would never terminate the test. 160 is where a
- * graph of the cap size stops visibly moving.
+ * `LINK_DISTANCE` — the resting length of an edge. It is a world-space distance,
+ * not a pixel one: the camera scales the whole picture, so the layout has one
+ * geometry and zooming does not re-lay it out.
+ * `CHARGE_STRENGTH` — the many-body force, negative because like charges repel.
+ * It is what opens the picture up: without it the link force alone would pull
+ * every connected component into a point.
+ * `COLLIDE_PADDING` — the gap kept between two nodes' radii, so the biggest hubs
+ * do not sit on top of the facts they connect. d3's collide force resolves
+ * overlap rather than adding attraction, so this is a floor, not a spring.
+ * `ALPHA_DECAY` / `ALPHA_MIN` — the cooling schedule, and the point at which the
+ * renderer stops ticking. d3's default decay reaches `ALPHA_MIN` in about 300
+ * ticks, which is the settling time this drawing wants.
+ * `VELOCITY_DECAY` — d3's default friction. Higher is calmer and slower.
  */
-export const MEMORY_GRAPH_LAYOUT_ITERATIONS = 160;
-export const MEMORY_GRAPH_LAYOUT_CENTER_PULL = 0.01;
-export const MEMORY_GRAPH_LAYOUT_MAX_STEP = 18;
-export const MEMORY_GRAPH_LAYOUT_TEMPERATURE_DECAY = 0.985;
+export const MEMORY_GRAPH_LINK_DISTANCE = 28;
+export const MEMORY_GRAPH_CHARGE_STRENGTH = -140;
+export const MEMORY_GRAPH_COLLIDE_PADDING = 3;
+export const MEMORY_GRAPH_ALPHA_DECAY = 0.0228;
+export const MEMORY_GRAPH_ALPHA_MIN = 0.001;
+export const MEMORY_GRAPH_VELOCITY_DECAY = 0.6;
 
 /**
- * Bounds on the drawn canvas, in layout units. The simulation runs in its own
- * coordinate space and these give it an area to aim for; React Flow then fits
- * the result to whatever the panel actually is, so these are not pixels and do
- * not need to track the viewport.
+ * Where nodes start before the simulation runs: a golden-angle spiral out to
+ * this fraction of the viewport's short side.
+ *
+ * Assigned explicitly rather than left to d3's own initialization, so the same
+ * input always produces the same picture and a remount never reshuffles it.
  */
-export const MEMORY_GRAPH_LAYOUT_WIDTH = 1400;
-export const MEMORY_GRAPH_LAYOUT_HEIGHT = 900;
+export const MEMORY_GRAPH_SEED_RADIUS_FRACTION = 0.35;
 
 /**
  * Users one sweep pass touches. The worklist is users with something pending

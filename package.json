@@ -58,6 +58,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cron-parser": "^5.5.0",
+    "d3-force": "^3.0.0",
     "date-fns": "^4.2.1",
     "framer-motion": "^12.38.0",
     "ioredis": "^5.10.1",
@@ -99,6 +100,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.0",
     "@tailwindcss/typography": "^0.5.19",
+    "@types/d3-force": "^3.0.10",
     "@types/node": "^25.9.0",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.14",
