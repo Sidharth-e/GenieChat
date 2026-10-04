@@ -242,6 +242,19 @@ nodes and that leftover schema.
 memory:check` exercises the store against a live graph, and `pnpm memory:eval`
 scores recall against the fixed probe set.
 
+**That setup script creates each vector index with `IF NOT EXISTS`, so it is a
+no-op against an index that already exists — including one whose internal state
+has drifted.** A drifted index raises `Neo.DatabaseError.Statement.ExecutionFailed:
+Index N out of bounds for length 1` for a filtered `SEARCH` that matches **no**
+rows, where a healthy one returns none. `fact_embedding` filters on
+`(userId, isCurrent)`, so an empty match there is the new-user path and the
+user whose facts are all closed; a seed failure discards the whole recall, so it
+surfaces as `Failed to load user memories` with the pending capture lost with
+it. `memory:check`'s seeding check seeds again after closing its fixture's only
+fact, which is that empty match — a failure there is the drift, not the closure.
+The repair is to `DROP INDEX` the index and recreate it from the same statement
+in `buildNeo4jDdl`.
+
 ### Memory Graph View
 
 `/memories` has a List / Graph toggle. The graph is read through
