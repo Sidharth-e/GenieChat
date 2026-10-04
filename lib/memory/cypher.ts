@@ -445,10 +445,17 @@ export const PREDICATE_LIST_CYPHER = `
 /**
  * Rewire, fold the alias in, count the facts moved, then drop the duplicate.
  *
- * `OPTIONAL MATCH` because a predicate with no facts must still merge — a plain
- * MATCH would leave the loser behind forever. `DELETE r` on a null relationship
- * is a no-op, and `count(f)` counts only the non-null rows, so the factCount
- * bump tracks the facts actually moved.
+ * `OPTIONAL MATCH` and `collect` rather than a plain `MATCH`, because a
+ * predicate with no facts must still merge — a plain MATCH would leave the loser
+ * behind forever — and because `CREATE` cannot take the null `f` that an
+ * optional match with no rows produces. `collect` drops nulls, so `size` counts
+ * exactly the facts moved and the factCount bump matches the edges created.
+ *
+ * The rewiring is a `CREATE` of a new edge to the survivor followed by the
+ * `DELETE` of the old one. Nothing here may simply delete: a fact whose
+ * `PREDICATE` edge is gone still exists, but it has no predicate, so it stops
+ * being findable by `FACT_CURRENT_CYPHER`, stops seeding under its own
+ * predicate, and is invisible to the reconciliation sweep.
  */
 export const PREDICATE_MERGE_CYPHER = `
   MATCH (dup:Predicate {id: $dupId, userId: $userId})
@@ -460,7 +467,9 @@ export const PREDICATE_MERGE_CYPHER = `
   WITH dup, keep
   OPTIONAL MATCH (f:Fact {userId: $userId})-[r:PREDICATE]->(dup)
   DELETE r
-  WITH dup, keep, count(f) AS moved
+  WITH dup, keep, collect(f) AS movedFacts
+  FOREACH (fact IN movedFacts | CREATE (fact)-[:PREDICATE]->(keep))
+  WITH dup, keep, size(movedFacts) AS moved
   SET keep.factCount = keep.factCount + moved
   DETACH DELETE dup
   RETURN moved
@@ -694,4 +703,33 @@ export const SWEEP_WORKLIST_CYPHER = `
   WHERE (n:Capture AND n.attempts < $maxAttempts) OR (n:Fact AND n.embedding IS NULL)
   RETURN DISTINCT n.userId AS userId
   LIMIT toInteger($limit)
+`;
+
+export const CAPTURE_COUNT_CYPHER = `
+  MATCH (c:Capture {userId: $userId}) RETURN count(c) AS total
+`;
+
+export const FACT_COUNT_ALL_CYPHER = `
+  MATCH (f:Fact {userId: $userId})
+  RETURN count(f) AS total,
+         count(CASE WHEN f.isCurrent THEN 1 END) AS current
+`;
+
+/** The check harness asserts on a clean slate, so it deletes what it made. */
+export const TEST_GC_CYPHER = `
+  MATCH (n {userId: $userId}) DETACH DELETE n
+`;
+
+export const PREDICATE_GET_CYPHER = `
+  MATCH (p:Predicate {id: $id, userId: $userId})
+  RETURN p.canonicalName AS canonicalName, p.aliases AS aliases,
+         p.factCount AS factCount
+`;
+
+export const FACT_EDGES_CYPHER = `
+  MATCH (f:Fact {id: $id, userId: $userId})
+  OPTIONAL MATCH (f)-[:SUBJECT]->(s)
+  OPTIONAL MATCH (f)-[:PREDICATE]->(p:Predicate)
+  OPTIONAL MATCH (f)-[:OBJECT]->(o)
+  RETURN s.id AS subjectId, p.id AS predicateId, o.id AS objectId
 `;

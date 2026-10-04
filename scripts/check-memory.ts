@@ -1,53 +1,55 @@
-import neo4j, { type ManagedTransaction } from "neo4j-driver";
-import { EMBEDDING_DIMENSIONS } from "@/constants/embeddings";
-import {
-  MEMORY_EDGE_CANDIDATE_LIMIT,
-  MEMORY_LLM_EDGE_TYPES,
-  MEMORY_TRAVERSABLE_TYPES,
-  MEMORY_VECTOR_INDEX_NAMES,
-  memorySeedLimit,
-} from "@/constants/memory";
-import {
-  EDGE_CANDIDATE_CYPHER,
-  ENRICH_PENDING_CYPHER,
-  ENTITY_GC_CYPHER,
-  EXPAND_CYPHER,
-  GRAPH_ABOUT_CYPHER,
-  GRAPH_ENTITY_RELATIONS_CYPHER,
-  GRAPH_MEMORIES_CYPHER,
-  GRAPH_MEMORY_COUNT_CYPHER,
-  GRAPH_MEMORY_EDGES_CYPHER,
-  MEMORY_DELETE_CYPHER,
-  SEED_CYPHER,
-} from "@/lib/memory/cypher";
-import { writeEnrichment } from "@/lib/memory/enrichment-write";
-import type { Enrichment } from "@/lib/memory/enrichment-schema";
-
 /**
- * Exercises the memory graph's recall and delete paths against a live Neo4j.
+ * Exercises the fact graph against a live Neo4j.
  *
- * Three deliberate choices:
+ * Four deliberate choices:
  *
- * 1. It reads `process.env` directly rather than importing `@/lib/config`, for
- *    the reason `setup-mongodb.ts` and `check-storage.ts` document: `lib/config`
- *    is `server-only` and reaches the whole `lib/env.ts` schema, so an unrelated
- *    blank optional var would stop this script from running.
- * 2. It imports the Cypher from `@/lib/memory/cypher` — a module with no
- *    `"server-only"` guard — so these checks execute the *same* statements the
- *    store does. It cannot import `@/lib/memory/graph-store` (guarded) or
- *    `@/lib/embeddings` (guarded), which is why the vectors below are built by
- *    hand instead of by the provider.
- * 3. The two probe vectors are constructed so the cosines are exact, not
- *    approximate: `A` sits at 0.3 from the probe and `B` at 1.0, which is what
- *    makes check 2's starvation scenario a real one.
+ * 1. It reads `process.env` and builds its own driver rather than importing
+ *    `@/lib/neo4j/client` or `@/lib/config`: both carry the `"server-only"`
+ *    guard, which Next aliases at build time and `tsx` does not resolve at all.
+ * 2. It imports the Cypher from `@/lib/memory/cypher` — a module with no guard —
+ *    so these checks execute the *same* statements the store does rather than a
+ *    copy of them. It cannot import `@/lib/memory/graph-store` for the same
+ *    reason, so what is asserted here is statement-level: the dedup and supersede
+ *    *decisions* are TypeScript and are unit-tested instead.
+ * 3. Every vector is `EMBEDDING_DIMENSIONS` long. The four vector indexes are
+ *    created at that width and Neo4j rejects a vector that does not match, so a
+ *    hand-written two-element fixture would fail on the write rather than on the
+ *    assertion it was meant to make.
+ * 4. An unconfigured Neo4j is a **failure**, not a skip. The script's whole job
+ *    is to exercise a live graph, and exiting 0 on an environment where nothing
+ *    ran would report success for work that never happened.
  *
- * Cleanup runs in a `finally` and is scoped to the two scratch user ids, so a
- * failed check cannot leave nodes behind.
+ * Each check writes its fixture under a throwaway `userId`, asserts, then deletes
+ * what it made — so a re-run is unaffected by the previous one and a real user's
+ * graph is never touched.
  */
-
-const USER_A = "__check_a";
-const USER_B = "__check_b";
-const SCRATCH_USERS = [USER_A, USER_B];
+import { randomUUID } from "node:crypto";
+import neo4j, { type Driver } from "neo4j-driver";
+import { EMBEDDING_DIMENSIONS } from "@/constants/embeddings";
+import { MEMORY_CAPTURE_MAX_ATTEMPTS } from "@/constants/memory";
+import {
+  buildFactCreateCypher,
+  buildOrphanGcCypher,
+  CAPTURE_COUNT_CYPHER,
+  CAPTURE_CREATE_CYPHER,
+  CAPTURE_PENDING_CYPHER,
+  CAPTURE_RETRY_CYPHER,
+  ENTITY_ALIAS_CYPHER,
+  ENTITY_CREATE_CYPHER,
+  ENTITY_EXACT_CYPHER,
+  FACT_CLOSE_CYPHER,
+  FACT_COUNT_ALL_CYPHER,
+  FACT_CURRENT_CYPHER,
+  FACT_EDGES_CYPHER,
+  FACT_EXPAND_CYPHER,
+  FACT_SEED_CYPHER,
+  PREDICATE_CREATE_CYPHER,
+  PREDICATE_GET_CYPHER,
+  PREDICATE_LIST_CYPHER,
+  PREDICATE_MERGE_CYPHER,
+  TEST_GC_CYPHER,
+  USER_UPSERT_CYPHER,
+} from "@/lib/memory/cypher";
 
 const uri = process.env.NEO4J_URI;
 const password = process.env.NEO4J_PASSWORD;
@@ -65,15 +67,10 @@ const driver = neo4j.driver(uri, neo4j.auth.basic(user, password), {
   disableLosslessIntegers: true,
 });
 
-let failures = 0;
-function report(name: string, ok: boolean, detail = ""): void {
-  console.log(`${ok ? "ok" : "FAIL"}: ${name}${detail ? ` — ${detail}` : ""}`);
-  if (!ok) failures += 1;
-}
-
 /**
- * All-float and unit-length. `0` is not used for the same reason: the driver
- * would send an exact zero as an Integer and Neo4j rejects a mixed-type list.
+ * All-float and unit-length, at the width the indexes are built for.
+ * Deliberately not `[1, 0]`: a shorter vector is rejected by the index on write,
+ * which would turn a fixture into an error about dimensionality.
  */
 function probeVector(): number[] {
   return Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) =>
@@ -81,583 +78,536 @@ function probeVector(): number[] {
   );
 }
 
-/** Cosine 0.3 against `probeVector()`, by construction. */
+/**
+ * Cosine 0.9 against `probeVector()`, by construction: both carry the same
+ * trailing filler, so the filler cancels out of the angle and only the first two
+ * entries decide it. Only the *ordering* matters to the check that uses this —
+ * a nearer foreign fact must be able to take a slot mine would otherwise have.
+ */
 function weakerVector(): number[] {
   return Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) =>
-    i === 0 ? 0.3 : i === 1 ? 0.9539392014169456 : 1e-6,
+    i === 0 ? 0.9 : i === 1 ? 0.4358898943540674 : 1e-6,
   );
 }
 
-async function clearScratch(session: ReturnType<typeof driver.session>): Promise<void> {
-  await session.run("MATCH (n) WHERE n.userId IN $users DETACH DELETE n", {
-    users: SCRATCH_USERS,
-  });
-}
+const failures: string[] = [];
 
-/**
- * Pre-flight, not one of the eight checks: the live indexes must agree with
- * `EMBEDDING_DIMENSIONS` before any vector query can mean anything.
- *
- * Without it a drifted index surfaces as a raw dimensionality error thrown out
- * of whichever vector query happens to run first, which reads like a bug in this
- * script rather than a stale index. Diagnosed here it is one line naming the fix.
- * Returns whether the contract holds.
- */
-async function assertIndexContract(
-  session: ReturnType<typeof driver.session>,
-): Promise<boolean> {
-  const expected: string[] = Object.values(MEMORY_VECTOR_INDEX_NAMES);
-  const { records } = await session.run(
-    `SHOW INDEXES YIELD name, options WHERE name IN $names`,
-    { names: expected },
-  );
-  const live = new Map<string, number | undefined>();
-  for (const record of records) {
-    live.set(
-      String(record.get("name")),
-      Number(record.get("options").indexConfig["vector.dimensions"]),
-    );
-  }
-
-  let ok = true;
-  for (const name of expected) {
-    const dimensions = live.get(name);
-    if (dimensions === EMBEDDING_DIMENSIONS) continue;
-    ok = false;
-    report(
-      `vector index ${name} matches EMBEDDING_DIMENSIONS`,
-      false,
-      dimensions === undefined
-        ? "missing — run: pnpm db:setup:neo4j"
-        : `is ${dimensions}, expected ${EMBEDDING_DIMENSIONS} — drop the index and run: pnpm db:setup:neo4j`,
-    );
-  }
-  return ok;
-}
-
-/**
- * The `StatementRunner` shape `writeEnrichment` expects, bound to a transaction.
- * `toObject()` keys are the statement's own aliases, which is what
- * `resolveEntityName` reads (`id`, `normalizedName`).
- */
-function runner(tx: ManagedTransaction) {
-  return async (cypher: string, params: Record<string, unknown>) => {
-    const result = await tx.run(cypher, params);
-    return result.records.map((record) => record.toObject());
-  };
-}
-
-async function runChecks(
-  session: ReturnType<typeof driver.session>,
-): Promise<void> {
-  const probe = probeVector();
-  const weaker = weakerVector();
-
-  // A: one memory, naming "Acme". B: five hundred, all naming "Acme" and all
-  // *more* similar to the probe than A's. This is the crowding scenario §6
-  // exists to prevent.
-  await session.run(
-    `CREATE (m:Memory {
-       id:'check_a_1', userId:$a, content:'Acme is our deploy vendor',
-       createdAt:'2026-01-01T00:00:00.000Z',
-       updatedAt:'2026-01-01T00:00:00.000Z', embedding:$embedding
-     })
-     CREATE (e:Entity {id:'check_a_acme', userId:$a, normalizedName:'acme', name:'acme'})
-     CREATE (m)-[:ABOUT]->(e)`,
-    { a: USER_A, embedding: weaker },
-  );
-
-  await session.run(
-    `CREATE (e:Entity {id:'check_b_acme', userId:$b, normalizedName:'acme', name:'acme'})
-     WITH e
-     UNWIND range(1, 500) AS i
-     CREATE (m:Memory {
-       id:'check_b_' + i, userId:$b, content:'Acme memory ' + i,
-       createdAt:'2026-01-01T00:00:00.000Z',
-       updatedAt:'2026-01-01T00:00:00.000Z', embedding:$embedding
-     })
-     CREATE (m)-[:ABOUT]->(e)`,
-    { b: USER_B, embedding: probe },
-  );
-
-  // A memory with no vector at all: the seed query must skip it, not error.
-  await session.run(
-    `CREATE (m:Memory {
-       id:'check_a_novector', userId:$a, content:'Acme but unembedded',
-       createdAt:'2026-01-01T00:00:00.000Z',
-       updatedAt:'2026-01-01T00:00:00.000Z'
-     })`,
-    { a: USER_A },
-  );
-
-  const k = memorySeedLimit(5);
-
-  // ---- 1. the seed query finds the user's own memory ----
-  const seedResult = await session.run(SEED_CYPHER, {
-    queryVector: probe,
-    userId: USER_A,
-    k,
-  });
-  const seedIds = seedResult.records.map((r) => String(r.get("id")));
-  report(
-    "SEED_CYPHER returns the target user's memory",
-    seedIds.includes("check_a_1"),
-    `ids=[${seedIds.join(", ")}]`,
-  );
-
-  // ---- 2. tenant isolation: B must never appear ----
-  const leaked = seedIds.filter((id) => id.startsWith("check_b_"));
-  report(
-    "tenant isolation — another user's 500 nearer memories do not crowd out or leak",
-    seedIds.length > 0 && leaked.length === 0,
-    `returned=${seedIds.length} leaked=${leaked.length}`,
-  );
-
-  // A shared entity name is not a bridge: B's "acme" is a different node.
-  const expandResult = await session.run(EXPAND_CYPHER, {
-    seedIds: ["check_a_1"],
-    userId: USER_A,
-    allowedTypes: MEMORY_TRAVERSABLE_TYPES,
-    expansionLimit: k * 2,
-  });
-  const expandedIds = expandResult.records.map((r) => String(r.get("id")));
-  report(
-    "EXPAND_CYPHER from A's seed returns no B memory via the shared entity name",
-    expandedIds.every((id) => !id.startsWith("check_b_")),
-    `expanded=[${expandedIds.join(", ")}]`,
-  );
-
-  // ---- 3. a path that physically crosses users is refused ----
-  // A's entity, reached from B's memory — the `all(x IN nodes(path))` guard.
-  await session.run(
-    `MATCH (b:Memory {id:'check_b_1'}), (e:Entity {id:'check_a_acme'})
-     CREATE (b)-[:ABOUT]->(e)`,
-  );
-  const crossA = await session.run(EXPAND_CYPHER, {
-    seedIds: ["check_a_1"],
-    userId: USER_A,
-    allowedTypes: MEMORY_TRAVERSABLE_TYPES,
-    expansionLimit: k * 2,
-  });
-  const crossB = await session.run(EXPAND_CYPHER, {
-    seedIds: ["check_b_1"],
-    userId: USER_B,
-    allowedTypes: MEMORY_TRAVERSABLE_TYPES,
-    expansionLimit: k * 2,
-  });
-  const crossAIds = crossA.records.map((r) => String(r.get("id")));
-  const crossBIds = crossB.records.map((r) => String(r.get("id")));
-  report(
-    "EXPAND_CYPHER refuses a path crossing users in either direction",
-    crossAIds.every((id) => !id.startsWith("check_b_")) &&
-      crossBIds.every((id) => !id.startsWith("check_a_")),
-    `fromA=[${crossAIds.join(", ")}] fromB=[${crossBIds.join(", ")}]`,
-  );
-
-  // ---- 4. a vectorless memory is skipped, not an error ----
-  report(
-    "SEED_CYPHER skips a memory with no embedding instead of erroring",
-    !seedIds.includes("check_a_novector"),
-    `returned=${seedIds.join(", ")}`,
-  );
-
-  // ---- 5. delete removes the edges, and GC takes only the orphans ----
-  await session.run(
-    `CREATE (shared:Entity {id:'check_a_shared', userId:$a, normalizedName:'shared', name:'shared'})
-     CREATE (exclusive:Entity {id:'check_a_exclusive', userId:$a, normalizedName:'exclusive', name:'exclusive'})
-     WITH shared, exclusive
-     MATCH (m1:Memory {id:'check_a_1'})
-     CREATE (m1)-[:ABOUT]->(shared)
-     CREATE (m1)-[:ABOUT]->(exclusive)
-     CREATE (m2:Memory {
-       id:'check_a_2', userId:$a, content:'still here',
-       createdAt:'2026-01-01T00:00:00.000Z', updatedAt:'2026-01-01T00:00:00.000Z'
-     })
-     CREATE (m2)-[:ABOUT]->(shared)`,
-    { a: USER_A },
-  );
-
-  await session.executeWrite(async (tx) => {
-    await tx.run(MEMORY_DELETE_CYPHER, { id: "check_a_1", userId: USER_A });
-    await tx.run(ENTITY_GC_CYPHER, { userId: USER_A });
-  });
-  const afterDelete = await session.run(
-    `RETURN EXISTS { MATCH (m:Memory {id:'check_a_1'}) } AS memoryGone,
-            EXISTS { MATCH (e:Entity {id:'check_a_exclusive'}) } AS orphanKept,
-            EXISTS { MATCH (e:Entity {id:'check_a_shared'}) } AS sharedKept,
-            EXISTS { MATCH (:Memory {id:'check_a_1'})-[]->() } AS edgesGone`,
-  );
-  const row = afterDelete.records[0];
-  report(
-    "MEMORY_DELETE_CYPHER + ENTITY_GC_CYPHER remove the memory, its edges and only its orphaned entities",
-    row.get("memoryGone") === false &&
-      row.get("orphanKept") === false &&
-      row.get("sharedKept") === true &&
-      row.get("edgesGone") === false,
-    `memoryGone=${row.get("memoryGone")} orphanKept=${row.get("orphanKept")} sharedKept=${row.get("sharedKept")}`,
-  );
-
-  // ---- 6. the recall path's index is in-index filterable by userId ----
-  const indexResult = await session.run(
-    `SHOW INDEXES YIELD name, type, properties
-     WHERE type = 'VECTOR' AND name = $name`,
-    { name: "memory_embedding" },
-  );
-  const indexRecord = indexResult.records[0];
-  const properties: string[] = indexRecord ? indexRecord.get("properties") : [];
-  report(
-    "memory_embedding is in-index filterable by userId",
-    Boolean(indexRecord) && properties.includes("userId"),
-    `properties=[${properties.join(", ")}]`,
-  );
-
-  // ---- 7. the edge candidate window reads a bounded recent slice ----
-  // This one exists because a live run found it broken: the driver sends plain
-  // JS numbers as Double, so `LIMIT $n` raised 22003 until the statement coerced
-  // with toInteger. Nothing else covers this statement — the store is
-  // server-only, so the check is the only thing that executes it.
-  await session.run(
-    `UNWIND [
-       {id:'check_a_recent1', at:'2026-03-01T00:00:00.000Z'},
-       {id:'check_a_recent2', at:'2026-03-02T00:00:00.000Z'},
-       {id:'check_a_recent3', at:'2026-03-03T00:00:00.000Z'}
-     ] AS row
-     CREATE (m:Memory {
-       id: row.id, userId: $a, content:'Recent memory ' + row.id,
-       createdAt: row.at, updatedAt: row.at
-     })`,
-    { a: USER_A },
-  );
-
-  const bounded = await session.run(EDGE_CANDIDATE_CYPHER, {
-    userId: USER_A,
-    id: "check_a_recent3",
-    limit: 2,
-  });
-  const boundedIds = bounded.records.map((r) => String(r.get("id")));
-
-  let productionBoundOk = true;
-  let productionBoundDetail = "ok";
+async function check(name: string, fn: () => Promise<void>): Promise<void> {
   try {
-    const full = await session.run(EDGE_CANDIDATE_CYPHER, {
-      userId: USER_A,
-      id: "check_a_recent3",
-      limit: MEMORY_EDGE_CANDIDATE_LIMIT,
-    });
-    const fullIds = full.records.map((r) => String(r.get("id")));
-    productionBoundOk =
-      fullIds.includes("check_a_recent1") &&
-      fullIds.includes("check_a_recent2") &&
-      fullIds.includes("check_a_2") &&
-      !fullIds.includes("check_a_recent3");
-    productionBoundDetail = `returned=${fullIds.length}`;
+    await fn();
+    console.log(`  ok    ${name}`);
   } catch (error) {
-    productionBoundOk = false;
-    productionBoundDetail = `threw: ${(error as Error).message.split("\n")[0]}`;
+    failures.push(name);
+    console.error(`  FAIL  ${name}`);
+    console.error(
+      `        ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
+}
 
-  report(
-    "EDGE_CANDIDATE_CYPHER returns the bounded recent slice, newest first, excluding the memory itself",
-    boundedIds.join(",") === "check_a_recent2,check_a_recent1" && productionBoundOk,
-    `bounded=[${boundedIds.join(", ")}] atLimit${MEMORY_EDGE_CANDIDATE_LIMIT}=${productionBoundDetail}`,
-  );
+function assert(condition: boolean, message: string): void {
+  if (!condition) throw new Error(message);
+}
 
-  // ---- 8. the enrichment write path, and the sweep's selection ----
-  // Deterministic on purpose. `writeEnrichment` is driver-free, so this really
-  // does execute the store's own write path — but the model call in front of it
-  // needs a live provider, and a check that needs one goes red for reasons that
-  // have nothing to do with this schema (and costs a token per run). The model
-  // boundary is covered by tests/lib/memory/llm-extraction.test.ts with a faked
-  // transport; what only a live database can answer is whether these statements
-  // run at all.
-  await session.run(
-    `CREATE (m:Memory {
-       id:'check_a_enrich', userId:$a, content:'Acme replaced Globex',
-       createdAt:'2026-04-01T00:00:00.000Z',
-       updatedAt:'2026-04-01T00:00:00.000Z'
-     })
-     CREATE (target:Memory {
-       id:'check_a_target', userId:$a, content:'Globex is our vendor',
-       createdAt:'2026-04-01T00:00:00.000Z',
-       updatedAt:'2026-04-01T00:00:00.000Z'
-     })
-     CREATE (empty:Memory {
-       id:'check_a_empty', userId:$a, content:'Nothing to extract',
-       createdAt:'2026-04-01T00:00:00.000Z',
-       updatedAt:'2026-04-01T00:00:00.000Z', embedding:$embedding
-     })
-     CREATE (foreign:Memory {
-       id:'check_b_target', userId:$b, content:'Globex is our vendor',
-       createdAt:'2026-04-01T00:00:00.000Z',
-       updatedAt:'2026-04-01T00:00:00.000Z'
-     })`,
-    { a: USER_A, b: USER_B, embedding: weaker },
-  );
+interface Fixture {
+  driver: Driver;
+  userId: string;
+}
 
-  const extraction: Enrichment = {
-    entities: [
-      { name: "Acme", normalizedName: "acme", type: "organization" },
-      { name: "Globex", normalizedName: "globex", type: "organization" },
-    ],
-    relations: [{ from: "acme", to: "globex", type: "replaced" }],
-    memoryEdges: [
-      // The second one names another user's memory. It is the case the
-      // `userId` in the target MATCH exists to refuse, and the case nothing
-      // else in this script covers.
-      { targetId: "check_a_target", type: "SUPERSEDES", reason: "same vendor" },
-      { targetId: "check_b_target", type: "SUPERSEDES", reason: "another user" },
-    ],
-  };
-
-  await session.executeWrite(async (tx) => {
-    await writeEnrichment(runner(tx), {
-      memoryId: "check_a_enrich",
-      userId: USER_A,
-      enrichment: extraction,
-      // No vectors: resolution then exact-matches, which is the branch a
-      // provider outage leaves the store in.
-      entityEmbeddings: new Map(),
-    });
-    await writeEnrichment(runner(tx), {
-      memoryId: "check_a_empty",
-      userId: USER_A,
-      enrichment: { entities: [], relations: [], memoryEdges: [] },
-      entityEmbeddings: new Map(),
-    });
+async function fixture(): Promise<Fixture> {
+  const userId = randomUUID();
+  // The anchor has to exist before any fact can hang off it — `:User` carries no
+  // `userId`, so `TEST_GC_CYPHER` will not collect it. Delete it by id instead.
+  await driver.executeQuery(USER_UPSERT_CYPHER, {
+    userId,
+    name: "Check Fixture",
+    email: "check@example.invalid",
   });
+  return { driver, userId };
+}
 
-  const enriched = await session.run(
-    `MATCH (m:Memory)
-     OPTIONAL MATCH (m)-[:ABOUT]->(e:Entity)
-     OPTIONAL MATCH (m)-[r:SUPERSEDES]->(other:Memory)
-     RETURN m.id AS id, m.enrichedAt AS enrichedAt,
-            collect(DISTINCT e.normalizedName) AS entities,
-            collect(DISTINCT other.id) AS superseded
-     ORDER BY id`,
-  );
-  const rows = new Map(
-    enriched.records.map((record) => [String(record.get("id")), record]),
-  );
-  const main = rows.get("check_a_enrich");
-  const empty = rows.get("check_a_empty");
-
-  const relation = await session.run(
-    `MATCH (a:Entity {userId:$a, normalizedName:'acme'})-[r:RELATION]->(b:Entity {userId:$a, normalizedName:'globex'})
-     RETURN r.type AS type, count(r) AS n`,
-    { a: USER_A },
-  );
-
-  // The sweep's two predicates, told apart by the two scratch memories above:
-  // `check_a_enrich` is enriched and has no vector, so the `embedding IS NULL`
-  // arm must still select it; `check_a_empty` is enriched *and* embedded, so
-  // neither arm may. The empty extraction is the case that would otherwise
-  // re-enqueue a memory forever, because it writes no edges.
-  // Above the whole scratch corpus, not just the two rows under test. The
-  // statement has no user filter — it is a global sweep, and that is correct —
-  // so a limit below the scratch count truncates the very rows being asserted
-  // on, and check 2's 500 memories have no `enrichedAt` at all, which counts as
-  // null.
-  const pending = await session.run(ENRICH_PENDING_CYPHER, { limit: 1000 });
-  const pendingIds = pending.records.map((record) => String(record.get("id")));
-
-  const entities = (main?.get("entities") as string[]) ?? [];
-  const superseded = (main?.get("superseded") as string[]) ?? [];
-  report(
-    "writeEnrichment writes entities, a RELATION, a same-user memory edge, and the marker",
-    main?.get("enrichedAt") !== null &&
-      main?.get("enrichedAt") !== undefined &&
-      entities.includes("acme") &&
-      entities.includes("globex") &&
-      Number(relation.records[0]?.get("n")) === 1 &&
-      relation.records[0]?.get("type") === "replaced" &&
-      superseded.includes("check_a_target") &&
-      !superseded.includes("check_b_target") &&
-      empty?.get("enrichedAt") !== null &&
-      empty?.get("enrichedAt") !== undefined &&
-      pendingIds.includes("check_a_enrich") &&
-      !pendingIds.includes("check_a_empty"),
-    `enrichedAt=${main?.get("enrichedAt")} entities=[${entities.join(", ")}] ` +
-      `relation=${relation.records[0]?.get("type")} superseded=[${superseded.join(", ")}] ` +
-      `emptyStamped=${empty?.get("enrichedAt") !== null} ` +
-      `pending=[${pendingIds.filter((id) => id.startsWith("check_a_")).join(", ")}]`,
-  );
-
-  // ---- 9. the graph view's reads ----
-  // Nothing else executes these: the store is `server-only`, so this script is
-  // the only place they run against a real server. Three properties are worth a
-  // live check and are invisible to any other kind of test — the standalone
-  // LIMIT needs its `toInteger` coercion (the driver sends Double, and a bare
-  // `LIMIT $n` raises 22003), each branch has to carry the tenant into the
-  // MATCH rather than filtering after it, and the id window has to be what
-  // bounds the edges rather than a full scan.
-  //
-  // The two cross-tenant edges below are written directly rather than through a
-  // store method, because no store method will produce them: they stand in for
-  // the one thing the `e.userId` / `b.userId` checks exist for and that nothing
-  // else in the script covers — a future writer merging a node across users.
-  await session.run(
-    `CREATE (g1:Memory {id:'check_a_graph1', userId:$a, content:'The deploy window is Friday',
-        createdAt:'2026-05-01T00:00:00.000Z', updatedAt:'2026-05-01T00:00:00.000Z'})
-     CREATE (g2:Memory {id:'check_a_graph2', userId:$a, content:'We deploy on Fridays',
-        createdAt:'2026-05-02T00:00:00.000Z', updatedAt:'2026-05-02T00:00:00.000Z'})
-     CREATE (g3:Memory {id:'check_a_graph3', userId:$a, content:'Older than both',
-        createdAt:'2026-04-30T00:00:00.000Z', updatedAt:'2026-04-30T00:00:00.000Z'})
-     CREATE (e1:Entity {id:'check_a_graph_e1', userId:$a, normalizedName:'graphcorp', name:'Graphcorp'})
-     CREATE (e2:Entity {id:'check_a_graph_e2', userId:$a, normalizedName:'graphlabs', name:'Graph Labs'})
-     CREATE (bf:Memory {id:'check_b_graph1', userId:$b, content:'Another tenant',
-        createdAt:'2026-05-03T00:00:00.000Z', updatedAt:'2026-05-03T00:00:00.000Z'})
-     CREATE (bfe:Entity {id:'check_b_graph_e1', userId:$b, normalizedName:'graphcorp', name:'Graphcorp'})
-     CREATE (g1)-[:ABOUT]->(e1)
-     CREATE (g2)-[:ABOUT]->(e2)
-     CREATE (g1)-[:RELATES_TO {weight:0.5}]->(g2)
-     CREATE (g2)-[:SUPERSEDES {reason:'newer window'}]->(g3)
-     CREATE (e1)-[:RELATION {type:'employs'}]->(e2)
-     CREATE (g1)-[:RELATES_TO {weight:0.9}]->(bf)
-     CREATE (g1)-[:ABOUT]->(bfe)`,
-    { a: USER_A, b: USER_B },
-  );
-
-  const graphWindow = await session.run(GRAPH_MEMORIES_CYPHER, {
-    userId: USER_A,
-    limit: 2,
+async function cleanup({ userId }: Fixture): Promise<void> {
+  await driver.executeQuery(TEST_GC_CYPHER, { userId });
+  await driver.executeQuery("MATCH (u:User {id: $userId}) DETACH DELETE u", {
+    userId,
   });
-  const windowIds = graphWindow.records.map((r) => String(r.get("id")));
+}
 
-  const graphCount = await session.run(GRAPH_MEMORY_COUNT_CYPHER, { userId: USER_A });
-  const totalForA = Number(graphCount.records[0]?.get("total") ?? -1);
-  // The expectation is computed here rather than written as a literal, so this
-  // does not rot when a fixture is added — and it still catches the failure that
-  // matters: a pattern that lost its `{userId}`, which would count every tenant.
-  const expectedForA = await session.run(
-    "MATCH (m:Memory {userId:$a}) RETURN count(m) AS n",
-    { a: USER_A },
-  );
-  const allMemories = await session.run("MATCH (m:Memory) RETURN count(m) AS n");
-  const totalForEveryone = Number(allMemories.records[0]?.get("n") ?? 0);
-
-  const about = await session.run(GRAPH_ABOUT_CYPHER, {
-    userId: USER_A,
-    memoryIds: ["check_a_graph1", "check_a_graph2"],
+async function makeEntity(
+  { userId }: Fixture,
+  normalizedName: string,
+  name: string,
+): Promise<string> {
+  const result = await driver.executeQuery(ENTITY_CREATE_CYPHER, {
+    id: randomUUID(),
+    userId,
+    normalizedName,
+    name,
+    embedding: null,
   });
-  const aboutEntities = about.records
-    .map((r) => String(r.get("entityId")))
-    .sort();
+  return String(result.records[0].get("id"));
+}
 
-  // `check_b_graph1` is in the id list on purpose. The window alone would admit
-  // it; only the pattern's `userId` can refuse it, so this asserts that the
-  // tenant check is doing work the id filter is not.
-  const graphEdgeWindow = [
-    "check_a_graph1",
-    "check_a_graph2",
-    "check_a_graph3",
-    "check_b_graph1",
-  ];
-  const edgesInWindow = await session.run(GRAPH_MEMORY_EDGES_CYPHER, {
-    userId: USER_A,
-    memoryIds: graphEdgeWindow,
-    edgeTypes: [...MEMORY_LLM_EDGE_TYPES],
+async function makePredicate(
+  { userId }: Fixture,
+  canonicalName: string,
+): Promise<string> {
+  const result = await driver.executeQuery(PREDICATE_CREATE_CYPHER, {
+    id: randomUUID(),
+    userId,
+    canonicalName,
+    embedding: null,
   });
-  const edgeKeys = edgesInWindow.records
-    .map((r) => `${r.get("source")}->${r.get("target")}:${r.get("type")}`)
-    .sort();
+  return String(result.records[0].get("id"));
+}
 
-  const edgesNarrowed = await session.run(GRAPH_MEMORY_EDGES_CYPHER, {
-    userId: USER_A,
-    memoryIds: ["check_a_graph1", "check_a_graph2"],
-    edgeTypes: [...MEMORY_LLM_EDGE_TYPES],
+async function makeFact(
+  f: Fixture,
+  subjectId: string,
+  predicateId: string,
+  objectId: string,
+  subjectLabel: "User" | "Entity" | "Value" = "Entity",
+  objectLabel: "User" | "Entity" | "Value" = "Entity",
+  sourceText = "fixture",
+  embedding: number[] = probeVector(),
+): Promise<string> {
+  const factId = randomUUID();
+  await driver.executeQuery(buildFactCreateCypher(subjectLabel, objectLabel), {
+    id: factId,
+    userId: f.userId,
+    subjectId,
+    objectId,
+    predicateId,
+    embedding,
+    confidence: 1,
+    sourceText,
+    now: new Date().toISOString(),
   });
+  return factId;
+}
 
-  const edgesOtherType = await session.run(GRAPH_MEMORY_EDGES_CYPHER, {
-    userId: USER_A,
-    memoryIds: ["check_a_graph1", "check_a_graph2", "check_a_graph3"],
-    edgeTypes: ["CONTRADICTS"],
+async function currentObjectIds(
+  f: Fixture,
+  subjectId: string,
+  predicateId: string,
+): Promise<string[]> {
+  const result = await driver.executeQuery(FACT_CURRENT_CYPHER, {
+    userId: f.userId,
+    subjectId,
+    predicateId,
   });
-
-  const relations = await session.run(GRAPH_ENTITY_RELATIONS_CYPHER, {
-    userId: USER_A,
-    entityIds: ["check_a_graph_e1", "check_a_graph_e2"],
-  });
-
-  const relationsNarrowed = await session.run(GRAPH_ENTITY_RELATIONS_CYPHER, {
-    userId: USER_A,
-    entityIds: ["check_a_graph_e1"],
-  });
-
-  report(
-    "GRAPH_MEMORIES_CYPHER reads the newest slice, and the LIMIT coercion holds",
-    windowIds.join(",") === "check_a_graph2,check_a_graph1",
-    `window=[${windowIds.join(", ")}]`,
-  );
-
-  report(
-    "GRAPH_MEMORY_COUNT_CYPHER counts one tenant's memories",
-    totalForA === Number(expectedForA.records[0]?.get("n") ?? -2) &&
-      totalForEveryone - totalForA > 400,
-    `forA=${totalForA} everyone=${totalForEveryone}`,
-  );
-
-  report(
-    "GRAPH_ABOUT_CYPHER returns the window's entities, not another tenant's",
-    aboutEntities.join(",") === "check_a_graph_e1,check_a_graph_e2",
-    `entities=[${aboutEntities.join(", ")}]`,
-  );
-
-  report(
-    "GRAPH_MEMORY_EDGES_CYPHER scopes to the window and to the tenant",
-    edgeKeys.join(",") ===
-      "check_a_graph1->check_a_graph2:RELATES_TO,check_a_graph2->check_a_graph3:SUPERSEDES",
-    `edges=[${edgeKeys.join(", ")}]`,
-  );
-
-  report(
-    "GRAPH_MEMORY_EDGES_CYPHER drops an edge whose other endpoint is outside the window",
-    edgesNarrowed.records.length === 1 &&
-      String(edgesNarrowed.records[0]?.get("source")) === "check_a_graph1",
-    `n=${edgesNarrowed.records.length}`,
-  );
-
-  report(
-    "GRAPH_MEMORY_EDGES_CYPHER returns nothing for a type it was not asked for",
-    edgesOtherType.records.length === 0,
-    `n=${edgesOtherType.records.length}`,
-  );
-
-  report(
-    "GRAPH_ENTITY_RELATIONS_CYPHER names the relation and needs both endpoints in the window",
-    relations.records.length === 1 &&
-      String(relations.records[0]?.get("relationType")) === "employs" &&
-      String(relations.records[0]?.get("source")) === "check_a_graph_e1" &&
-      relationsNarrowed.records.length === 0,
-    `n=${relations.records.length} type=${relations.records[0]?.get("relationType")} ` +
-      `halfWindow=${relationsNarrowed.records.length}`,
-  );
+  return result.records.map((record) => String(record.get("objectId")));
 }
 
 async function main(): Promise<void> {
-  const session = driver.session();
-  try {
-    await clearScratch(session);
-    if (await assertIndexContract(session)) {
-      await runChecks(session);
-    }
-  } finally {
-    try {
-      await clearScratch(session);
-    } finally {
-      await session.close();
-      await driver.close();
-    }
-  }
+  console.log("Memory fact-graph checks\n");
 
-  if (failures === 0) {
-    console.log("\nall checks passed");
-  } else {
-    console.log(`\n${failures} check(s) failed`);
+  // 1 — a capture is an event, not a key. A MERGE would collapse two identical
+  // saves into one row, and the second save is a second occurrence the user
+  // asked to remember.
+  await check("capture is an event, not a key", async () => {
+    const f = await fixture();
+    const text = "I prefer dark mode";
+    for (let i = 0; i < 2; i += 1) {
+      await driver.executeQuery(CAPTURE_CREATE_CYPHER, {
+        id: randomUUID(),
+        userId: f.userId,
+        text,
+        embedding: probeVector(),
+        createdAt: new Date().toISOString(),
+      });
+    }
+    const counted = await driver.executeQuery(CAPTURE_COUNT_CYPHER, {
+      userId: f.userId,
+    });
+    assert(
+      Number(counted.records[0].get("total")) === 2,
+      "two identical captures must be two rows",
+    );
+    await cleanup(f);
+  });
+
+  // 2 — attempts bound the sweep. This is the property that stops a permanently
+  // unreadable sentence from costing a model call on every sweep, forever.
+  await check("capture attempts bound the sweep", async () => {
+    const f = await fixture();
+    const id = randomUUID();
+    await driver.executeQuery(CAPTURE_CREATE_CYPHER, {
+      id,
+      userId: f.userId,
+      text: "unparseable",
+      embedding: null,
+      createdAt: new Date().toISOString(),
+    });
+
+    const pending = async () =>
+      (
+        await driver.executeQuery(CAPTURE_PENDING_CYPHER, {
+          userId: f.userId,
+          maxAttempts: MEMORY_CAPTURE_MAX_ATTEMPTS,
+          limit: 10,
+        })
+      ).records.length;
+
+    for (let i = 0; i < MEMORY_CAPTURE_MAX_ATTEMPTS - 1; i += 1) {
+      await driver.executeQuery(CAPTURE_RETRY_CYPHER, { id, userId: f.userId });
+    }
+    assert(
+      (await pending()) === 1,
+      "a capture under the attempt cap must still be pending",
+    );
+
+    await driver.executeQuery(CAPTURE_RETRY_CYPHER, { id, userId: f.userId });
+    assert(
+      (await pending()) === 0,
+      "a capture at the attempt cap must drop out of the worklist",
+    );
+
+    // Spent, not lost: the sentence is still on disk.
+    const counted = await driver.executeQuery(CAPTURE_COUNT_CYPHER, {
+      userId: f.userId,
+    });
+    assert(
+      Number(counted.records[0].get("total")) === 1,
+      "a spent capture must not be deleted",
+    );
+    await cleanup(f);
+  });
+
+  // 3 — entity dedup is by normalized name, and aliases accumulate once.
+  await check("entity dedup is by normalized name", async () => {
+    const f = await fixture();
+    const first = await makeEntity(f, "apple", "Apple");
+    const second = await makeEntity(f, "apple", "apple");
+
+    const found = await driver.executeQuery(ENTITY_EXACT_CYPHER, {
+      userId: f.userId,
+      normalizedName: "apple",
+    });
+    assert(found.records.length === 1, "one normalized name must be one node");
+    const id = String(found.records[0].get("id"));
+
+    for (const alias of ["Apple", "apple", "Apple"]) {
+      await driver.executeQuery(ENTITY_ALIAS_CYPHER, {
+        id,
+        userId: f.userId,
+        alias,
+      });
+    }
+    const aliases = (
+      await driver.executeQuery(
+        "MATCH (e:Entity {id: $id, userId: $userId}) RETURN e.aliases AS aliases",
+        { id, userId: f.userId },
+      )
+    ).records[0].get("aliases") as string[];
+
+    assert(
+      aliases.length === 2,
+      `aliases must not repeat: got ${JSON.stringify(aliases)}`,
+    );
+    assert(
+      first === id && second === id,
+      "MERGE must return the existing id, not a new one",
+    );
+    await cleanup(f);
+  });
+
+  // 4 — current reporting, and close rather than delete. This does not test
+  // dedup — that decision is `decideFactWrite`, unit-tested. What it pins is that
+  // the statement hands the decision what it needs: given the incoming object id,
+  // `FACT_CURRENT_CYPHER` returns it, so the decision returns "noop" and the
+  // store writes nothing. That is the seam between the tested decision and the
+  // live graph, and it is where a wrong RETURN would silently break dedup.
+  await check("current reporting closes rather than deletes", async () => {
+    const f = await fixture();
+    const subject = await makeEntity(f, "apple", "Apple");
+    const object = await makeEntity(f, "iphone", "iPhone");
+    const predicate = await makePredicate(f, "PRODUCT_OF");
+
+    const factId = await makeFact(f, subject, predicate, object);
+    assert(
+      (await currentObjectIds(f, subject, predicate)).includes(object),
+      "the current set must surface the object id the dedup decision compares against",
+    );
+
+    await driver.executeQuery(FACT_CLOSE_CYPHER, {
+      userId: f.userId,
+      factIds: [factId],
+      now: new Date().toISOString(),
+    });
+
+    assert(
+      (await currentObjectIds(f, subject, predicate)).length === 0,
+      "a closed fact must not be reported as current",
+    );
+    const counted = await driver.executeQuery(FACT_COUNT_ALL_CYPHER, {
+      userId: f.userId,
+    });
+    assert(
+      Number(counted.records[0].get("total")) === 1,
+      "closing must not delete",
+    );
+    assert(
+      Number(counted.records[0].get("current")) === 0,
+      "isCurrent must be false after close",
+    );
+
+    // Closing twice is a no-op, so a raced reconcile cannot rewrite validTo.
+    const again = await driver.executeQuery(FACT_CLOSE_CYPHER, {
+      userId: f.userId,
+      factIds: [factId],
+      now: new Date(Date.now() + 60_000).toISOString(),
+    });
+    assert(
+      Number(again.records[0].get("closed")) === 0,
+      "an already-closed fact must not re-close",
+    );
+    await cleanup(f);
+  });
+
+  // 5 — recall seeds only this tenant's current facts, and the tenant filter does
+  // its work *inside* the SEARCH rather than after it. Both halves matter: a
+  // post-filter would drop a foreign row from the result, but only once the row
+  // had already taken one of the k slots, so a user with a busy neighbour would
+  // lose their own nearest facts to facts they cannot see.
+  await check("seeding is current-only and tenant-scoped", async () => {
+    const mine = await fixture();
+    const theirs = await fixture();
+
+    const mySubject = await makeEntity(mine, "apple", "Apple");
+    const myObject = await makeEntity(mine, "iphone", "iPhone");
+    const myPredicate = await makePredicate(mine, "PRODUCT_OF");
+    // Mine is the *weaker* match, so a foreign fact that ties or beats it is
+    // what decides whether the filter ran before or after the limit.
+    const myFact = await makeFact(
+      mine,
+      mySubject,
+      myPredicate,
+      myObject,
+      "Entity",
+      "Entity",
+      "fixture",
+      weakerVector(),
+    );
+
+    const seeded = async () =>
+      (
+        await driver.executeQuery(FACT_SEED_CYPHER, {
+          userId: mine.userId,
+          queryVector: probeVector(),
+          k: 10,
+        })
+      ).records.map((record) => String(record.get("id")));
+
+    // Ten nearer facts under another tenant: enough to fill k on their own. An
+    // in-index filter never sees them; a post-filter would rank them first and
+    // then discard every one, leaving this user's own fact outside the limit.
+    const theirSubject = await makeEntity(theirs, "apple", "Apple");
+    const theirPredicate = await makePredicate(theirs, "PRODUCT_OF");
+    for (let i = 0; i < 10; i += 1) {
+      const theirObject = await makeEntity(theirs, `device-${i}`, `Device ${i}`);
+      await makeFact(
+        theirs,
+        theirSubject,
+        theirPredicate,
+        theirObject,
+        "Entity",
+        "Entity",
+        "fixture",
+        probeVector(),
+      );
+    }
+
+    assert(
+      (await seeded()).includes(myFact),
+      "a fact nearer than mine, owned by someone else, must not take my slot",
+    );
+
+    await driver.executeQuery(FACT_CLOSE_CYPHER, {
+      userId: mine.userId,
+      factIds: [myFact],
+      now: new Date().toISOString(),
+    });
+    assert(!(await seeded()).includes(myFact), "a closed fact must not seed");
+
+    await cleanup(mine);
+    await cleanup(theirs);
+  });
+
+  // 6 — expansion never routes through the user anchor. Every personal fact hangs
+  // off `:User`, so fact -> user -> fact reaches the entire corpus. Without this,
+  // recall would return everything the moment a user has two facts.
+  await check("expansion never routes through the user anchor", async () => {
+    const f = await fixture();
+    // The anchor is deliberately stamped with a `userId` it does not normally
+    // carry. Without the stamp the *tenant* clause is what blocks the walk — the
+    // anchor has no `userId` to match — and this check would pass with the
+    // `:User` exclusion deleted, testing a guard it never exercised. Mutation
+    // testing caught exactly that. With the stamp, the tenant clause cannot help
+    // and the exclusion is the only thing standing between two facts that share
+    // nothing but their owner.
+    await driver.executeQuery(
+      "MATCH (u:User {id: $userId}) SET u.userId = $userId",
+      { userId: f.userId },
+    );
+    const predicate = await makePredicate(f, "LIKES");
+    const productOf = await makePredicate(f, "PRODUCT_OF");
+
+    const apple = await makeEntity(f, "apple", "Apple");
+    const banana = await makeEntity(f, "banana", "Banana");
+
+    const factA = await makeFact(f, f.userId, predicate, apple, "User", "Entity");
+    const factB = await makeFact(
+      f,
+      f.userId,
+      predicate,
+      banana,
+      "User",
+      "Entity",
+    );
+
+    const expand = async (seedIds: string[]) =>
+      (
+        await driver.executeQuery(FACT_EXPAND_CYPHER, {
+          userId: f.userId,
+          seedIds,
+          expansionLimit: 50,
+        })
+      ).records.map((record) => String(record.get("id")));
+
+    // Both facts share only the anchor. Reaching one from the other would be the
+    // corpus-wide walk the exclusion exists to prevent.
+    assert(
+      !(await expand([factA])).includes(factB),
+      "two facts sharing only :User must not reach each other",
+    );
+
+    // Now give them a shared entity: apple is a product of the company, and the
+    // seed reaches it through the object end. The expansion returns what it
+    // *reached*, not the seed, so one shared neighbour is a result of one.
+    const company = await makeEntity(f, "apple-inc", "Apple Inc");
+    const factC = await makeFact(f, apple, productOf, company);
+
+    assert(
+      (await expand([factA])).includes(factC),
+      "a shared entity must connect the two facts",
+    );
+    await cleanup(f);
+  });
+
+  // 7 — merging predicates rewires the facts and folds the loser's name in.
+  await check("merging predicates rewires and folds the alias", async () => {
+    const f = await fixture();
+    const keep = await makePredicate(f, "PRODUCT_OF");
+    const dup = await makePredicate(f, "MADE_BY");
+    const subject = await makeEntity(f, "apple-inc", "Apple Inc");
+    const objectA = await makeEntity(f, "iphone", "iPhone");
+    const objectB = await makeEntity(f, "macbook", "MacBook");
+
+    const factA = await makeFact(f, subject, keep, objectA);
+    const factB = await makeFact(f, subject, dup, objectB);
+
+    const moved = await driver.executeQuery(PREDICATE_MERGE_CYPHER, {
+      userId: f.userId,
+      keepId: keep,
+      dupId: dup,
+    });
+    assert(Number(moved.records[0].get("moved")) === 1, "one fact must be rewired");
+
+    const survivor = (
+      await driver.executeQuery(PREDICATE_GET_CYPHER, {
+        id: keep,
+        userId: f.userId,
+      })
+    ).records[0];
+    assert(
+      Number(survivor.get("factCount")) === 2,
+      "the survivor must count both facts",
+    );
+    assert(
+      (survivor.get("aliases") as string[]).includes("MADE_BY"),
+      "the loser's name must fold into the survivor's aliases",
+    );
+
+    const listed = (
+      await driver.executeQuery(PREDICATE_LIST_CYPHER, { userId: f.userId })
+    ).records.map((record) => String(record.get("id")));
+    assert(
+      !listed.includes(dup),
+      "the merged predicate must be gone from the vocabulary",
+    );
+
+    for (const factId of [factA, factB]) {
+      const edges = (
+        await driver.executeQuery(FACT_EDGES_CYPHER, {
+          id: factId,
+          userId: f.userId,
+        })
+      ).records[0];
+      assert(
+        String(edges.get("predicateId")) === keep,
+        "both facts must point at the survivor",
+      );
+    }
+    await cleanup(f);
+  });
+
+  // 8 — orphan GC spares an entity a :Memory node still draws. `:Memory` nodes
+  // remain in the graph for the view, so ABOUT has to count as a live reference;
+  // that stops being true the moment someone simplifies the GC pattern.
+  await check("orphan GC spares an entity a :Memory node still draws", async () => {
+    const f = await fixture();
+    const entity = await makeEntity(f, "apple", "Apple");
+    const memoryId = randomUUID();
+
+    // MATCH the entity rather than CREATE it: it already exists, and a CREATE
+    // of the same `id` is a uniqueness violation rather than a second node.
+    await driver.executeQuery(
+      "MATCH (e:Entity {id: $entityId, userId: $userId}) " +
+        "CREATE (m:Memory {id: $memoryId, userId: $userId})-[:ABOUT]->(e)",
+      { memoryId, userId: f.userId, entityId: entity },
+    );
+
+    await driver.executeQuery(buildOrphanGcCypher("Entity"), {
+      userId: f.userId,
+    });
+    const survived = await driver.executeQuery(
+      "MATCH (e:Entity {id: $entityId}) RETURN count(e) AS total",
+      { entityId: entity },
+    );
+    assert(
+      Number(survived.records[0].get("total")) === 1,
+      "the graph view still draws this entity, so the GC must not collect it",
+    );
+
+    await driver.executeQuery("MATCH (m:Memory {id: $memoryId}) DETACH DELETE m", {
+      memoryId,
+    });
+    await driver.executeQuery(buildOrphanGcCypher("Entity"), {
+      userId: f.userId,
+    });
+    const collected = await driver.executeQuery(
+      "MATCH (e:Entity {id: $entityId}) RETURN count(e) AS total",
+      { entityId: entity },
+    );
+    assert(
+      Number(collected.records[0].get("total")) === 0,
+      "once nothing points at it, it goes",
+    );
+    await cleanup(f);
+  });
+
+  await driver.close();
+
+  if (failures.length > 0) {
+    console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
+    process.exit(1);
   }
-  process.exit(failures === 0 ? 0 : 1);
+  console.log("\nAll memory checks passed");
 }
 
-main().catch((error) => {
-  console.error("memory check failed to run:", error);
+main().catch(async (error) => {
+  console.error(error);
+  await driver.close().catch(() => {});
   process.exit(1);
 });

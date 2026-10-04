@@ -55,7 +55,10 @@ export function buildNeo4jDdl(dimensions: number): string[] {
     // The seed's in-index WHERE is the restricted grammar — equality and AND
     // only — so it cannot ask for `validTo IS NULL`. `isCurrent` is the
     // denormalization that puts the test where the index can see it, and this
-    // index is what makes the filter a seek rather than a scan.
+    // index is what makes the filter a seek rather than a scan. The vector index
+    // below declares `isCurrent` filterable for the same reason: the seed tests
+    // it *inside* the `SEARCH`, and a property the index does not declare is not
+    // filterable there — Neo4j answers 22ND3 rather than falling back to a scan.
     `CREATE INDEX fact_user_current IF NOT EXISTS
        FOR (f:Fact) ON (f.userId, f.isCurrent)`,
     // Reconciliation and the listing read a user's facts in creation order.
@@ -67,7 +70,7 @@ export function buildNeo4jDdl(dimensions: number): string[] {
        FOR (c:Capture) ON (c.userId, c.createdAt)`,
     `CREATE VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.fact} IF NOT EXISTS
        FOR (f:Fact) ON f.embedding
-       WITH [f.userId]
+       WITH [f.userId, f.isCurrent]
        OPTIONS { indexConfig: {
          \`vector.dimensions\`: ${dimensions},
          \`vector.similarity_function\`: 'cosine'

@@ -33,7 +33,10 @@ describe("buildNeo4jDdl", () => {
     for (const name of Object.values(MEMORY_VECTOR_INDEX_NAMES)) {
       expect(ddl.join("\n")).toContain(`CREATE VECTOR INDEX ${name} IF NOT EXISTS`);
     }
-    expect(ddl.join("\n")).toContain("WITH [f.userId]");
+    // The fact index is the exception and is pinned by its own test below: it
+    // declares `isCurrent` as well, because the seed filters on it in-index.
+    expect(ddl.join("\n")).toContain("WITH [e.userId]");
+    expect(ddl.join("\n")).toContain("WITH [p.userId]");
     expect(ddl.join("\n")).toContain("WITH [c.userId]");
   });
 
@@ -41,6 +44,15 @@ describe("buildNeo4jDdl", () => {
     expect(ddl.join("\n")).toContain(
       "CREATE INDEX fact_user_current IF NOT EXISTS\n       FOR (f:Fact) ON (f.userId, f.isCurrent)",
     );
+  });
+
+  it("makes isCurrent filterable in the fact vector index, not only in its options", () => {
+    // A property is filterable *in a vector index* only when the index declares
+    // it. The seed's in-index WHERE tests `isCurrent` alongside `userId`, so
+    // declaring `userId` alone puts the index's own filter outside what the
+    // index can answer -- Neo4j rejects the query with 22ND3 rather than
+    // scanning, and the whole recall path fails on the first call.
+    expect(ddl.join("\n")).toContain("WITH [f.userId, f.isCurrent]");
   });
 
   it("does not create anything for the retired :Memory label", () => {
