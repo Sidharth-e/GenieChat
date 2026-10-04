@@ -1,6 +1,6 @@
 /**
- * The fact-graph recall types. The graph view's `:Memory` row shape is declared
- * in `graph-view.ts` itself, so nothing about it is duplicated here.
+ * The fact-graph recall types. The graph view's fact row shape is declared in
+ * `graph-view.ts` itself, so nothing about it is duplicated here.
  */
 
 /** How recall answered. `graph` means expansion contributed; `vector` means seeds only. */

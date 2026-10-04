@@ -263,18 +263,6 @@ export const MEMORY_LLM_EDGE_TYPES = [
   "CONTRADICTS",
 ] as const satisfies readonly MemoryRelationType[];
 
-/**
- * Every edge type the graph view can draw: the three relation types above, plus
- * `RELATION`, the entity→entity carrier, which holds its kind as a property
- * rather than as the relationship type itself and so lives outside
- * `MEMORY_RELATION_TYPES`.
- */
-export const MEMORY_GRAPH_EDGE_KINDS = [
-  ...MEMORY_RELATION_TYPES,
-  "RELATION",
-] as const;
-export type MemoryGraphEdgeKind = (typeof MEMORY_GRAPH_EDGE_KINDS)[number];
-
 /** Dropped by `tokenize`, so a text's features are its content words. */
 export const MEMORY_STOPWORDS = new Set([
   "the",
@@ -335,31 +323,36 @@ export const MEMORY_QUERY_SEPARATOR = "\n...\n";
 export const MEMORY_GRAPH_MEMORY_LIMIT = 120;
 
 /**
- * The ceiling on *total* nodes the graph view renders — memories plus entities.
- *
- * It exists because `layoutMemoryGraph` is O(n²) per iteration, so the layout
- * cost tracks the square of whatever this allows. Entities are ranked by how
- * many of the kept memories link them, so a cap drops the least-connected
- * ones rather than an arbitrary slice. Memories are never dropped here: the
- * read cap above already chose them, newest first.
- *
- * 150 is a wall-clock bound, not an aesthetic one. The layout runs
- * synchronously when the view renders, so this is what keeps a graph of the cap
- * size inside a frame or two (~1.8M pair-iterations) instead of the second a
- * 300-node graph takes. Raising it means moving the layout off the render path
- * first — a worker or a chunked loop — because a synchronous second is a frozen
- * tab.
+ * How many current facts the graph read pulls. The ceiling the drawing's size
+ * follows from — see `MEMORY_GRAPH_NODE_LIMIT` for what is then drawn.
  */
-export const MEMORY_GRAPH_NODE_LIMIT = 150;
+export const MEMORY_GRAPH_FACT_LIMIT = 1000;
 
 /**
- * Drawn sizes, in layout units, and therefore also what the simulation is told
- * a node's radius is. They live here rather than in the component because
- * `layoutMemoryGraph` and the renderer have to agree: a node the layout thinks
- * is a pill and the view draws as a card sits on top of its neighbours.
+ * The ceiling on total nodes the view draws — facts plus the entities,
+ * predicates and values they link.
+ *
+ * Entities, predicates and values are shared, so this is reached only when facts
+ * carry mostly unique satellites. Past it the lowest-degree satellites are
+ * dropped and facts never are: a fact is what the reader came for, and its
+ * satellites are what connect it to the rest. Ties break by label, then id, so
+ * the dropped set is the same on every read.
  */
-export const MEMORY_GRAPH_MEMORY_NODE_SIZE = { width: 176, height: 64 } as const;
-export const MEMORY_GRAPH_ENTITY_NODE_SIZE = { width: 112, height: 28 } as const;
+export const MEMORY_GRAPH_NODE_LIMIT = 3000;
+
+/**
+ * Base radius by kind, in world units. Kind is carried by shape and size as well
+ * as colour, so each kind starts at a different size; `nodeRadius` grows it with
+ * degree up to `MEMORY_GRAPH_MAX_NODE_RADIUS`.
+ */
+export const MEMORY_GRAPH_NODE_BASE_RADIUS = {
+  fact: 3.5,
+  entity: 5,
+  predicate: 4.5,
+  value: 3,
+} as const;
+export const MEMORY_GRAPH_DEGREE_RADIUS_SCALE = 1.6;
+export const MEMORY_GRAPH_MAX_NODE_RADIUS = 20;
 
 /**
  * Layout tuning, and the reason each number is what it is.
