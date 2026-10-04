@@ -1,10 +1,12 @@
 <div align="center">
 
-<img src="public/genie.png" alt="GenieChat logo — a self-hosted AI workspace for multi-model chat, agents, RAG and graph memory" width="150" height="150" />
+<img src="public/genie.png" alt="GenieChat logo — one genie, every wish. A self-hosted AI workspace for multi-model chat, agents, RAG and graph memory." width="150" height="150" />
 
 # GenieChat
 
-**A self-hosted AI workspace — multi-model chat, autonomous agents, retrieval-augmented knowledge and persistent graph memory, in one Next.js 16 application.**
+**One genie. Every wish.**
+
+*A self-hosted AI workspace — multi-model chat, autonomous agents, retrieval-augmented knowledge and persistent graph memory, in one Next.js 16 application.*
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
@@ -19,8 +21,6 @@
 
 </div>
 
----
-
 ## About
 
 **GenieChat** is a self-hosted AI workspace built on **Next.js 16 (App Router)**. It goes beyond a single chat window: it is a full environment for working with large language models — streaming multi-model conversations, configurable agents, multi-agent orchestration, MCP-powered tools, document knowledge bases, and a persistent memory graph.
@@ -29,9 +29,7 @@ It speaks to **three model providers** — Google Gemini, Ollama (Ollama Cloud b
 
 The application is designed for teams that need AI assistance without shipping their documents, conversations or credentials to a third-party SaaS.
 
-> **Why "GenieChat"?** Ask, and the work appears — across models, tools, documents and memory.
-
----
+> **Why "GenieChat"?** A genie is the one mythical figure whose whole character is *versatility* — it grants whatever you ask for, and every request is a different kind of thing. So does this one: models, agents, tools, documents, memory. **One genie. Every wish.**
 
 ## Table of Contents
 
@@ -50,8 +48,6 @@ The application is designed for teams that need AI assistance without shipping t
 - [Contributing](#contributing)
 - [Keywords](#keywords)
 - [License](#license)
-
----
 
 ## Features
 
@@ -92,8 +88,6 @@ The application is designed for teams that need AI assistance without shipping t
 - **Security headers** by default: CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`, Referrer and Permissions policies.
 - **Editorial monochrome design system** with light and dark themes.
 - **Unit-tested pure logic** — Vitest across `lib/` and `constants/`, plus live-database check scripts.
-
----
 
 ## Architecture
 
@@ -147,8 +141,6 @@ flowchart TB
 | **Scheduling** | No in-app timer. An external cron calls `POST /api/schedules/tick`; runs hold leases, so a crash is a retry rather than a lost job. |
 | **Pure/testable core** | Parsing, chunking, ranking, retry, cadence and layout logic lives in dependency-free modules with matching unit tests. |
 
----
-
 ## Tech Stack
 
 | Layer | Technology |
@@ -166,8 +158,6 @@ flowchart TB
 | **Validation & logging** | [Zod](https://zod.dev), [pino](https://getpino.io) |
 | **Testing** | [Vitest](https://vitest.dev) |
 | **Package manager** | [pnpm](https://pnpm.io) 11.1.2 (`node-linker=hoisted`) |
-
----
 
 ## Quick Start
 
@@ -220,8 +210,6 @@ Open **[http://localhost:3000](http://localhost:3000)** and sign in with GitHub.
 
 > **Windows note:** `output: "standalone"` requires symlink privileges. Enable Developer Mode or run your terminal as Administrator before `pnpm build`.
 
----
-
 ## Configuration
 
 Every variable is defined and validated in [`lib/env.ts`](lib/env.ts) — the app fails fast on a missing required value. `.env.example` documents each one in full.
@@ -262,8 +250,6 @@ Every variable is defined and validated in [`lib/env.ts`](lib/env.ts) — the ap
 
 > **Warning:** never leave an optional URL variable blank (`VAR=`). An empty string fails URL validation at boot — omit the line instead.
 
----
-
 ## Local Services
 
 `docker compose up -d` starts the complete local stack:
@@ -281,8 +267,6 @@ Every variable is defined and validated in [`lib/env.ts`](lib/env.ts) — the ap
 Ports are chosen to avoid clashing with personal instances — MongoDB on `27018`, PostgreSQL on `5433`.
 
 > `garage.toml` ships a **development-only** fixed `rpc_secret`. Any deployment beyond local development must generate its own.
-
----
 
 ## Scripts
 
@@ -316,8 +300,6 @@ Ports are chosen to avoid clashing with personal instances — MongoDB on `27018
 | `pnpm schedules:migrate` | Convert legacy workflow cron triggers into schedules |
 | `pnpm storage:check` | Exercise the Garage S3 client |
 
----
-
 ## Supported Models
 
 Model definitions live in [`lib/langchain/model-config.ts`](lib/langchain/model-config.ts).
@@ -329,8 +311,6 @@ Model definitions live in [`lib/langchain/model-config.ts`](lib/langchain/model-
 | **OpenRouter** | Claude Opus 5.5 / Sonnet 5 / Fable 5.1, GPT-6 Astra / Sol Pro / Luna Pro, GPT-5.5 Pro, GLM 5.3 Prime / FlashX / Flash, Kimi K3, and a Jev Router auto-routing entry |
 
 Embeddings run through Ollama and index at **2048 dimensions** ([`constants/embeddings.ts`](constants/embeddings.ts)) — this must match the configured embedding model's output width.
-
----
 
 ## Project Structure
 
@@ -374,8 +354,6 @@ GenieChat/
 - MongoDB `_id` is always a **uuidv7 string**, never an ObjectId.
 - Colours come from **CSS custom properties** in `app/globals.css`, never raw Tailwind colour utilities.
 
----
-
 ## Testing & Quality
 
 ```bash
@@ -386,8 +364,6 @@ pnpm ci:check      # All three, in order
 ```
 
 The suite concentrates on the logic that is expensive to get wrong and cheap to isolate: RRF fusion, text truncation, cadence computation, retry classification, graph layout, artifact parsing, ref formatting. Store-level behaviours that only a live database can prove are covered by the `*:check` scripts instead.
-
----
 
 ## Deployment
 
@@ -403,8 +379,6 @@ Whatever hosts it must provide **every backing service** — the app hosts none 
 
 **Scheduled execution** is driven externally. Point a cron, container scheduler or serverless timer at `POST /api/schedules/tick` with the `CRON_SECRET` bearer token. The endpoint runs one tick and returns — the app never assumes a long-lived process. `/api/cron` does **not** exist; a deployment still calling it receives a silent 404 and its schedules stop firing.
 
----
-
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -415,8 +389,6 @@ Whatever hosts it must provide **every backing service** — the app hosts none 
 | Every schedule tick returns 401 | The tick's `CRON_SECRET` differs from the app's. |
 | Build fails on Windows with symlink errors | Enable Developer Mode or run as Administrator (standalone output uses symlinks). |
 | Embedding errors after changing the model | `EMBEDDING_DIMENSIONS` no longer matches the model's output width. |
-
----
 
 ## Contributing
 
@@ -435,27 +407,21 @@ Contributions are welcome.
 
 Keep `CLAUDE.md` current when you change architecture, conventions, dependencies or environment variables — stale docs are worse than none.
 
----
-
 ## Keywords
 
 `self-hosted AI workspace` · `multi-model LLM chat` · `Next.js 16` · `React 19` · `TypeScript` · `Tailwind CSS v4` · `LangChain` · `LangGraph` · `multi-agent orchestration` · `AI agents` · `MCP` · `Model Context Protocol` · `RAG` · `retrieval-augmented generation` · `pgvector` · `hybrid search` · `reciprocal rank fusion` · `Neo4j` · `knowledge graph` · `graph memory` · `Ollama` · `Google Gemini` · `OpenRouter` · `MongoDB` · `PostgreSQL` · `Redis` · `Garage S3` · `self-hosted` · `GitHub OAuth` · `workflow automation` · `document parsing` · `docling`
 
 > **Maintainers:** set these as your repository **Topics** (Settings → Topics) so the project is discoverable — `ai-chat`, `nextjs`, `langchain`, `langgraph`, `rag`, `pgvector`, `neo4j`, `ollama`, `multi-agent`, `mcp`, `self-hosted`, `typescript`.
 
----
-
 ## License
 
 No license file is currently included in this repository, and `package.json` marks the package `private`. Unless a license is added, all rights are reserved by the author. If you intend for others to use, modify or distribute GenieChat, add a `LICENSE` file (MIT and Apache-2.0 are common choices for open-source projects).
-
----
 
 <div align="center">
 
 <img src="public/genie.png" alt="GenieChat" width="48" height="48" />
 
-**GenieChat** — ask, and the work appears.
+**GenieChat** — one genie. Every wish.
 
 Built with [Next.js](https://nextjs.org) · [LangChain](https://js.langchain.com) · [Neo4j](https://neo4j.com) · [pgvector](https://github.com/pgvector/pgvector)
 

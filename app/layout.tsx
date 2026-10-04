@@ -32,7 +32,8 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: AI_NAME,
-  description: "A powerful AI chat application with multi-model support",
+  description:
+    "One genie, every wish — a self-hosted AI workspace for multi-model chat, autonomous agents, RAG and graph memory.",
 };
 
 import { ThemeScript } from "@/components/providers/theme-script";
