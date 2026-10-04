@@ -38,12 +38,11 @@ export interface RecallCandidate {
  * best hop count where both name the same memory.
  *
  * It returns the *added* count alongside the rows because that is what
- * `graphExpandedCount` reports, and the two are not the same number. `EXPAND_CYPHER`
- * starts from the seeds, so every seed comes back as an expanded row too: the
- * length of the expanded array counts seeds the dedupe then discards, and an
- * operator reading it would conclude the graph reached memories it never
- * reached. Counting what survived — ids the seeds did not already name —
- * leaves that one metric honest.
+ * `graphExpandedCount` reports, and that is not the length of `expanded`: the
+ * traversal is seeded from ids the caller already holds, so a reached row can
+ * be one the seeds already named, and the dedupe below is what discards it.
+ * Counting what survived — ids the seeds did not already name — is what keeps
+ * that one metric honest.
  */
 export function mergeRecallCandidates<T extends RecallCandidate>(
   seeds: T[],
@@ -68,9 +67,9 @@ export function mergeRecallCandidates<T extends RecallCandidate>(
 const DEFAULT_TOP = 5;
 
 /**
- * The blend that replaces :772's five-way fusion. Those five scores existed
- * because the graph was a heuristic over a flat corpus; with real edges, the
- * seed similarity and the graph path are the two things worth weighting.
+ * The blend: the seed's similarity, the graph path, and a small recency term.
+ * Three terms because the graph carries real edges — the seed's cosine and the
+ * traversal's path are the two things worth weighting.
  *
  * Generic in its candidate type so a caller that carries display fields the
  * ranking does not use — the store's `userName`, `userEmail` — gets them back

@@ -20,7 +20,7 @@
     "memory:check": "tsx --env-file=.env scripts/check-memory.ts",
     "memory:eval": "tsx --env-file=.env scripts/eval-memory.ts",
     "memory:sweep": "tsx --env-file=.env scripts/sweep-memories.ts",
-    "memory:migrate": "tsx --env-file=.env scripts/migrate-memories.ts",
+    "memory:drop-prose": "tsx --env-file=.env scripts/drop-memory-nodes.ts",
     "schedules:check": "tsx --env-file=.env scripts/check-schedules.ts",
     "schedules:migrate": "tsx --env-file=.env scripts/migrate-workflow-schedules.ts",
     "embeddings:check": "tsx --env-file=.env scripts/check-embeddings.ts",

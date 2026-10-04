@@ -1,9 +1,7 @@
 /**
- * Memory types. `Memory` is re-exported from `lib/types.ts` rather than
- * redeclared: the API routes, the memory UI and `lib/tool/memory.ts` all import
- * it from there. Declaring a second copy here would let the two drift.
+ * The fact-graph recall types. The graph view's `:Memory` row shape is declared
+ * in `graph-view.ts` itself, so nothing about it is duplicated here.
  */
-export type { Memory } from "@/lib/types";
 
 /** How recall answered. `graph` means expansion contributed; `vector` means seeds only. */
 export type FactRecallMode = "graph" | "vector";

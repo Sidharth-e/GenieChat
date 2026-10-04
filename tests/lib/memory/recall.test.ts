@@ -107,12 +107,12 @@ describe("rankRecall", () => {
 
 describe("mergeRecallCandidates", () => {
   it("counts only the nodes the traversal actually added", () => {
-    // This is what `graphExpandedCount` reports. Every seed is also a
-    // candidate of the traversal — `EXPAND_CYPHER` starts from the seeds — so
-    // counting `expanded.length` reports rows the dedupe then discarded, and
-    // reads as "the graph reached N memories" when it reached none. The count
-    // has to be of rows that were not already seeded, or the one metric an
-    // operator has for whether the graph is doing anything is a fiction.
+    // This is what `graphExpandedCount` reports. A reached row can be one the
+    // seeds already named, so counting `expanded.length` reports rows the
+    // dedupe then discarded, and reads as "the graph reached N memories" when
+    // it reached none. The count has to be of rows that were not already
+    // seeded, or the one metric an operator has for whether the graph is doing
+    // anything is a fiction.
     const seeds = [
       candidate({ id: "a", vectorScore: 0.9 }),
       candidate({ id: "b", vectorScore: 0.8 }),

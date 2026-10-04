@@ -551,23 +551,6 @@ export interface ArenaLeaderboard {
   updatedAt: string;
 }
 
-export interface Memory {
-  id: string;
-  userId: string;
-  userName: string;
-  userEmail: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-  /**
-   * When the graph enrichment pass last ran over this memory (spec §5.1's
-   * `:Memory` node property). Null means the deterministic layer stored it but
-   * the LLM pass has not reached it; the sweep's predicate is exactly this
-   * being null. Optional so nothing that builds a Memory by hand breaks.
-   */
-  enrichedAt?: string | null;
-}
-
 // API Key for external agent access
 export interface ApiKey {
   id: string;

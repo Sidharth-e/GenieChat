@@ -51,6 +51,10 @@ import {
   TEST_GC_CYPHER,
   USER_UPSERT_CYPHER,
 } from "@/lib/memory/cypher";
+// The same module again, as a namespace: check 10 sweeps *every* exported
+// statement, and a named-import list can only sweep what someone remembered to
+// add to it.
+import * as cypherStatements from "@/lib/memory/cypher";
 
 const uri = process.env.NEO4J_URI;
 const password = process.env.NEO4J_PASSWORD;
@@ -638,6 +642,42 @@ async function main(): Promise<void> {
     assert(!listed.includes(newestFirst[0]), "the offset skips the newest fact");
 
     await cleanup(f);
+  });
+
+  // 10 — every statement parses. `EXPLAIN` plans a query without executing it
+  // and without needing parameters, so this is a syntax sweep over the whole
+  // module rather than over the handful another check happens to run. It is the
+  // only cover for a statement nothing else touches, and the clause order is
+  // the reason it earns its place: Neo4j accepts `ORDER BY` / `OFFSET` / `LIMIT`
+  // in that order alone and reports a wrong one as a *syntax* error, which is
+  // how `FACT_LIST_CYPHER` reached a running dev server broken — invisible to
+  // the type-check and to a unit suite that never executes Cypher.
+  await check("every statement in cypher.ts parses", async () => {
+    const statements: [string, string][] = Object.entries(cypherStatements)
+      .filter(([, value]) => typeof value === "string")
+      .map(([name, value]) => [name, value as string]);
+
+    // The builders take a label, so they are functions rather than strings and
+    // are absent from the namespace object. Both label shapes are exercised
+    // because the two interpolate different edge patterns.
+    statements.push(
+      ["buildFactCreateCypher(Entity,Entity)", buildFactCreateCypher("Entity", "Entity")],
+      ["buildFactCreateCypher(User,Value)", buildFactCreateCypher("User", "Value")],
+      ["buildOrphanGcCypher(Entity)", buildOrphanGcCypher("Entity")],
+    );
+
+    // A sweep that silently checked nothing would pass forever.
+    assert(statements.length > 0, "the sweep found no statements to check");
+
+    for (const [name, text] of statements) {
+      try {
+        await driver.executeQuery(`EXPLAIN ${text}`, {});
+      } catch (error) {
+        throw new Error(
+          `${name} does not parse: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   });
 
   await driver.close();

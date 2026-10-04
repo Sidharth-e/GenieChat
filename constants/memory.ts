@@ -101,30 +101,11 @@ export function buildNeo4jDdl(dimensions: number): string[] {
   ];
 }
 
-/** Carried over from the retired `vector-memory-store.ts`, unchanged. */
-export const MEMORY_EDGE_THRESHOLD = 0.2;
-export const MEMORY_EDGE_NEIGHBOR_LIMIT = 12;
-
-/**
- * How many existing memories a write scores a new one against when deriving
- * `RELATES_TO`. `MEMORY_EDGE_NEIGHBOR_LIMIT` bounds the edges *kept*; this
- * bounds the candidates considered, and exists because scoring against the whole
- * corpus per write is O(n) — the cost §7.2 claims the deterministic layer does
- * not have.
- *
- * The neighbour read orders by `createdAt DESC` before applying this limit. A
- * bare `LIMIT` over an unordered `MATCH` would take an arbitrary sample, which
- * is the same defect as D1 wearing different clothes: whether two related
- * memories get linked would depend on the order the store happened to return
- * them in.
- */
-export const MEMORY_EDGE_CANDIDATE_LIMIT = 200;
-
 export const MEMORY_SEED_MULTIPLIER = 3;
 export const MEMORY_MIN_TOKEN_LENGTH = 3;
 export const MEMORY_MAX_CONCEPT_FEATURES = 24;
 
-/** New. High by design: only near-duplicate entities should collapse. */
+/** High by design: only near-duplicate entities should collapse. */
 export const MEMORY_ENTITY_MERGE_THRESHOLD = 0.9;
 
 /**
@@ -213,19 +194,17 @@ export const FUNCTIONAL_PREDICATES = [
   "HAS_NAME",
 ] as const;
 
-/** Parity with the old GRAPH_SECOND_HOP_LIMIT: two hops, as today. */
+/** The traversal bound: two hops, the depth that reaches fact→entity→fact. */
 export const MEMORY_RECALL_HOPS = 2;
 
-/** Replaces the two hard-coded hop decays that were fused into the old blend. */
+/** The per-hop weight decay: a second hop contributes, but less than the first. */
 export const MEMORY_TRAVERSAL_DECAY = 0.6;
 
 export const MEMORY_SEED_MIN = 15;
 
 /**
- * The seed similarity and the graph path are the two things worth weighting,
- * now that the edges are real rather than heuristic. This replaces the retired
- * five-way blend, which fused scores that only existed because the graph was a
- * guess.
+ * Seed similarity outweighs the graph path. A traversal is evidence a fact is
+ * related to the question, not evidence that it answers it.
  */
 export const MEMORY_WEIGHT_SEED = 0.7;
 export const MEMORY_WEIGHT_GRAPH = 0.3;
@@ -239,16 +218,10 @@ export const MEMORY_RELATION_TYPES = [
 export type MemoryRelationType = (typeof MEMORY_RELATION_TYPES)[number];
 
 /**
- * The memory→memory edge types a model is permitted to write back. Deliberately
- * narrower than `MEMORY_RELATION_TYPES`: `ABOUT` is memory→entity and is written
- * by the deterministic layer, so a model emitting one would be asserting a
- * relationship to an entity it was never shown.
- *
- * Default-closed — adding a relation type does not grant the model write
- * access to it; it has to be named here as well. The `satisfies` clause is the
- * guard in the other direction: naming a type that is not in
- * `MEMORY_RELATION_TYPES` is a build error rather than an edge the store
- * rejects at runtime.
+ * The memory→memory edge kinds: every relation type whose two ends are both
+ * `:Memory`. Narrower than `MEMORY_RELATION_TYPES`, which also carries `ABOUT`
+ * — a memory→entity edge, drawn by `GRAPH_ABOUT_CYPHER` rather than by the
+ * memory-edge read that uses this set.
  */
 export const MEMORY_LLM_EDGE_TYPES = [
   "RELATES_TO",
@@ -256,19 +229,11 @@ export const MEMORY_LLM_EDGE_TYPES = [
   "CONTRADICTS",
 ] as const satisfies readonly MemoryRelationType[];
 
-export type MemoryLlmEdgeType = (typeof MEMORY_LLM_EDGE_TYPES)[number];
-
 /**
- * The four types the graph walk is allowed to traverse. Kept as a Set so the
- * Cypher parameter is built from one source.
- */
-export const MEMORY_TRAVERSABLE_TYPES: string[] = [...MEMORY_RELATION_TYPES];
-
-/**
- * Every edge type the graph view can draw: the four relation types, plus
- * `RELATION`, which is the entity→entity carrier and deliberately lives outside
- * `MEMORY_RELATION_TYPES` (see `RELATION_CYPHER` — it holds its type as a
- * property, not as the type itself).
+ * Every edge type the graph view can draw: the three relation types above, plus
+ * `RELATION`, the entity→entity carrier, which holds its kind as a property
+ * rather than as the relationship type itself and so lives outside
+ * `MEMORY_RELATION_TYPES`.
  */
 export const MEMORY_GRAPH_EDGE_KINDS = [
   ...MEMORY_RELATION_TYPES,
@@ -276,7 +241,7 @@ export const MEMORY_GRAPH_EDGE_KINDS = [
 ] as const;
 export type MemoryGraphEdgeKind = (typeof MEMORY_GRAPH_EDGE_KINDS)[number];
 
-/** Carried over verbatim from the retired `vector-memory-store.ts`. */
+/** Dropped by `tokenize`, so a text's features are its content words. */
 export const MEMORY_STOPWORDS = new Set([
   "the",
   "and",
@@ -313,130 +278,6 @@ export const MEMORY_STOPWORDS = new Set([
   "would",
   "please",
   "user",
-]);
-
-/**
- * Filler an entity extraction must not name: function words, light verbs, and
- * the generic nouns that name a slot rather than a thing.
- *
- * Deliberately *not* merged into `MEMORY_STOPWORDS`, even where the two
- * overlap. That set also feeds `tokenize`, which feeds `relationScore`, so
- * adding `are` or `want` to it would silently change edge scoring as well as
- * entity naming — one edit, two unrelated consequences. Two jobs, two lists.
- *
- * Only words of at least `MEMORY_MIN_TOKEN_LENGTH` are listed: `tokenize` has
- * already dropped anything shorter by the time this is consulted.
- */
-export const ENTITY_COMMON_WORDS = new Set([
-  // Copulas and auxiliaries.
-  "are",
-  "was",
-  "were",
-  "can",
-  "could",
-  "may",
-  "might",
-  "must",
-  "shall",
-  "should",
-  "would",
-  "doing",
-  "had",
-  "having",
-  // Light verbs: a sentence's shape, not its subject. Grouped by lemma, so a
-  // list that carries `wants` but not `want` is visible as a gap rather than
-  // reading as complete.
-  "get",
-  "gets",
-  "getting",
-  "got",
-  "give",
-  "gives",
-  "gave",
-  "given",
-  "goes",
-  "going",
-  "gone",
-  "went",
-  "know",
-  "knows",
-  "knew",
-  "known",
-  "like",
-  "likes",
-  "liked",
-  "look",
-  "looks",
-  "looked",
-  "make",
-  "makes",
-  "made",
-  "making",
-  "need",
-  "needs",
-  "needed",
-  "say",
-  "says",
-  "said",
-  "see",
-  "sees",
-  "saw",
-  "seen",
-  "take",
-  "takes",
-  "took",
-  "taken",
-  "think",
-  "thinks",
-  "thought",
-  "use",
-  "uses",
-  "used",
-  "using",
-  "want",
-  "wants",
-  "wanted",
-  // Quantifiers, degree, and discourse.
-  "all",
-  "also",
-  "any",
-  "even",
-  "every",
-  "many",
-  "more",
-  "most",
-  "much",
-  "now",
-  "only",
-  "really",
-  "some",
-  "still",
-  "then",
-  "too",
-  "very",
-  "yes",
-  // Generic nouns.
-  "anybody",
-  "anything",
-  "everyone",
-  "everything",
-  "guy",
-  "guys",
-  "kind",
-  "lot",
-  "nobody",
-  "nothing",
-  "one",
-  "people",
-  "person",
-  "somebody",
-  "something",
-  "sort",
-  "stuff",
-  "thing",
-  "things",
-  "way",
-  "ways",
 ]);
 
 export function memorySeedLimit(top: number): number {

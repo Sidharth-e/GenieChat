@@ -5,8 +5,6 @@ import type {
   RecalledFact,
 } from "@/lib/memory/types";
 import {
-  MEMORY_EDGE_NEIGHBOR_LIMIT,
-  MEMORY_EDGE_THRESHOLD,
   MEMORY_ENTITY_MERGE_THRESHOLD,
   MEMORY_MAX_CONCEPT_FEATURES,
   MEMORY_MIN_TOKEN_LENGTH,
@@ -22,15 +20,13 @@ import {
 } from "@/constants/memory";
 
 describe("memory tuning constants", () => {
-  it("carries the existing graph tuning forward unchanged", () => {
-    expect(MEMORY_EDGE_THRESHOLD).toBe(0.2);
-    expect(MEMORY_EDGE_NEIGHBOR_LIMIT).toBe(12);
+  it("pins the tuning the read path depends on", () => {
     expect(MEMORY_SEED_MULTIPLIER).toBe(3);
     expect(MEMORY_MIN_TOKEN_LENGTH).toBe(3);
     expect(MEMORY_MAX_CONCEPT_FEATURES).toBe(24);
   });
 
-  it("bounds traversal at two hops, matching today's behaviour", () => {
+  it("bounds traversal at two hops, the depth that reaches fact→entity→fact", () => {
     expect(MEMORY_RECALL_HOPS).toBe(2);
   });
 
@@ -43,7 +39,7 @@ describe("memory tuning constants", () => {
     expect(MEMORY_ENTITY_MERGE_THRESHOLD).toBe(0.9);
   });
 
-  it("allows exactly the four relationship types the design writes", () => {
+  it("keeps the four relation types the graph view's edge kinds are built from", () => {
     expect([...MEMORY_RELATION_TYPES].sort()).toEqual([
       "ABOUT",
       "CONTRADICTS",

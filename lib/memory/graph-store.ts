@@ -739,8 +739,8 @@ export class MemoryGraphStore {
         const { records } = await tx.run(GRAPH_MEMORY_EDGES_CYPHER, {
           userId,
           memoryIds,
-          // From the same constant `buildMemoryEdgeCypher` guards with, so a type
-          // the writer may not create is also not one the reader asks for.
+          // The kinds the view knows how to draw, so an edge type it has no
+          // styling for is not asked for in the first place.
           edgeTypes: [...MEMORY_LLM_EDGE_TYPES],
         });
         return records.map((record) => ({

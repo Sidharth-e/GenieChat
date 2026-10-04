@@ -30,9 +30,10 @@ pnpm db:setup:neo4j   # Creates the Neo4j constraints and memory vector indexes;
 pnpm embeddings:check # Exercises the Ollama embedding path: short, over-budget and empty input
 pnpm knowledge:check  # Exercises the knowledge store: lexical, vector, fusion, replace semantics
 pnpm knowledge:backfill # Re-chunks and re-embeds documents already in MongoDB
-pnpm memory:check     # Exercises the memory graph: writes, recall, delete, enrichment
+pnpm memory:check     # Exercises the fact graph: writes, recall, orphan GC, paging, statement syntax
+pnpm memory:eval      # Scores recall against the fixed probe set; the only way to tune the read path
 pnpm memory:sweep    # Runs one sweep pass against the running app's CRON_SECRET endpoint
-pnpm memory:migrate   # One-off: moves the `memories` collection into the Neo4j graph
+pnpm memory:drop-prose # One-off: drops every `:Memory` node and the index and constraint that served them
 pnpm schedules:check  # Exercises the scheduling concurrency properties: claim race, lease reaper, retry exhaustion, overlap
 pnpm schedules:migrate # One-off: converts legacy workflow cron triggers into `schedules`
 pnpm storage:check    # Exercises the Garage S3 client: put, presign, fetch, delete, NOT_FOUND
@@ -63,7 +64,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/postgres/` — PostgreSQL + pgvector, the knowledge-RAG store. `config.ts` reads `config.postgres` and is pure; `client.ts` is the `"server-only"` layer holding one lazily-built `Pool`; `vector.ts` holds `toVectorLiteral()` and is pure and unit-tested. `lib/knowledge/` sits on top: `chunking.ts`, `ranking.ts` and `embed.ts` are pure and unit-tested, `index.ts` is the writer, `search.ts` the hybrid retriever, `documents.ts` and `citation-services.ts` the document and citation ports. `embed.ts` holds the embed-before-transaction loop and the policy that separates a width mismatch (rethrow — the index is broken) from an outage (store the chunk vectorless). See [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector).
 - `lib/embeddings/` — Ollama embeddings. `text.ts` is pure (token estimation, normalization, head/tail truncation, context-length retry parsing) and unit-tested; `dimensions.ts` holds `EmbeddingDimensionError` plus `assertEmbeddingDimensions` / `isEmbeddingDimensionError` and is pure and unit-tested — a typed error rather than message-matching, because the predicate has to recognise the provider's wording while this one is ours; `index.ts` is the `"server-only"` provider that calls both and re-exports them. `constants/embeddings.ts` holds `EMBEDDING_DIMENSIONS`, the index contract every vector store must match.
 - `lib/neo4j/` — the Neo4j driver. `config.ts` reads `config.neo4j` and is pure, returning null unless the URI *and* a password are present; `client.ts` is the `"server-only"` layer holding one lazily-built `Driver` plus `isNeo4jConfigured()`, so every caller degrades rather than throws.
-- `lib/memory/` — the memory graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore`; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same SQL the store does; `extract.ts`, `recall.ts`, `text.ts` and `update.ts` are pure and unit-tested; `enrichment-schema.ts` and `llm-extraction.ts` hold the model contract and the call, and `enrichment-write.ts` and `enrich.ts` write what it returns. `graph-view.ts` assembles the four graph reads into the drawn node/edge set and `graph-layout.ts` positions it — both pure and unit-tested, and both deliberately unaware of React Flow, so the decisions worth testing (which entities survive the cap, what an edge is called, what "degree" means, where a node lands) need no browser. `constants/memory.ts` holds the edge types, weights and limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
+- `lib/memory/` — the fact graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore` and `sweep-runner.ts` its `"server-only"` sweep driver; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same Cypher the store does. `facts.ts` (the dedupe/supersede decision), `canonicalize.ts` (entity and predicate name normalization), `merge.ts` (the merge sweep's clustering), `recall.ts` (hop decay, recency, the seed-plus-traversal blend), `text.ts` and `pipeline.ts` (the recall read, extracted out of the store so the eval and its unit tests need no database) are pure and unit-tested; `eval-cases.ts` holds the fixed probe set. `llm-facts.ts` is the extractor's schema and call, and `model.ts` the guardless extraction-model factory. `graph-view.ts` assembles the four graph reads into the drawn node/edge set and `graph-layout.ts` positions it — both pure and unit-tested, and both deliberately unaware of React Flow, so the decisions worth testing (which entities survive the cap, what an edge is called, what "degree" means, where a node lands) need no browser. `constants/memory.ts` holds the merge thresholds, the recall weights and the graph-view limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
 - `lib/schedules/` — the scheduling subsystem. `cadence.ts` (cron and `once` next-occurrence), `retry.ts` (backoff, terminal error classes, the reaper's outcome and `isRunOpen`), `schedule-input.ts` (draft and patch parsing, and the next-run-after-patch rule), `input-form.ts` (a Zod schema into form fields, and the string-to-value coercer) and `input-schemas.ts` (the per-target input schemas) are pure and unit-tested. `registry.ts` holds the `TriggerExecutor` map every target kind registers into and registers nothing itself; `executors.ts` performs the executor imports and re-exports the registry, and is the module request-time consumers import from — importing `getExecutor` from `registry.ts` instead yields an empty registry that answers `invalid_target` for every target while the type-check and the unit suite stay green. `executor-workflow.ts` and `executor-agent.ts` are the two registered executors (`tool` is deliberately absent); `run-agent.ts` is the headless agent run the `agent` executor and the webhook service share; `dispatch.ts` runs one named run; `tick.ts` is the I/O layer that runs one pass. `lib/api/cron-guard.ts` is the `CRON_SECRET` bearer check the tick and the dispatch seam share. Execution is **at-least-once**: a claimed run holds a lease, and a run whose process died is handed back by the reaper rather than being lost. `constants/schedules.ts` holds the lease length, the retry curve and the tick's bounds. See [Scheduling](#scheduling).
 - `lib/api/` — helpers for the route layer. `rate-limit.ts` (see [Redis](#redis)), `agent-api-auth.ts` (the API-key path), `cron-guard.ts` (the `CRON_SECRET` bearer check the tick and the dispatch seam share), and `query-params.ts`, whose `boundedInt` clamps a query integer. It takes a `min` because `Number(null)` is `0` and a Mongo `.limit(0)` means *no limit* — without a lower bound an absent `?limit` returns the whole collection rather than a page.
 - `lib/redis-client.ts` — Shared ioredis connections, one per named consumer, with a per-consumer circuit breaker. `getRedisClient(name, options)` returns a discriminated result (`ready` / `unconfigured` / `circuit-open`) so each caller picks its own degradation policy. See [Redis](#redis).
@@ -173,54 +174,73 @@ Deleting a document deletes its chunks, and a stored object is no longer enough 
 
 ### Memory Graph (Neo4j)
 
-Memories are a graph in Neo4j and nowhere else. Two node labels carry everything:
-`:Memory` and `:Entity`. Edges are
-`ABOUT` (memory→entity, written synchronously from the content), `RELATES_TO`
-(memory→memory, scored from content alone), and `SUPERSEDES`, `CONTRADICTS` and
-`RELATION` (LLM-written).
+Memories are a fact graph in Neo4j and nowhere else. Six node labels carry
+everything: `:User` (the anchor every personal fact hangs off, and the only place
+a name and email live), `:Entity`, `:Predicate`, `:Value`, `:Fact` and
+`:Capture`. A fact is three edges rather than a row — `SUBJECT`, `PREDICATE` and
+`OBJECT` — so "same subject, same predicate" is an identity test rather than a
+similarity one.
+
+**A fact is closed, not deleted.** Superseding sets `isCurrent = false` and
+`validTo`, which is what lets recall render a changed fact as dated history
+instead of losing it. `isCurrent` is denormalized onto the node so the vector
+seed can test it *inside* the `SEARCH`: an index filters only on a property it
+declares, so `fact_embedding` declares `[f.userId, f.isCurrent]`.
 
 **Tenant isolation is a `userId` property, checked inside the query.** Neo4j has
-no collection scoping, so the boundary lives in the `MATCH` clauses: the seed `SEARCH` filters in-index
-(`WHERE m.userId = $userId` inside the `SEARCH`, not after it — a post-filter
-would let another tenant's nearer matches consume the top-K), and `EXPAND_CYPHER`
-re-checks `userId` on every node and edge of every hop, so a shared `:Entity` can
-never bridge two users. The in-index `WHERE` is a restricted subset — equality
-and `AND` only; an `OR`, a `<>` or a string operator fails with error 22ND3.
+no collection scoping, so the boundary lives in the `MATCH` clauses: the seed
+`SEARCH` filters in-index (`WHERE f.userId = $userId AND f.isCurrent = true`
+inside the `SEARCH`, not after it — a post-filter would let another tenant's
+nearer matches consume the top-K), and `FACT_EXPAND_CYPHER` re-checks `userId`
+on every node of every hop, so a shared `:Entity` can never bridge two users.
+The in-index `WHERE` is a restricted subset — equality and `AND` only; an `OR`, a
+`<>` or a string operator fails with error 22ND3.
 
-A write does its deterministic work in one transaction: the `:Memory` node, an
-`:Entity` per extracted name, the `ABOUT` edges, and `RELATES_TO` edges scored
-against the newest `MEMORY_EDGE_CANDIDATE_LIMIT` neighbours. Enrichment is fired
-**detached** and never awaited — `enrichMemory` cannot throw and never rejects,
-because a model call must not decide whether a memory is saved. `enrichedAt` is
-the sweep's marker, and `embedding IS NULL` marks a memory written during an
-embedding outage; `pnpm memory:enrich` selects on `enrichedAt IS NULL OR
-embedding IS NULL` and must clear **both**, or every run re-enriches at a model
-call each. That is why it writes the memory's own vector in the same transaction
-as the enrichment.
+**`:User` is excluded from expansion outright** (`NOT any(x IN nodes(path) WHERE
+x:User)`). Every personal fact hangs off the anchor, so fact→user→fact would
+reach the whole corpus in one hop.
+
+**The write path is capture → sweep → materialize, and the capture is durable
+first.** `captureSentence` writes a `:Capture` node and returns before any model
+sees it, so "Memory saved" is honest even though extraction has not run. The
+store's `sweep`, driven by `sweep-runner.ts`, then extracts, canonicalizes,
+dedupes and supersedes. The sweep's driver is `POST /api/memories/sweep` on the
+`CRON_SECRET` endpoint, on the same external-driver rule as
+[Scheduling](#scheduling): nothing runs on a timer inside the app.
 
 Recall is a vector seed plus a bounded traversal, ranked in TypeScript
-(`lib/memory/recall.ts`): the seed's cosine score and the path weight, decayed
-per hop, plus a recency bonus. Seeds are vector-only. No seeds, or any error, returns an **empty** result with
-`mode:
-"vector"`, never `slice(0, top)`, because the first `top` rows of a corpus are
-not an answer to a question. An unconfigured or unreachable Neo4j is an error
-for CRUD rather than a silent empty list: memories *are* the feature, so the
-store being down has to surface as a failure.
+(`lib/memory/recall.ts`, composed by `pipeline.ts`): the seed's cosine score and
+the path weight, decayed per hop, plus a recency bonus, with a seed below
+`MEMORY_SEED_SCORE_FLOOR` dropped **before** expansion. Seeds are vector-only,
+and a pending `:Capture` is seeded too, so a sentence saved a second ago is
+already recallable. No seeds, or any error, returns an **empty** result with
+`mode: "vector"`, never `slice(0, top)`, because the first `top` rows of a
+corpus are not an answer to a question. An unconfigured or unreachable Neo4j is
+an error for CRUD rather than a silent empty list: memories *are* the feature, so
+the store being down has to surface as a failure.
 
-Two structural notes. `lib/memory/cypher.ts` holds every
-statement specifically so `scripts/check-memory.ts` can execute the same SQL the
-store does — the store is `"server-only"`, a check script cannot import it, and a
-script carrying its own copy would be verifying the copy. And the `"server-only"`
-guard does not resolve under `tsx`, which is why `cypher.ts`, `llm-extraction.ts`
-and `enrichment-write.ts` carry no guard and hold no connection, while the sweep
-in `scripts/enrich-memories.ts` builds its own model and embedding clients and
-shares only those modules. Cypher cannot parameterise a relationship type or a
-variable-length bound, so `buildMemoryEdgeCypher` interpolates behind an allow-list
-and `MEMORY_RECALL_HOPS` is verified as a positive integer at import.
+Two structural notes. `lib/memory/cypher.ts` holds every statement specifically
+so `scripts/check-memory.ts` can execute the same Cypher the store does — the
+store is `"server-only"`, a check script cannot import it, and a script carrying
+its own copy would be verifying the copy. That script's last check `EXPLAIN`s
+every exported statement, which is the only cover a statement no other check runs
+has; clause order is the reason it earns its place, since Neo4j accepts
+`ORDER BY` / `OFFSET` / `LIMIT` in that order alone and reports a wrong one as a
+*syntax* error, invisible to the type-check and to a unit suite that never
+executes Cypher. And the `"server-only"` guard does not resolve under `tsx`,
+which is why `cypher.ts`, `pipeline.ts` and `model.ts` carry no guard and hold no
+connection, while the scripts build their own driver. Cypher cannot parameterise
+a variable-length bound, so `FACT_EXPAND_CYPHER` interpolates
+`MEMORY_RECALL_HOPS`, which is verified as a positive integer at import.
+
+Nothing writes `:Memory` nodes any more, but the graph view still draws them, so
+an existing database keeps the label's index and constraint until that view is
+reworked onto `:Fact` — a separate plan. `pnpm memory:drop-prose` removes the
+nodes and that leftover schema.
 
 `pnpm db:setup:neo4j` creates the constraints and vector indexes. `pnpm
-memory:check` exercises the store against a live graph. `pnpm memory:migrate` is
-a one-off importer for memories written before the graph existed.
+memory:check` exercises the store against a live graph, and `pnpm memory:eval`
+scores recall against the fixed probe set.
 
 ### Memory Graph View
 
@@ -478,11 +498,13 @@ This project uses **Next.js 16**, which has breaking changes from earlier versio
   addressed by an unguessable identifier take no `userId` at all — `getTool(toolId)`,
   `getConnector(serverId)`, `deleteThread(threadId)` — and ownership for those is
   enforced by hand at the route, which makes that route check load-bearing rather
-  than belt-and-braces. The memory store is the counter-example: `getMemory(id,
-  userId)`, `updateMemory(id, userId)` and `deleteMemory(id, userId)` carry the
-  boundary themselves — the graph is queried with the owner in the `MATCH` — so
-  `app/api/memories/[id]/route.ts`'s `memory.userId !== user.id` is a second lock on
-  a door the store already closed. Two nearby accessors are
+  than belt-and-braces. The memory store is the counter-example: `getFact(userId,
+  id)` and `deleteFact(userId, id)` carry the boundary themselves — the graph is
+  queried with the owner in the `MATCH` — so `app/api/memories/[id]/route.ts` needs
+  no ownership check of its own and another user's fact reads as a 404. It is also
+  the one store with no update path: a fact is derived from a captured sentence, so
+  a correction is a new sentence and the supersede rule closes the one it replaces.
+  Two nearby accessors are
   guarded differently rather than by ownership: `getAllUsers()` takes no argument at all
   and sits behind RBAC (`app/api/admin/users/route.ts`'s `requirePermission("users:manage")`),
   and `findByHash(hash)` is the API-key authentication path, where the hash *is* the

@@ -27,7 +27,7 @@ import { generateId } from "@/lib/utils";
  *    a worse outcome than a row this script says it left alone.
  *
  * `@/lib/utils` and `@/constants/schedules` are imported directly, as
- * `migrate-memories.ts` already does: neither carries a `server-only` guard.
+ * `check-memory.ts` already does: neither carries a `server-only` guard.
  * `generateId()` is the house uuidv7, which every `_id` in this database is.
  */
 
