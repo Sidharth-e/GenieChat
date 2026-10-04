@@ -1,19 +1,48 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { MEMORY_GRAPH_MEMORY_LIMIT, MEMORY_LLM_EDGE_TYPES } from "@/constants/memory";
+import {
+  MEMORY_CAPTURE_MAX_ATTEMPTS,
+  MEMORY_CAPTURE_SWEEP_LIMIT,
+  MEMORY_ENTITY_MERGE_THRESHOLD,
+  MEMORY_GRAPH_MEMORY_LIMIT,
+  MEMORY_LLM_EDGE_TYPES,
+  MEMORY_PREDICATE_MERGE_THRESHOLD,
+} from "@/constants/memory";
 import { generateEmbedding, isEmbeddingDimensionError } from "@/lib/embeddings";
 import { logger } from "@/lib/logger";
 import { getNeo4jDriver, isNeo4jConfigured } from "@/lib/neo4j/client";
+import { normalizePredicate, predicateEmbeddingText } from "./canonicalize";
 import {
+  buildFactCreateCypher,
   CAPTURE_CREATE_CYPHER,
+  CAPTURE_DELETE_CYPHER,
+  CAPTURE_PENDING_CYPHER,
+  CAPTURE_RETRY_CYPHER,
+  ENTITY_ALIAS_CYPHER,
+  ENTITY_CREATE_CYPHER,
+  ENTITY_EXACT_CYPHER,
+  ENTITY_NEAREST_CYPHER,
+  FACT_CLOSE_CYPHER,
+  FACT_CURRENT_CYPHER,
+  type FactEndLabel,
   GRAPH_ABOUT_CYPHER,
   GRAPH_ENTITY_RELATIONS_CYPHER,
   GRAPH_MEMORIES_CYPHER,
   GRAPH_MEMORY_COUNT_CYPHER,
   GRAPH_MEMORY_EDGES_CYPHER,
+  PREDICATE_ALIAS_CYPHER,
+  PREDICATE_CREATE_CYPHER,
+  PREDICATE_EXACT_CYPHER,
+  PREDICATE_LIST_CYPHER,
+  PREDICATE_NEAREST_CYPHER,
   USER_UPSERT_CYPHER,
+  VALUE_MERGE_CYPHER,
 } from "./cypher";
+import { normalizeEntityName } from "./extract";
+import { decideFactWrite, type ExtractedFact } from "./facts";
 import type { MemoryGraphRows } from "./graph-view";
+import { extractFacts } from "./llm-facts";
+import { createMemoryModel } from "./model";
 
 export class MemoryGraphStore {
   private async requireDriver() {
@@ -91,6 +120,298 @@ export class MemoryGraphStore {
       logger.warn({ err: error }, `Embedding unavailable for ${context}`);
       return null;
     }
+  }
+
+  /** The user-anchor check: a fact about the user hangs off the anchor, not off an entity named "user". */
+  private isAnchor(name: string): boolean {
+    const normalized = name.trim().toLowerCase();
+    return normalized === "user" || normalized === "i" || normalized === "me";
+  }
+
+  /**
+   * Step 1 of resolution: the exact key, then the nearest above the threshold,
+   * then create. The surface form is appended to `aliases` whenever it resolves
+   * to an existing node, which is what makes the vocabulary inspectable later.
+   */
+  private async resolveEntity(
+    userId: string,
+    surface: string,
+    embedding: number[] | null,
+  ): Promise<string> {
+    const driver = await this.requireDriver();
+    const normalizedName = normalizeEntityName(surface);
+
+    const exact = await driver.executeQuery(ENTITY_EXACT_CYPHER, {
+      userId,
+      normalizedName,
+    });
+    if (exact.records.length > 0) {
+      const id = String(exact.records[0].get("id"));
+      await driver.executeQuery(ENTITY_ALIAS_CYPHER, { id, userId, alias: surface });
+      return id;
+    }
+
+    if (embedding) {
+      // The statement filters on the threshold itself, so a nearest that is not
+      // close enough returns nothing and the entity is created below.
+      const nearest = await driver.executeQuery(ENTITY_NEAREST_CYPHER, {
+        userId,
+        vector: embedding,
+        threshold: MEMORY_ENTITY_MERGE_THRESHOLD,
+      });
+      const best = nearest.records[0];
+      if (best) {
+        const id = String(best.get("id"));
+        await driver.executeQuery(ENTITY_ALIAS_CYPHER, { id, userId, alias: surface });
+        return id;
+      }
+    }
+
+    const created = await driver.executeQuery(ENTITY_CREATE_CYPHER, {
+      id: randomUUID(),
+      userId,
+      normalizedName,
+      name: surface,
+      embedding,
+    });
+    return String(created.records[0].get("id"));
+  }
+
+  /** A literal is keyed by its text — two identical instructions are one node. */
+  private async resolveValue(userId: string, text: string): Promise<string> {
+    const driver = await this.requireDriver();
+    const result = await driver.executeQuery(VALUE_MERGE_CYPHER, {
+      id: randomUUID(),
+      userId,
+      text,
+    });
+    return String(result.records[0].get("id"));
+  }
+
+  /**
+   * Predicate resolution, same shape as the entity path but against its own
+   * label, threshold and embedding template. The template matters: relations are
+   * compared as relations, so "made by" and "made for" — which share every token
+   * — do not collapse into each other.
+   */
+  private async resolvePredicate(
+    userId: string,
+    surface: string,
+    embedding: number[] | null,
+  ): Promise<string> {
+    const driver = await this.requireDriver();
+    const canonicalName = normalizePredicate(surface);
+
+    const exact = await driver.executeQuery(PREDICATE_EXACT_CYPHER, {
+      userId,
+      canonicalName,
+    });
+    if (exact.records.length > 0) {
+      const id = String(exact.records[0].get("id"));
+      await driver.executeQuery(PREDICATE_ALIAS_CYPHER, {
+        id,
+        userId,
+        alias: surface,
+      });
+      return id;
+    }
+
+    if (embedding) {
+      const nearest = await driver.executeQuery(PREDICATE_NEAREST_CYPHER, {
+        userId,
+        embedding,
+      });
+      const best = nearest.records[0];
+      if (best && Number(best.get("score")) >= MEMORY_PREDICATE_MERGE_THRESHOLD) {
+        const id = String(best.get("id"));
+        await driver.executeQuery(PREDICATE_ALIAS_CYPHER, {
+          id,
+          userId,
+          alias: surface,
+        });
+        return id;
+      }
+    }
+
+    const created = await driver.executeQuery(PREDICATE_CREATE_CYPHER, {
+      id: randomUUID(),
+      userId,
+      canonicalName,
+      embedding,
+    });
+    return String(created.records[0].get("id"));
+  }
+
+  /**
+   * Turn one sentence's triples into graph writes.
+   *
+   * Embeddings for the distinct entity names and predicate surfaces are fetched
+   * **concurrently**, not one round trip at a time: a capture with three facts
+   * has up to nine names, and nine serial HTTP calls is most of the write's
+   * latency.
+   *
+   * `sourceText` is embedded once for the whole capture and stamped on every
+   * fact it produces, which is what lets recall seed on the sentence the user
+   * actually said rather than on a triple no one typed.
+   */
+  async materializeFacts(
+    userId: string,
+    sourceText: string,
+    facts: ExtractedFact[],
+  ): Promise<number> {
+    if (facts.length === 0) return 0;
+
+    const embed = (text: string) => this.embedOrThrowOnMismatch(text, "memory fact");
+
+    const surfaces = new Map<string, string>();
+    for (const fact of facts) {
+      surfaces.set(`subject:${fact.subject}`, fact.subject);
+      surfaces.set(
+        `predicate:${fact.predicate}`,
+        predicateEmbeddingText(fact.predicate),
+      );
+      if (fact.objectKind === "entity") {
+        surfaces.set(`object:${fact.object}`, fact.object);
+      }
+    }
+
+    const entries = [...surfaces.entries()];
+    const vectors = await Promise.all(entries.map(([, text]) => embed(text)));
+    const vectorFor = new Map<string, number[] | null>();
+    entries.forEach(([key], index) => vectorFor.set(key, vectors[index]));
+
+    const factEmbedding = await embed(sourceText);
+    const driver = await this.requireDriver();
+    const now = new Date().toISOString();
+    let written = 0;
+
+    for (const fact of facts) {
+      const subjectId = this.isAnchor(fact.subject)
+        ? userId
+        : await this.resolveEntity(
+            userId,
+            fact.subject,
+            vectorFor.get(`subject:${fact.subject}`) ?? null,
+          );
+      const subjectLabel: FactEndLabel = this.isAnchor(fact.subject)
+        ? "User"
+        : "Entity";
+
+      const objectLabel: FactEndLabel =
+        fact.objectKind === "value" ? "Value" : "Entity";
+      const objectId =
+        objectLabel === "Value"
+          ? await this.resolveValue(userId, fact.object)
+          : await this.resolveEntity(
+              userId,
+              fact.object,
+              vectorFor.get(`object:${fact.object}`) ?? null,
+            );
+
+      const predicateId = await this.resolvePredicate(
+        userId,
+        fact.predicate,
+        vectorFor.get(`predicate:${fact.predicate}`) ?? null,
+      );
+
+      const current = await driver.executeQuery(FACT_CURRENT_CYPHER, {
+        userId,
+        subjectId,
+        predicateId,
+      });
+      const currentFacts = current.records.map((record) => ({
+        objectId: String(record.get("objectId")),
+      }));
+
+      const decision = decideFactWrite({
+        predicate: normalizePredicate(fact.predicate),
+        operation: fact.operation,
+        incomingObjectId: objectId,
+        currentFacts,
+      });
+
+      if (decision === "noop") continue;
+
+      if (decision === "supersede") {
+        await driver.executeQuery(FACT_CLOSE_CYPHER, {
+          userId,
+          factIds: current.records.map((record) => String(record.get("id"))),
+          now,
+        });
+      }
+
+      await driver.executeQuery(buildFactCreateCypher(subjectLabel, objectLabel), {
+        id: randomUUID(),
+        userId,
+        subjectId,
+        objectId,
+        predicateId,
+        embedding: factEmbedding,
+        confidence: fact.confidence,
+        sourceText,
+        now,
+      });
+      written += 1;
+    }
+
+    return written;
+  }
+
+  async findKnownPredicates(userId: string): Promise<string[]> {
+    const driver = await this.requireDriver();
+    const result = await driver.executeQuery(PREDICATE_LIST_CYPHER, { userId });
+    return result.records.map((record) => String(record.get("canonicalName")));
+  }
+
+  /**
+   * Drain pending captures: extract, materialize, and delete the capture.
+   *
+   * A capture the model could not read is **not** deleted — its `attempts` count
+   * rises so it stops costing a call after `MEMORY_CAPTURE_MAX_ATTEMPTS`, but the
+   * sentence stays on disk and stays recallable. Losing the user's words because
+   * the model had a bad day would be the one failure this design cannot absorb.
+   */
+  async extractPendingCaptures(
+    userId: string,
+    limit: number = MEMORY_CAPTURE_SWEEP_LIMIT,
+  ): Promise<number> {
+    const driver = await this.requireDriver();
+    const pending = await driver.executeQuery(CAPTURE_PENDING_CYPHER, {
+      userId,
+      maxAttempts: MEMORY_CAPTURE_MAX_ATTEMPTS,
+      limit,
+    });
+
+    if (pending.records.length === 0) return 0;
+
+    const knownPredicates = await this.findKnownPredicates(userId);
+    const model = createMemoryModel();
+
+    let consumed = 0;
+    for (const record of pending.records) {
+      const id = String(record.get("id"));
+      const text = String(record.get("text"));
+
+      try {
+        const facts = await extractFacts(model, text, knownPredicates);
+
+        if (facts === null) {
+          // A refused schema is the model's failure, not a transport one: count
+          // the attempt so the loop terminates, but keep the sentence.
+          await driver.executeQuery(CAPTURE_RETRY_CYPHER, { id, userId });
+          continue;
+        }
+
+        await this.materializeFacts(userId, text, facts);
+        await driver.executeQuery(CAPTURE_DELETE_CYPHER, { id, userId });
+        consumed += 1;
+      } catch (error) {
+        logger.error({ err: error, captureId: id }, "Capture extraction failed");
+        await driver.executeQuery(CAPTURE_RETRY_CYPHER, { id, userId });
+      }
+    }
+
+    return consumed;
   }
 
   /**
