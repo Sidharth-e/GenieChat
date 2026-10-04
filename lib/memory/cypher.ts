@@ -41,82 +41,6 @@ if (!Number.isInteger(MEMORY_RECALL_HOPS) || MEMORY_RECALL_HOPS < 1) {
   throw new Error(`MEMORY_RECALL_HOPS must be a positive integer, got ${MEMORY_RECALL_HOPS}`);
 }
 
-/**
- * The graph view's four reads. Everything they return is drawn, so each one is
- * bounded — an unbounded read here is a browser tab that stops responding
- * rather than a slow query.
- *
- * `GRAPH_MEMORIES_CYPHER` is the only one that decides *which* memories are in
- * the window: newest first, capped. The other three are scoped to that set by
- * id, which is what keeps the drawn edges exactly those whose endpoints are
- * drawn. Without that scoping an edge would arrive pointing at a node the
- * window excluded and React Flow would drop it silently, leaving a node whose
- * degree the view reported as higher than the picture shows.
- */
-export const GRAPH_MEMORIES_CYPHER = `
-  MATCH (m:Memory {userId: $userId})
-  RETURN m.id AS id, m.content AS content, m.createdAt AS createdAt
-  ORDER BY m.createdAt DESC
-  LIMIT toInteger($limit)
-`;
-
-/**
- * How many memories the user actually has, against the capped read above. The
- * view tells the reader when it is showing a window rather than the whole
- * corpus, and that is only honest with a real count: inferring it from
- * "the read returned exactly the limit" reports truncation for a user who
- * happens to have exactly that many memories.
- */
-export const GRAPH_MEMORY_COUNT_CYPHER = `
-  MATCH (m:Memory {userId: $userId})
-  RETURN count(m) AS total
-`;
-
-/**
- * `e.userId` is checked on the entity as well as the memory. ABOUT is only ever
- * written within one tenant, so the check cannot fail today — it is here
- * because the statement is what would silently become a cross-tenant read if a
- * future writer merged an entity across users.
- */
-export const GRAPH_ABOUT_CYPHER = `
-  MATCH (m:Memory {userId: $userId})-[r:ABOUT]->(e:Entity {userId: $userId})
-  WHERE m.id IN $memoryIds
-  RETURN m.id AS memoryId, e.id AS entityId, e.name AS entityName,
-         e.normalizedName AS normalizedName
-`;
-
-/**
- * `type(r)` is filtered rather than matched to one relationship type, because
- * Cypher cannot parameterise a type and writing one branch per type would mean
- * a new edge type is invisible here until someone remembers to add it. The
- * permitted set is passed in, so a new edge kind is a constant's change rather
- * than a statement's.
- *
- * The `IN` on both ids is a second filter on top of the tenant check, not a
- * replacement for it: the edges are already tenant-scoped by the pattern, and
- * the id lists are what bound the result to the drawn window.
- */
-export const GRAPH_MEMORY_EDGES_CYPHER = `
-  MATCH (a:Memory {userId: $userId})-[r]->(b:Memory {userId: $userId})
-  WHERE type(r) IN $edgeTypes
-    AND a.id IN $memoryIds
-    AND b.id IN $memoryIds
-  RETURN a.id AS source, b.id AS target, type(r) AS type,
-         r.weight AS weight, r.reason AS reason
-`;
-
-/**
- * Entity-to-entity relations. One generic `:RELATION` carrying its type as a
- * property, so `type(r)` here is always `RELATION` and the interesting value is
- * `r.type` — hence the alias.
- */
-export const GRAPH_ENTITY_RELATIONS_CYPHER = `
-  MATCH (a:Entity {userId: $userId})-[r:RELATION]->(b:Entity {userId: $userId})
-  WHERE a.id IN $entityIds
-    AND b.id IN $entityIds
-  RETURN a.id AS source, b.id AS target, r.type AS relationType
-`;
-
 /* -------------------------------------------------------------------------- */
 /* The fact graph                                                             */
 /* -------------------------------------------------------------------------- */
@@ -479,6 +403,35 @@ export const FACT_LIST_CYPHER = `
 export const FACT_COUNT_CYPHER = `
   MATCH (f:Fact {userId: $userId, isCurrent: true})
   RETURN count(f) AS total
+`;
+
+/**
+ * The graph view's read: the newest current facts, each with its three satellite
+ * endpoints flattened into one row. The bulk form of `FACT_EDGES_CYPHER`, made
+ * label-aware so the assembler can tell an `:Entity` object from a `:Value` one
+ * — `coalesce(o.name, o.text)` is what lets both land in one column.
+ *
+ * `toInteger($limit)` is mandatory: every plain JS number is packed as a
+ * Float64, and a bare `LIMIT $limit` raises `22003: '30.0' is not a valid
+ * value`. `WITH … ORDER BY … LIMIT` is the only clause order Neo4j accepts —
+ * a wrong one is a *syntax* error, which neither the type-check nor a unit test
+ * would ever see.
+ *
+ * The window is decided here, newest first, and `FACT_COUNT_CYPHER` supplies the
+ * true total beside it: truncation cannot be inferred from "the read returned
+ * exactly the limit", which would report it for a user who has exactly that many.
+ */
+export const GRAPH_FACTS_CYPHER = `
+  MATCH (f:Fact {userId: $userId, isCurrent: true})
+  WITH f ORDER BY f.createdAt DESC LIMIT toInteger($limit)
+  OPTIONAL MATCH (f)-[:SUBJECT]->(s)
+  OPTIONAL MATCH (f)-[:PREDICATE]->(p:Predicate)
+  OPTIONAL MATCH (f)-[:OBJECT]->(o)
+  RETURN f.id AS factId, f.sourceText AS text, f.createdAt AS createdAt,
+         s.id AS subjectId, labels(s)[0] AS subjectKind, s.name AS subjectName,
+         p.id AS predicateId, p.canonicalName AS predicateName,
+         o.id AS objectId, labels(o)[0] AS objectKind,
+         coalesce(o.name, o.text) AS objectName
 `;
 
 /** One fact by id, for the detail route. */

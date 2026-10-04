@@ -243,26 +243,6 @@ export const MEMORY_SEED_MIN = 15;
 export const MEMORY_WEIGHT_SEED = 0.7;
 export const MEMORY_WEIGHT_GRAPH = 0.3;
 
-export const MEMORY_RELATION_TYPES = [
-  "ABOUT",
-  "RELATES_TO",
-  "SUPERSEDES",
-  "CONTRADICTS",
-] as const;
-export type MemoryRelationType = (typeof MEMORY_RELATION_TYPES)[number];
-
-/**
- * The memory→memory edge kinds: every relation type whose two ends are both
- * `:Memory`. Narrower than `MEMORY_RELATION_TYPES`, which also carries `ABOUT`
- * — a memory→entity edge, drawn by `GRAPH_ABOUT_CYPHER` rather than by the
- * memory-edge read that uses this set.
- */
-export const MEMORY_LLM_EDGE_TYPES = [
-  "RELATES_TO",
-  "SUPERSEDES",
-  "CONTRADICTS",
-] as const satisfies readonly MemoryRelationType[];
-
 /** Dropped by `tokenize`, so a text's features are its content words. */
 export const MEMORY_STOPWORDS = new Set([
   "the",
@@ -314,13 +294,6 @@ export const MEMORY_MAX_QUERY_CHARS = 24_000;
 
 /** Joins the kept head and tail of a truncated retrieval query. */
 export const MEMORY_QUERY_SEPARATOR = "\n...\n";
-
-/**
- * How many memories the graph view reads before their entities are added.
- * Separate from `MEMORY_GRAPH_NODE_LIMIT` because the two bound different
- * things: this bounds the traversal's input, that bounds what is drawn.
- */
-export const MEMORY_GRAPH_MEMORY_LIMIT = 120;
 
 /**
  * How many current facts the graph read pulls. The ceiling the drawing's size

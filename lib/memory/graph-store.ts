@@ -6,8 +6,7 @@ import {
   MEMORY_ENTITY_MERGE_THRESHOLD,
   MEMORY_FACT_PAGE_SIZE,
   MEMORY_FACT_TOP,
-  MEMORY_GRAPH_MEMORY_LIMIT,
-  MEMORY_LLM_EDGE_TYPES,
+  MEMORY_GRAPH_FACT_LIMIT,
   MEMORY_PREDICATE_CLUSTER_THRESHOLD,
   MEMORY_PREDICATE_MERGE_THRESHOLD,
   MEMORY_RECONCILE_LIMIT,
@@ -44,11 +43,7 @@ import {
   FACT_RECONCILE_CYPHER,
   FACT_VECTORLESS_CYPHER,
   type FactEndLabel,
-  GRAPH_ABOUT_CYPHER,
-  GRAPH_ENTITY_RELATIONS_CYPHER,
-  GRAPH_MEMORIES_CYPHER,
-  GRAPH_MEMORY_COUNT_CYPHER,
-  GRAPH_MEMORY_EDGES_CYPHER,
+  GRAPH_FACTS_CYPHER,
   PREDICATE_ALIAS_CYPHER,
   PREDICATE_CREATE_CYPHER,
   PREDICATE_EXACT_CYPHER,
@@ -63,7 +58,7 @@ import {
   selectSuperseded,
   type ExtractedFact,
 } from "./facts";
-import type { MemoryGraphRows } from "./graph-view";
+import type { MemoryGraphFactRow } from "./graph-view";
 import { extractFacts } from "./llm-facts";
 import { selectMergePairs } from "./merge";
 import { createMemoryModel } from "./model";
@@ -694,14 +689,14 @@ export class MemoryGraphStore {
   }
 
   /**
-   * The graph view's read: the drawn window, its edges, and the true total.
+   * The graph view's read: the drawn window and the true total.
    *
-   * Four statements in one session rather than one query, because the window has
-   * to be chosen *before* the edges are read — `GRAPH_MEMORIES_CYPHER` decides
-   * which memories exist for this view, and the edges are then scoped to that id
-   * set. A single pattern would return edges to memories the window excluded,
-   * which the view can only drop (making the picture disagree with the degrees
-   * it reports) or draw as an orphan.
+   * Two statements in one session. `GRAPH_FACTS_CYPHER` decides which facts are
+   * in the window — newest first, capped — and flattens each fact's three
+   * satellites into the same row, so the whole drawing comes back in one round
+   * trip. `FACT_COUNT_CYPHER` then supplies the true total, because the view
+   * tells the reader when it is showing a window rather than the whole corpus,
+   * and that is only honest with a real count.
    *
    * Deliberately not a transaction: this is a read, the window cannot change
    * under it in any way the reader would notice, and `executeRead` per statement
@@ -709,86 +704,37 @@ export class MemoryGraphStore {
    */
   async getMemoryGraph(
     userId: string,
-    memoryLimit: number = MEMORY_GRAPH_MEMORY_LIMIT,
-  ): Promise<{ rows: MemoryGraphRows; totalMemories: number }> {
+    factLimit: number = MEMORY_GRAPH_FACT_LIMIT,
+  ): Promise<{ rows: MemoryGraphFactRow[]; totalFacts: number }> {
     const driver = await this.requireDriver();
     const session = driver.session();
     try {
-      const memoryRows = await session.executeRead(async (tx) => {
-        const { records } = await tx.run(GRAPH_MEMORIES_CYPHER, {
+      const rows = await session.executeRead(async (tx) => {
+        const { records } = await tx.run(GRAPH_FACTS_CYPHER, {
           userId,
-          limit: memoryLimit,
+          limit: factLimit,
         });
         return records.map((record) => ({
-          id: String(record.get("id") ?? ""),
-          content: String(record.get("content") ?? ""),
+          factId: String(record.get("factId") ?? ""),
+          text: String(record.get("text") ?? ""),
           createdAt: String(record.get("createdAt") ?? ""),
+          subjectId: record.get("subjectId") as string | null,
+          subjectKind: record.get("subjectKind") as string | null,
+          subjectName: record.get("subjectName") as string | null,
+          predicateId: record.get("predicateId") as string | null,
+          predicateName: record.get("predicateName") as string | null,
+          objectId: record.get("objectId") as string | null,
+          objectKind: record.get("objectKind") as string | null,
+          objectName: record.get("objectName") as string | null,
         }));
       });
 
-      const totalMemories = await session.executeRead(async (tx) => {
-        const { records } = await tx.run(GRAPH_MEMORY_COUNT_CYPHER, { userId });
+      const totalFacts = await session.executeRead(async (tx) => {
+        const { records } = await tx.run(FACT_COUNT_CYPHER, { userId });
         return Number(records[0]?.get("total") ?? 0);
       });
 
-      const memoryIds = memoryRows.map((row) => row.id);
-      // Nothing to attach edges to, and `IN []` is a wasted round trip each.
-      if (memoryIds.length === 0) {
-        return {
-          rows: { memories: [], about: [], memoryEdges: [], entityRelations: [] },
-          totalMemories,
-        };
-      }
-
-      const about = await session.executeRead(async (tx) => {
-        const { records } = await tx.run(GRAPH_ABOUT_CYPHER, { userId, memoryIds });
-        return records.map((record) => ({
-          memoryId: String(record.get("memoryId") ?? ""),
-          entityId: String(record.get("entityId") ?? ""),
-          entityName: record.get("entityName") as string | null,
-          normalizedName: record.get("normalizedName") as string | null,
-        }));
-      });
-
-      const memoryEdges = await session.executeRead(async (tx) => {
-        const { records } = await tx.run(GRAPH_MEMORY_EDGES_CYPHER, {
-          userId,
-          memoryIds,
-          // The kinds the view knows how to draw, so an edge type it has no
-          // styling for is not asked for in the first place.
-          edgeTypes: [...MEMORY_LLM_EDGE_TYPES],
-        });
-        return records.map((record) => ({
-          source: String(record.get("source") ?? ""),
-          target: String(record.get("target") ?? ""),
-          type: String(record.get("type") ?? ""),
-          weight: record.get("weight") as number | null,
-          reason: record.get("reason") as string | null,
-        }));
-      });
-
-      // Read from the ABOUT rows rather than from a full entity scan: the
-      // relations that matter are the ones between entities this window drew.
-      const entityIds = [...new Set(about.map((row) => row.entityId))];
-      const entityRelations =
-        entityIds.length === 0
-          ? []
-          : await session.executeRead(async (tx) => {
-              const { records } = await tx.run(GRAPH_ENTITY_RELATIONS_CYPHER, {
-                userId,
-                entityIds,
-              });
-              return records.map((record) => ({
-                source: String(record.get("source") ?? ""),
-                target: String(record.get("target") ?? ""),
-                relationType: record.get("relationType") as string | null,
-              }));
-            });
-
-      return {
-        rows: { memories: memoryRows, about, memoryEdges, entityRelations },
-        totalMemories,
-      };
+      return { rows, totalFacts };
     } finally {
       await session.close();
     }

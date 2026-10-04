@@ -20,8 +20,8 @@ export async function GET() {
     const user = await getSessionUser();
     if (!user) return api.unauthorized();
 
-    const { rows, totalMemories } = await memoryStore.getMemoryGraph(user.id);
-    return NextResponse.json(buildMemoryGraphView(rows, totalMemories));
+    const { rows, totalFacts } = await memoryStore.getMemoryGraph(user.id);
+    return NextResponse.json(buildMemoryGraphView(rows, totalFacts));
   } catch (error) {
     // An unconfigured or unreachable Neo4j surfaces here as a 500, not as an
     // empty graph: the graph *is* the page, so "you have no memories" would be

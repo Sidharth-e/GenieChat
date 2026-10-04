@@ -9,7 +9,6 @@ import {
   MEMORY_MAX_CONCEPT_FEATURES,
   MEMORY_MIN_TOKEN_LENGTH,
   MEMORY_RECALL_HOPS,
-  MEMORY_RELATION_TYPES,
   MEMORY_SEED_MIN,
   MEMORY_SEED_MULTIPLIER,
   MEMORY_STOPWORDS,
@@ -37,15 +36,6 @@ describe("memory tuning constants", () => {
 
   it("keeps the merge threshold high, so only near-duplicates collapse", () => {
     expect(MEMORY_ENTITY_MERGE_THRESHOLD).toBe(0.9);
-  });
-
-  it("keeps the four relation types the graph view's edge kinds are built from", () => {
-    expect([...MEMORY_RELATION_TYPES].sort()).toEqual([
-      "ABOUT",
-      "CONTRADICTS",
-      "RELATES_TO",
-      "SUPERSEDES",
-    ]);
   });
 
   it("has a non-empty stopword set", () => {
