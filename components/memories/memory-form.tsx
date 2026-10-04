@@ -10,49 +10,27 @@ interface MemoryFormProps {
   onClose: () => void;
   onSave: (content: string) => Promise<void>;
   isSaving: boolean;
-  mode?: "create" | "edit";
-  initialContent?: string;
 }
 
+/**
+ * The capture form. There is one mode: a sentence goes in, a `:Capture` node is
+ * staged, and the extractor turns it into facts later. Nothing here edits a
+ * fact, because a fact is derived rather than authored.
+ */
 export function MemoryForm({
   isOpen,
   onClose,
   onSave,
   isSaving,
-  mode = "create",
-  initialContent = "",
 }: MemoryFormProps) {
+  const [content, setContent] = useState("");
+
   if (!isOpen) return null;
-
-  return (
-    <MemoryFormBody
-      key={`${mode}:${initialContent}`}
-      onClose={onClose}
-      onSave={onSave}
-      isSaving={isSaving}
-      mode={mode}
-      initialContent={initialContent}
-    />
-  );
-}
-
-function MemoryFormBody({
-  onClose,
-  onSave,
-  isSaving,
-  mode,
-  initialContent,
-}: Omit<MemoryFormProps, "isOpen">) {
-  const [content, setContent] = useState(initialContent ?? "");
 
   const handleSave = async () => {
     if (!content.trim()) return;
     await onSave(content.trim());
-
-    // Keep create mode ready for another entry; edit mode closes from parent.
-    if (mode === "create") {
-      setContent("");
-    }
+    setContent("");
   };
 
   const handleClose = () => {
@@ -68,9 +46,7 @@ function MemoryFormBody({
       className="mb-6 p-5 rounded-2xl bg-card-bg border border-card-border"
     >
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">
-          {mode === "edit" ? "Edit Memory" : "Add Memory"}
-        </h3>
+        <h3 className="text-sm font-semibold text-foreground">Add Memory</h3>
         <Button
           variant="ghost"
           size="icon"
@@ -109,7 +85,7 @@ function MemoryFormBody({
             ) : (
               <Check className="w-4 h-4" />
             )}
-            {mode === "edit" ? "Update" : "Save"}
+            Save
           </Button>
         </div>
       </div>

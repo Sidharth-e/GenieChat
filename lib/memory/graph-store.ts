@@ -5,6 +5,7 @@ import {
   MEMORY_CAPTURE_SEED_LIMIT,
   MEMORY_CAPTURE_SWEEP_LIMIT,
   MEMORY_ENTITY_MERGE_THRESHOLD,
+  MEMORY_FACT_PAGE_SIZE,
   MEMORY_FACT_TOP,
   MEMORY_GRAPH_MEMORY_LIMIT,
   MEMORY_LLM_EDGE_TYPES,
@@ -17,6 +18,7 @@ import { getNeo4jDriver, isNeo4jConfigured } from "@/lib/neo4j/client";
 import { normalizePredicate, predicateEmbeddingText } from "./canonicalize";
 import {
   buildFactCreateCypher,
+  buildOrphanGcCypher,
   CAPTURE_CREATE_CYPHER,
   CAPTURE_DELETE_CYPHER,
   CAPTURE_PENDING_CYPHER,
@@ -27,8 +29,12 @@ import {
   ENTITY_EXACT_CYPHER,
   ENTITY_NEAREST_CYPHER,
   FACT_CLOSE_CYPHER,
+  FACT_COUNT_CYPHER,
   FACT_CURRENT_CYPHER,
+  FACT_DELETE_CYPHER,
   FACT_EXPAND_CYPHER,
+  FACT_GET_CYPHER,
+  FACT_LIST_CYPHER,
   FACT_PREDECESSOR_CYPHER,
   FACT_SEED_CYPHER,
   type FactEndLabel,
@@ -604,6 +610,83 @@ export class MemoryGraphStore {
     }
 
     return predecessors;
+  }
+
+  /**
+   * The paginated listing, newest first. `isCurrent = true` because the list
+   * shows what is true now — history is reachable through recall's predecessor
+   * line, not by scrolling the list.
+   *
+   * The count is a second statement rather than a `count(*) OVER ()` beside the
+   * page, because the window function would force the ordering pass over every
+   * row on every page; an indexed count is cheaper than that.
+   */
+  async listFacts(
+    userId: string,
+    limit: number = MEMORY_FACT_PAGE_SIZE,
+    offset: number = 0,
+  ): Promise<{ facts: RecalledFact[]; total: number }> {
+    const driver = await this.requireDriver();
+    const [page, count] = await Promise.all([
+      driver.executeQuery(FACT_LIST_CYPHER, { userId, limit, offset }),
+      driver.executeQuery(FACT_COUNT_CYPHER, { userId }),
+    ]);
+
+    return {
+      facts: page.records.map((record) => ({
+        id: String(record.get("id")),
+        kind: "fact" as const,
+        text: String(record.get("text") ?? ""),
+        createdAt: String(record.get("createdAt") ?? ""),
+      })),
+      total: Number(count.records[0]?.get("total") ?? 0),
+    };
+  }
+
+  /**
+   * One fact by id, for the detail route. The `userId` is in the `MATCH`, so a
+   * fact belonging to another user reads as absent rather than as forbidden —
+   * there is nothing here a caller could learn from the difference.
+   */
+  async getFact(userId: string, id: string): Promise<RecalledFact | null> {
+    const driver = await this.requireDriver();
+    const result = await driver.executeQuery(FACT_GET_CYPHER, { id, userId });
+    const record = result.records[0];
+    if (!record) return null;
+
+    return {
+      id: String(record.get("id")),
+      kind: "fact",
+      text: String(record.get("sourceText") ?? ""),
+      createdAt: String(record.get("createdAt") ?? ""),
+    };
+  }
+
+  /**
+   * The one real delete in the design — everything else closes.
+   *
+   * The `userId` is in the `MATCH`, so `app/api/memories/[id]`'s ownership check
+   * is a second lock rather than the only one, matching the store-level boundary
+   * the memory API already had.
+   */
+  async deleteFact(userId: string, id: string): Promise<boolean> {
+    const driver = await this.requireDriver();
+    const result = await driver.executeQuery(FACT_DELETE_CYPHER, { id, userId });
+    const deleted = result.summary.counters.updates().nodesDeleted > 0;
+    if (deleted) await this.gcOrphans(userId);
+    return deleted;
+  }
+
+  /**
+   * Collect the nodes nothing points at any more. Three statements rather than
+   * one, so each uses its own `(userId)` index; see `buildOrphanGcCypher` for
+   * why `ABOUT` counts as a reference.
+   */
+  async gcOrphans(userId: string): Promise<void> {
+    const driver = await this.requireDriver();
+    for (const label of ["Entity", "Predicate", "Value"] as const) {
+      await driver.executeQuery(buildOrphanGcCypher(label), { userId });
+    }
   }
 
   /**

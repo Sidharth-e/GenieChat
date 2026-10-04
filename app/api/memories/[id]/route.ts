@@ -1,43 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { logger } from "@/lib/logger";
 import { getSessionUser } from "@/lib/auth/get-session-user";
 import { MemoryGraphStore } from "@/lib/memory/graph-store";
-import { api } from "@/lib/api-utils";
+import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
 
 const memoryStore = new MemoryGraphStore();
 
-export async function GET(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
+interface RouteParams {
+    params: Promise<{ id: string }>;
+}
+
+export async function GET(_req: NextRequest, { params }: RouteParams) {
     try {
         const user = await getSessionUser();
         if (!user) return api.unauthorized();
 
         const { id } = await params;
-        const memory = await memoryStore.getMemory(id, user.id);
+        const fact = await memoryStore.getFact(user.id, id);
+        if (!fact) return api.notFound("Memory");
 
-        if (!memory) {
-            return api.notFound("Memory not found");
-        }
-
-        if (memory.userId !== user.id) {
-            return api.forbidden("Access denied");
-        }
-
-        return NextResponse.json(memory);
+        return NextResponse.json(fact);
     } catch (error) {
-        logger.error({ err: error }, "Error fetching memory");
-        return api.serverError("Failed to fetch memory");
+        return handleError(error, "get memory");
     }
 }
 
-export async function PUT(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
+/**
+ * There is no `PUT`, and adding one would be a mistake.
+ *
+ * A fact is derived from a captured sentence, so there is nothing here to edit.
+ * A correction is a new sentence — "actually I work as Rust now" — and the
+ * supersede rule closes the fact it replaces.
+ */
+export async function DELETE(req: NextRequest, { params }: RouteParams) {
     try {
         const user = await getSessionUser();
         if (!user) return api.unauthorized();
@@ -55,64 +51,11 @@ export async function PUT(
         }
 
         const { id } = await params;
-        const memory = await memoryStore.getMemory(id, user.id);
+        const deleted = await memoryStore.deleteFact(user.id, id);
+        if (!deleted) return api.notFound("Memory");
 
-        if (!memory) {
-            return api.notFound("Memory not found");
-        }
-
-        if (memory.userId !== user.id) {
-            return api.forbidden("Access denied");
-        }
-
-        const { content } = await req.json();
-
-        const updated = await memoryStore.updateMemory(id, user.id, {
-            content: content?.trim(),
-        });
-
-        return NextResponse.json(updated);
-    } catch (error) {
-        logger.error({ err: error }, "Error updating memory");
-        return api.serverError("Failed to update memory");
-    }
-}
-
-export async function DELETE(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    try {
-        const user = await getSessionUser();
-        if (!user) return api.unauthorized();
-
-        const rateLimit = await checkRateLimit(req, {
-            namespace: "memories_write",
-            identifier: user.id,
-            ...config.rateLimit.standard,
-        });
-        if (!rateLimit.allowed) {
-            return api.tooManyRequests(
-                `Rate limit exceeded. Retry after ${rateLimit.retryAfterSeconds}s`,
-                rateLimit.retryAfterSeconds,
-            );
-        }
-
-        const { id } = await params;
-        const memory = await memoryStore.getMemory(id, user.id);
-
-        if (!memory) {
-            return api.notFound("Memory not found");
-        }
-
-        if (memory.userId !== user.id) {
-            return api.forbidden("Access denied");
-        }
-
-        await memoryStore.deleteMemory(id, user.id);
         return new NextResponse(null, { status: 204 });
     } catch (error) {
-        logger.error({ err: error }, "Error deleting memory");
-        return api.serverError("Failed to delete memory");
+        return handleError(error, "delete memory");
     }
 }

@@ -2,30 +2,23 @@
 
 import type { MouseEvent } from "react";
 import { motion } from "framer-motion";
-import { Brain, Pencil, Trash2, EllipsisVertical } from "lucide-react";
+import { Brain, Trash2, EllipsisVertical } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { Memory } from "@/lib/types";
+import type { RecalledFact } from "@/lib/memory/types";
 
 interface MemoryCardProps {
-  memory: Memory;
+  memory: RecalledFact;
   index?: number;
-  onEdit: (e: MouseEvent) => void;
   onDelete: (e: MouseEvent) => void;
 }
 
-export function MemoryCard({
-  memory,
-  index = 0,
-  onEdit,
-  onDelete,
-}: MemoryCardProps) {
+export function MemoryCard({ memory, index = 0, onDelete }: MemoryCardProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -63,14 +56,6 @@ export function MemoryCard({
             className="w-44 border-card-border bg-card-bg shadow-lg"
           >
             <DropdownMenuItem
-              className="cursor-pointer gap-2 text-xs"
-              onClick={(e) => onEdit(e)}
-            >
-              <Pencil className="h-3.5 w-3.5 text-text-secondary" />
-              Edit memory
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
               className="cursor-pointer gap-2 text-xs text-[var(--red)] focus:text-[var(--red)]"
               onClick={(e) => onDelete(e)}
             >
@@ -82,7 +67,7 @@ export function MemoryCard({
       </div>
 
       <p className="mt-1.5 min-h-10 line-clamp-3 text-xs leading-relaxed text-text-secondary">
-        {memory.content}
+        {memory.text}
       </p>
 
       <div className="mt-2.5 flex items-center gap-1.5 border-t border-card-border pt-2">
@@ -90,7 +75,7 @@ export function MemoryCard({
           {new Date(memory.createdAt).toLocaleDateString()}
         </span>
         <span className="text-[10px] text-text-secondary/60">
-          {memory.content.length} chars
+          {memory.text.length} chars
         </span>
       </div>
     </motion.div>

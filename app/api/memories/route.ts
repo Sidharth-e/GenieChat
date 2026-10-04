@@ -1,42 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
-import { logger } from "@/lib/logger";
 import { getSessionUser } from "@/lib/auth/get-session-user";
 import { MemoryGraphStore } from "@/lib/memory/graph-store";
-import { api } from "@/lib/api-utils";
+import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
+import { boundedInt } from "@/lib/api/query-params";
+import { MEMORY_FACT_PAGE_MAX, MEMORY_FACT_PAGE_SIZE } from "@/constants/memory";
 
 const memoryStore = new MemoryGraphStore();
 
+/**
+ * The memory list: one page of current facts, newest first.
+ *
+ * `boundedInt` takes a `min` on purpose. `Number(null)` is `0`, `0` is finite
+ * and not negative, so a guard that only rejected `NaN` let an *absent* `?limit`
+ * through as zero and the default listing answered with a single row. The floor
+ * is 1.
+ */
 export async function GET(req: NextRequest) {
     try {
         const user = await getSessionUser();
         if (!user) return api.unauthorized();
 
         const { searchParams } = new URL(req.url);
-        const query = searchParams.get("query")?.trim();
-        const requestedLimit = Number(searchParams.get("limit"));
-        const limit = Number.isFinite(requestedLimit)
-            ? Math.min(Math.max(Math.floor(requestedLimit), 1), 50)
-            : 10;
+        const limit = boundedInt(searchParams.get("limit"), {
+            fallback: MEMORY_FACT_PAGE_SIZE,
+            min: 1,
+            max: MEMORY_FACT_PAGE_MAX,
+        });
+        const offset = boundedInt(searchParams.get("offset"), {
+            fallback: 0,
+            min: 0,
+            max: Number.MAX_SAFE_INTEGER,
+        });
 
-        if (query) {
-            const result = await memoryStore.searchRelevantMemoriesWithGraph(
-                user.id,
-                query,
-                limit,
-            );
-            return NextResponse.json(result);
-        }
+        const { facts, total } = await memoryStore.listFacts(
+            user.id,
+            limit,
+            offset,
+        );
 
-        const memories = await memoryStore.getMemories(user.id);
-        return NextResponse.json(memories);
+        return NextResponse.json({ facts, total, limit, offset });
     } catch (error) {
-        logger.error({ err: error }, "Error fetching memories");
-        return api.serverError("Failed to fetch memories");
+        return handleError(error, "list memories");
     }
 }
 
+/**
+ * Capture a sentence. The route stages; it does not extract.
+ *
+ * It calls the same store method the `save_memory` tool calls, so the tool and
+ * the form are one write path and one idea of what a memory is. Rate limited
+ * for the same reason every other write here is: each capture costs an
+ * embedding call and stages work for the sweep.
+ */
 export async function POST(req: NextRequest) {
     try {
         const user = await getSessionUser();
@@ -54,22 +71,24 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const { content } = await req.json();
-
-        if (!content || typeof content !== "string") {
+        const body = await req.json().catch(() => null);
+        const text = typeof body?.content === "string" ? body.content.trim() : "";
+        if (text === "") {
             return api.badRequest("Content is required");
         }
 
-        const memory = await memoryStore.createMemory({
+        const capture = await memoryStore.captureSentence({
             userId: user.id,
-            userName: user.name,
-            userEmail: user.email,
-            content: content.trim(),
+            userName: user.name ?? "",
+            userEmail: user.email ?? "",
+            text,
         });
 
-        return NextResponse.json(memory, { status: 201 });
+        return NextResponse.json(
+            { id: capture.id, text, status: "captured" },
+            { status: 201 },
+        );
     } catch (error) {
-        logger.error({ err: error }, "Error creating memory");
-        return api.serverError("Failed to create memory");
+        return handleError(error, "save memory");
     }
 }

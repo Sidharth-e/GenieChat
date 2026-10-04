@@ -144,6 +144,10 @@ export const MEMORY_PREDICATE_CLUSTER_THRESHOLD = 0.95;
 /** How many ranked facts reach the prompt. */
 export const MEMORY_FACT_TOP = 5;
 
+/** One page of the memory list. The cap bounds what a single request can pull. */
+export const MEMORY_FACT_PAGE_SIZE = 20;
+export const MEMORY_FACT_PAGE_MAX = 100;
+
 /** Pending captures seeded alongside facts — the "saved is instantly recallable" arm. */
 export const MEMORY_CAPTURE_SEED_LIMIT = 5;
 

@@ -7,10 +7,8 @@ import {
   useMemories,
   useDeleteMemory,
   useCreateMemory,
-  useUpdateMemory,
 } from "@/hooks/use-memories-queries";
 import { useChatSettings } from "@/lib/stores";
-import { Memory } from "@/lib/types";
 import { MemoryCard } from "@/components/memories/memory-card";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 import { MemoryForm } from "@/components/memories/memory-form";
@@ -20,10 +18,6 @@ import { AnimatePresence } from "framer-motion";
 import { ContentLayout } from "@/components/common/content-layout";
 import { ContentFilterPills } from "@/components/common/content-filter-pills";
 
-interface MemoriesContentProps {
-  initialMemories?: Memory[];
-}
-
 type MemoriesView = "list" | "graph";
 
 const VIEWS: { id: MemoriesView; label: string; icon: typeof List }[] = [
@@ -31,16 +25,11 @@ const VIEWS: { id: MemoriesView; label: string; icon: typeof List }[] = [
   { id: "graph", label: "Graph", icon: Network },
 ];
 
-export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
-  const {
-    data: memories = initialMemories ?? [],
-    isLoading,
-    error,
-  } = useMemories(initialMemories);
+export function MemoriesContent() {
+  const { data, isLoading, error } = useMemories();
   const { memoryEnabled, setMemoryEnabled } = useChatSettings();
   const deleteMemoryMutation = useDeleteMemory();
   const createMemoryMutation = useCreateMemory();
-  const updateMemoryMutation = useUpdateMemory();
 
   const [searchQuery, setSearchQuery] = React.useState("");
   const [view, setView] = React.useState<MemoriesView>("list");
@@ -48,11 +37,13 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
     string | null
   >(null);
   const [isCreating, setIsCreating] = React.useState(false);
-  const [editingMemory, setEditingMemory] = React.useState<Memory | null>(null);
 
-  const filteredMemories = memories.filter((memory) => {
+  const facts = data?.facts ?? [];
+  const total = data?.total ?? 0;
+
+  const filteredFacts = facts.filter((fact) => {
     const query = searchQuery.toLowerCase();
-    return memory.content?.toLowerCase().includes(query);
+    return fact.text.toLowerCase().includes(query);
   });
 
   const handleCreate = async (content: string) => {
@@ -60,30 +51,15 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
     setIsCreating(false);
   };
 
-  const handleUpdate = async (content: string) => {
-    if (!editingMemory) return;
-
-    await updateMemoryMutation.mutateAsync({
-      id: editingMemory.id,
-      updates: { content },
-    });
-    setEditingMemory(null);
-  };
-
   const handleDelete = async (id: string) => {
     await deleteMemoryMutation.mutateAsync(id);
     setShowDeleteConfirm(null);
   };
 
-  const handleFormClose = () => {
-    setIsCreating(false);
-    setEditingMemory(null);
-  };
-
   return (
     <ContentLayout
       title="Long-Term Memory"
-      description="Personal, professional, and preference details remembered across conversations (Graph-RAG retrieval is used in chat)"
+      description="Personal, professional, and preference details remembered across conversations (index-seeded recall over the fact graph is used in chat)"
       searchPlaceholder="Search memories..."
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
@@ -117,10 +93,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
             {memoryEnabled ? "Memory On" : "Memory Off"}
           </Button>
           <Button
-            onClick={() => {
-              setEditingMemory(null);
-              setIsCreating(true);
-            }}
+            onClick={() => setIsCreating(true)}
             className="h-10 shrink-0 rounded-full px-4 shadow-none hover:scale-100"
           >
             New Memory
@@ -129,17 +102,14 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
         </div>
       }
     >
-      {/* Inline Create Form */}
+      {/* Capture only. A fact is derived from a sentence, so there is nothing
+          here to edit — a correction is a new sentence. */}
       <AnimatePresence>
         <MemoryForm
-          isOpen={isCreating || !!editingMemory}
-          onClose={handleFormClose}
-          onSave={editingMemory ? handleUpdate : handleCreate}
-          isSaving={
-            createMemoryMutation.isPending || updateMemoryMutation.isPending
-          }
-          mode={editingMemory ? "edit" : "create"}
-          initialContent={editingMemory?.content}
+          isOpen={isCreating}
+          onClose={() => setIsCreating(false)}
+          onSave={handleCreate}
+          isSaving={createMemoryMutation.isPending}
         />
       </AnimatePresence>
 
@@ -147,7 +117,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
           list's "no memories found" copy is about rows, not about the drawing. */}
       {view === "graph" ? (
         <MemoryGraph searchQuery={searchQuery} />
-      ) : isLoading && memories.length === 0 ? (
+      ) : isLoading && facts.length === 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
@@ -168,7 +138,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
             {error instanceof Error ? error.message : "Failed to load memories"}
           </span>
         </div>
-      ) : filteredMemories.length === 0 ? (
+      ) : filteredFacts.length === 0 ? (
         <div className="rounded-md border border-dashed border-card-border bg-card-bg p-10 text-center">
           <h3 className="text-base font-semibold text-foreground">
             No memories found
@@ -180,10 +150,7 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
           </p>
           {!searchQuery && (
             <Button
-              onClick={() => {
-                setEditingMemory(null);
-                setIsCreating(true);
-              }}
+              onClick={() => setIsCreating(true)}
               className="mt-4 h-9 rounded-full px-4 shadow-none hover:scale-100"
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -192,24 +159,26 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredMemories.map((memory, i) => (
-            <MemoryCard
-              key={memory.id}
-              memory={memory}
-              index={i}
-              onEdit={(e) => {
-                e.stopPropagation();
-                setIsCreating(false);
-                setEditingMemory(memory);
-              }}
-              onDelete={(e) => {
-                e.stopPropagation();
-                setShowDeleteConfirm(memory.id);
-              }}
-            />
-          ))}
-        </div>
+        <>
+          {/* The listing is paginated, so the count is the only thing that says
+              whether what is drawn is everything there is. */}
+          <p className="mb-3 text-xs text-text-secondary">
+            Showing {filteredFacts.length} of {total}
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredFacts.map((fact, i) => (
+              <MemoryCard
+                key={fact.id}
+                memory={fact}
+                index={i}
+                onDelete={(e) => {
+                  e.stopPropagation();
+                  setShowDeleteConfirm(fact.id);
+                }}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {/* Delete Confirmation Modal */}
@@ -223,6 +192,5 @@ export function MemoriesContent({ initialMemories }: MemoriesContentProps) {
         dialogClassName="border border-card-border"
       />
     </ContentLayout>
-
   );
 }

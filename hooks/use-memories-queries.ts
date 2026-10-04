@@ -1,50 +1,47 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Memory } from "@/lib/types";
+import { MEMORY_FACT_PAGE_MAX } from "@/constants/memory";
+import type { RecalledFact } from "@/lib/memory/types";
 import type { MemoryGraphView } from "@/lib/memory/graph-view";
 
 export const memoryKeys = {
     all: ["memories"] as const,
     lists: () => [...memoryKeys.all, "list"] as const,
-    list: (filters: string) => [...memoryKeys.lists(), { filters }] as const,
-    details: () => [...memoryKeys.all, "detail"] as const,
-    detail: (id: string) => [...memoryKeys.details(), id] as const,
     graph: () => [...memoryKeys.all, "graph"] as const,
 };
 
 /**
- * Fetches all memories with automatic caching and background refetching.
+ * One page of current facts, plus the true total.
+ *
+ * The endpoint paginates because the corpus is unbounded; the list is fetched
+ * at the endpoint's own ceiling and filtered client-side, so the search box
+ * covers everything one request can carry rather than only its first page.
+ * `total` is what the reader needs to know that even that ceiling was reached.
  */
-export function useMemories(initialData?: Memory[]) {
-    return useQuery<Memory[]>({
+export interface MemoryListResponse {
+    facts: RecalledFact[];
+    total: number;
+    limit: number;
+    offset: number;
+}
+
+/**
+ * Fetches the memory list with automatic caching and background refetching.
+ */
+export function useMemories() {
+    return useQuery<MemoryListResponse>({
         queryKey: memoryKeys.lists(),
         queryFn: async () => {
-            const response = await fetch("/api/memories");
+            const response = await fetch(
+                `/api/memories?limit=${MEMORY_FACT_PAGE_MAX}`,
+            );
             if (!response.ok) {
                 throw new Error("Failed to fetch memories");
             }
             return response.json();
         },
-        initialData,
         staleTime: 1000 * 60 * 5,
-    });
-}
-
-/**
- * Fetches a single memory by ID.
- */
-export function useMemory(id: string | null) {
-    return useQuery<Memory>({
-        queryKey: memoryKeys.detail(id!),
-        queryFn: async () => {
-            const response = await fetch(`/api/memories/${id}`);
-            if (!response.ok) {
-                throw new Error("Failed to fetch memory");
-            }
-            return response.json();
-        },
-        enabled: !!id,
     });
 }
 
@@ -72,15 +69,17 @@ export function useMemoryGraph() {
 }
 
 /**
- * Creates a new memory with automatic cache invalidation.
+ * Captures a sentence and invalidates the list.
+ *
+ * No optimistic row: a capture is not a fact. It has no subject, predicate or
+ * object until the extractor has run, so a card invented here would show the
+ * reader something the graph does not hold.
  */
 export function useCreateMemory() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (memoryData: {
-            content: string;
-        }) => {
+        mutationFn: async (memoryData: { content: string }) => {
             const response = await fetch("/api/memories", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -91,13 +90,15 @@ export function useCreateMemory() {
                 throw new Error("Failed to create memory");
             }
 
-            return response.json() as Promise<Memory>;
+            return response.json() as Promise<{
+                id: string;
+                text: string;
+                status: "captured";
+            }>;
         },
-        onSuccess: (newMemory) => {
-            queryClient.setQueryData<Memory[]>(memoryKeys.lists(), (old) =>
-                old ? [newMemory, ...old] : [newMemory]
-            );
-            // The graph is derived from the memories, so a new one makes the
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: memoryKeys.lists() });
+            // The graph is derived from the facts, so a new capture makes the
             // drawn version wrong until it is refetched. Marking it stale is
             // free when the graph is not mounted.
             queryClient.invalidateQueries({ queryKey: memoryKeys.graph() });
@@ -106,51 +107,11 @@ export function useCreateMemory() {
 }
 
 /**
- * Updates a memory with optimistic updates.
- */
-export function useUpdateMemory() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async ({ id, updates }: { id: string; updates: Partial<Memory> }) => {
-            const response = await fetch(`/api/memories/${id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updates),
-            });
-
-            if (!response.ok) {
-                throw new Error("Failed to update memory");
-            }
-
-            return response.json() as Promise<Memory>;
-        },
-        onMutate: async ({ id, updates }) => {
-            await queryClient.cancelQueries({ queryKey: memoryKeys.lists() });
-
-            const previousMemories = queryClient.getQueryData<Memory[]>(memoryKeys.lists());
-
-            queryClient.setQueryData<Memory[]>(memoryKeys.lists(), (old) =>
-                old?.map((memory) => (memory.id === id ? { ...memory, ...updates } : memory))
-            );
-
-            return { previousMemories };
-        },
-        onError: (_err, _variables, context) => {
-            if (context?.previousMemories) {
-                queryClient.setQueryData(memoryKeys.lists(), context.previousMemories);
-            }
-        },
-        onSettled: (_data, _error, { id }) => {
-            queryClient.invalidateQueries({ queryKey: memoryKeys.lists() });
-            queryClient.invalidateQueries({ queryKey: memoryKeys.detail(id) });
-            queryClient.invalidateQueries({ queryKey: memoryKeys.graph() });
-        },
-    });
-}
-
-/**
- * Deletes a memory with cache invalidation.
+ * Deletes a fact with cache invalidation.
+ *
+ * A delete is a real `DETACH DELETE`, and the orphan GC may collect entities,
+ * predicates and values with it — so both the page and the drawing are refetched
+ * rather than patched.
  */
 export function useDeleteMemory() {
     const queryClient = useQueryClient();
@@ -167,10 +128,8 @@ export function useDeleteMemory() {
 
             return id;
         },
-        onSuccess: (deletedId) => {
-            queryClient.setQueryData<Memory[]>(memoryKeys.lists(), (old) =>
-                old?.filter((memory) => memory.id !== deletedId)
-            );
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: memoryKeys.lists() });
             queryClient.invalidateQueries({ queryKey: memoryKeys.graph() });
         },
     });
