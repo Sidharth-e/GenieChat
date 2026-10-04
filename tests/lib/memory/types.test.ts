@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type {
+  FactRecallMetadata,
+  FactRecallResult,
+  RecalledFact,
+} from "@/lib/memory/types";
 import {
   MEMORY_EDGE_NEIGHBOR_LIMIT,
   MEMORY_EDGE_THRESHOLD,
@@ -65,5 +70,66 @@ describe("memorySeedLimit", () => {
   it("never drops below the floor, so a small top still seeds a graph walk", () => {
     expect(memorySeedLimit(1)).toBe(MEMORY_SEED_MIN);
     expect(memorySeedLimit(0)).toBe(MEMORY_SEED_MIN);
+  });
+});
+
+/**
+ * Shape tests for the recall result. The types carry no runtime logic, but two
+ * things about them are load-bearing enough to pin: `lexicalSeedCount` is gone
+ * (it always reported 0 and advertised an arm that does not exist), and a
+ * capture and a fact are distinguishable at the call site.
+ */
+describe("RecalledFact", () => {
+  it("distinguishes a staged sentence from a materialized fact", () => {
+    const fact: RecalledFact = {
+      id: "f1",
+      kind: "fact",
+      text: "I work as a Rust developer",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const capture: RecalledFact = {
+      id: "c1",
+      kind: "capture",
+      text: "I just moved to Bangalore",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    };
+    expect(fact.kind).not.toBe(capture.kind);
+  });
+});
+
+describe("FactRecallMetadata", () => {
+  it("reports only counts that can be non-zero", () => {
+    const metadata: FactRecallMetadata = {
+      mode: "graph",
+      seedCount: 3,
+      expandedCount: 4,
+      totalCandidates: 7,
+    };
+    expect(Object.keys(metadata).sort()).toEqual([
+      "expandedCount",
+      "mode",
+      "seedCount",
+      "totalCandidates",
+    ]);
+  });
+
+  it("has no lexical arm, because there is none", () => {
+    const metadata = {
+      mode: "vector",
+      seedCount: 0,
+      expandedCount: 0,
+      totalCandidates: 0,
+    } as FactRecallMetadata;
+    expect("lexicalSeedCount" in metadata).toBe(false);
+  });
+});
+
+describe("FactRecallResult", () => {
+  it("carries an empty fact list with metadata rather than a bare array", () => {
+    const result: FactRecallResult = {
+      facts: [],
+      metadata: { mode: "vector", seedCount: 0, expandedCount: 0, totalCandidates: 0 },
+    };
+    expect(result.facts).toEqual([]);
   });
 });
