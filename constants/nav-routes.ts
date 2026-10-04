@@ -31,9 +31,10 @@ export function isNavItemActive(pathname: string, href: string): boolean {
 
 export const RAIL_ITEMS: NavItem[] = [
   { href: HOME_ROUTE, icon: LayoutGrid, label: "Home" },
+    { href: "/schedules", icon: CalendarClock, label: "Schedules" },
   { href: "/agents", icon: Cpu, label: "Agents" },
-  { href: "/connectors", icon: Plug, label: "Connectors" },
   { href: "/workflow", icon: GitMerge, label: "Workflows" },
+  { href: "/artifacts", icon: FileBox, label: "Artifacts" },
 ];
 
 /** Rendered last on the rail, below the flyout groups. */
@@ -46,14 +47,9 @@ export const RAIL_HISTORY_ITEM: NavItem = {
 export const BUILD_ITEMS: NavItem[] = [
   { href: "/auto", icon: Zap, label: "Auto" },
   { href: "/tools", icon: Wrench, label: "Tools" },
-  { href: "/schedules", icon: CalendarClock, label: "Schedules" },
   { href: "/webhooks", icon: Webhook, label: "Webhooks" },
 ];
 
-export const LIBRARY_ITEMS: NavItem[] = [
-  { href: "/artifacts", icon: FileBox, label: "Artifacts" },
-  { href: "/memories", icon: Brain, label: "Memories" },
-];
 
 export const ADMIN_NAV_ITEM: NavItem = {
   href: "/admin",

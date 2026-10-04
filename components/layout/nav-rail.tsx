@@ -23,7 +23,6 @@ import {
   RAIL_ITEMS,
   RAIL_HISTORY_ITEM,
   BUILD_ITEMS,
-  LIBRARY_ITEMS,
   isNavItemActive,
   type NavItem,
 } from "@/constants/nav-routes";
@@ -124,7 +123,7 @@ export function NavRail() {
   useEffect(() => {
     const routesToPrefetch = Array.from(
       new Set(
-        [...RAIL_ITEMS, RAIL_HISTORY_ITEM, ...BUILD_ITEMS, ...LIBRARY_ITEMS].map(
+        [...RAIL_ITEMS, RAIL_HISTORY_ITEM, ...BUILD_ITEMS].map(
           (item) => item.href,
         ),
       ),
@@ -161,13 +160,6 @@ export function NavRail() {
             items={BUILD_ITEMS}
             pathname={pathname}
           />
-          <RailFlyout
-            triggerIcon={FolderOpen}
-            label="Library"
-            items={LIBRARY_ITEMS}
-            pathname={pathname}
-          />
-
           <RailLink item={RAIL_HISTORY_ITEM} pathname={pathname} />
         </nav>
 
