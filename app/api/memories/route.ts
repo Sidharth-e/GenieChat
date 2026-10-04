@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/get-session-user";
 import { MemoryGraphStore } from "@/lib/memory/graph-store";
+import { nudgeMemorySweep } from "@/lib/memory/nudge";
 import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
@@ -83,6 +84,10 @@ export async function POST(req: NextRequest) {
             userEmail: user.email ?? "",
             text,
         });
+
+        // The capture is on disk; this turns it into facts without waiting for
+        // the external driver. Scheduled post-response, so the 201 is not delayed.
+        nudgeMemorySweep(user.id);
 
         return NextResponse.json(
             { id: capture.id, text, status: "captured" },

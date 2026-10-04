@@ -33,6 +33,16 @@ export const createSaveMemoryTool = (
           text: input.content,
         });
 
+        // The save is durable; the nudge is best-effort. Guarded separately so
+        // neither the import nor a scheduling failure can turn a saved memory
+        // into a reported error — the external sweep is the retry.
+        try {
+          const { nudgeMemorySweep } = await import("@/lib/memory/nudge");
+          nudgeMemorySweep(userId);
+        } catch {
+          // The external sweep picks the capture up.
+        }
+
         return JSON.stringify({
           success: true,
           message: `Memory saved: "${input.content}"`,
