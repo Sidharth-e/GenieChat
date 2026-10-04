@@ -291,17 +291,21 @@ in `buildNeo4jDdl`.
 `GET /api/memories/graph`, which is session-scoped like every other memory route,
 and assembled by `buildMemoryGraphView` from `lib/memory/graph-view.ts`.
 
-**Four node kinds and three edge kinds.** A fact is a node, and its subject,
+**Five node kinds and three edge kinds.** A fact is a node, and its subject,
 predicate and object are three more reached by three separate edges. `:Entity`,
 `:Predicate` and `:Value` all MERGE on a per-user key, so a satellite is genuinely
 shared across the facts that mention it and the satellites *are* the hubs —
 nothing computes communities, because the clustering is already in the data.
 
-**The `:User` anchor is deliberately not drawn.** It is the subject of nearly
-every personal fact, so drawing it produces a star of degree *n* that tells the
-reader nothing and collapses the layout. A fact whose subject is the anchor keeps
-its predicate and object edges and loses only the subject one. Recall's separate
-rule not to *traverse* through `:User` is untouched.
+**The `:User` anchor is drawn, pinned at the canvas centre.** The extractor names
+the person themself as the subject of every sentence about them, so the anchor is
+the subject of most facts and is the one thing that says whose graph this is. Its
+star of degree *n* is what the layout is built to hold: the canvas pins it at the
+centre once the simulation is seeded, so a fact that hangs off it keeps its
+subject edge and the picture reads as everything around the reader. `forceCenter`
+translates pinned nodes too, but the anchor is the centroid of its neighbours, so
+the drift is nil. Recall's separate rule not to *traverse* through `:User` is
+untouched — that one is about the read, not the drawing.
 
 **The read is two round trips.** `GRAPH_FACTS_CYPHER` picks the window — newest
 first, capped at `MEMORY_GRAPH_FACT_LIMIT` — returning each fact with its three
@@ -316,8 +320,9 @@ its own.
 bounds the read; `MEMORY_GRAPH_NODE_LIMIT` (3000) bounds the drawing. The second
 is reached only when facts carry mostly unique satellites: past it the
 lowest-degree satellites are dropped, ties broken by label then id so the dropped
-set is the same on every read, and **facts are never dropped** — a fact is what the
-reader came for, and its satellites are what connect it to the rest.
+set is the same on every read, and **facts and the anchor are never dropped** — a
+fact is what the reader came for, its satellites are what connect it to the rest,
+and the anchor is the centre the whole picture is read around.
 
 **The layout is a stepper the renderer drives.** `lib/memory/graph-layout.ts`
 seeds every node on a golden-angle spiral — assigned explicitly rather than left
@@ -332,14 +337,15 @@ worker would add a per-frame structured clone that costs more than the tick it
 saves. Past that, the upgrade is a worker behind the same stepper interface, with
 no change to any consumer.
 
-**Identity is never colour-alone.** Node kind is shape — a rounded square is a
-fact, a circle an entity, a diamond a predicate, a smaller circle a value — and
-size, degree growing the radius, as well as colour; edge kind is line style. The
-colours are `--chart-1` through `--chart-4`, the repo's own categorical and
-colorblind-validated palette, chosen over the semantic `--red`/`--green` tokens
-because those carry error and success meaning everywhere else and must not be
-spent on a node kind. The legend, the detail card and the keyboard announcement
-each name the kind in words. The canvas reads the tokens with `getComputedStyle`
+**Identity is never colour-alone.** Node kind is shape — a ring is the user
+anchor, a rounded square a fact, a circle an entity, a diamond a predicate, a
+smaller circle a value — and size, degree growing the radius, as well as colour;
+edge kind is line style. The colours are `--chart-1` through `--chart-5`, the
+repo's own categorical and colorblind-validated palette (the anchor takes
+`--chart-5`), chosen over the semantic `--red`/`--green` tokens because those
+carry error and success meaning everywhere else and must not be spent on a node
+kind. The legend, the detail card and the keyboard announcement each name the
+kind in words. The canvas reads the tokens with `getComputedStyle`
 at runtime — `ctx.fillStyle` cannot take a `var()` — through
 `hooks/use-memory-graph-palette.ts`, which re-reads on the resolved theme, so a
 cached colour from the previous theme is never drawn.

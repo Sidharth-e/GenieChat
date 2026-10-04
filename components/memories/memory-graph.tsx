@@ -41,7 +41,13 @@ import {
 import { MemoryGraphCanvas } from "@/components/memories/memory-graph-canvas";
 import { cn } from "@/lib/utils";
 
-const NODE_KINDS: MemoryGraphNodeKind[] = ["fact", "entity", "predicate", "value"];
+const NODE_KINDS: MemoryGraphNodeKind[] = [
+  "user",
+  "fact",
+  "entity",
+  "predicate",
+  "value",
+];
 const EDGE_KINDS: MemoryGraphEdgeKind[] = ["SUBJECT", "PREDICATE", "OBJECT"];
 
 /**
@@ -79,6 +85,11 @@ function LegendNode({ kind }: { kind: MemoryGraphNodeKind }) {
   const fill = `var(${MEMORY_GRAPH_NODE_TOKEN[kind]})`;
   return (
     <svg width="14" height="14" aria-hidden="true" className="shrink-0">
+      {kind === "user" && (
+        // The canvas's ring: an annulus half the outer radius thick, which a
+        // stroked circle at the mid-radius reproduces exactly.
+        <circle cx="7" cy="7" r="3.375" fill="none" stroke={fill} strokeWidth="2.25" />
+      )}
       {kind === "fact" && <rect x="2.5" y="2.5" width="9" height="9" rx="2.5" fill={fill} />}
       {kind === "entity" && <circle cx="7" cy="7" r="4.5" fill={fill} />}
       {kind === "predicate" && <polygon points="7,2.5 11.5,7 7,11.5 2.5,7" fill={fill} />}
@@ -237,9 +248,11 @@ export function MemoryGraph({ searchQuery, className }: MemoryGraphProps) {
   }
 
   const factCount = data.nodes.filter((node) => node.kind === "fact").length;
-  const satelliteCount = data.nodes.length - factCount;
+  const anchorCount = data.nodes.filter((node) => node.kind === "user").length;
+  const satelliteCount = data.nodes.length - factCount - anchorCount;
   const ariaLabel =
-    `Memory graph: ${factCount} ${factCount === 1 ? "memory" : "memories"} linked through ` +
+    `Memory graph: ${factCount} ${factCount === 1 ? "memory" : "memories"}` +
+    `${anchorCount ? " around you" : ""}, linked through ` +
     `${satelliteCount} shared entities, predicates and values. ` +
     "Use the arrow keys to step through the most connected nodes, Enter to open one, Escape to clear.";
 

@@ -91,8 +91,12 @@ function truncateLabel(node: MemoryGraphViewNode): string {
 
 /**
  * Kind is carried by shape as well as colour, so the picture still reads when
- * the palette does not: a fact is a rounded square, an entity a circle, a
- * predicate a diamond, a value a smaller circle.
+ * the palette does not: the anchor is a ring, a fact a rounded square, an entity
+ * a circle, a predicate a diamond, a value a smaller circle.
+ *
+ * The anchor is the one outline shape, because it is the one node the reader is
+ * meant to locate first — a hollow ring at the centre of a disc of filled marks
+ * is unmistakable, and it stays legible with a fact drawn over it.
  */
 function drawNodeShape(
   ctx: CanvasRenderingContext2D,
@@ -102,7 +106,13 @@ function drawNodeShape(
   radius: number,
 ): void {
   ctx.beginPath();
-  if (kind === "fact") {
+  if (kind === "user") {
+    // Two arcs wound in opposite directions punch the hole: an even-odd fill
+    // would also hollow the ring out where a fact overlaps it.
+    ctx.arc(x, y, radius, 0, TAU);
+    ctx.moveTo(x + radius * 0.5, y);
+    ctx.arc(x, y, radius * 0.5, 0, TAU, true);
+  } else if (kind === "fact") {
     const side = radius * 2;
     if (typeof ctx.roundRect === "function") {
       ctx.roundRect(x - radius, y - radius, side, side, radius * 0.35);
@@ -373,10 +383,21 @@ export function MemoryGraphCanvas({
       size.width,
       size.height,
     );
-    simulationRef.current = createMemoryLayout(seeded, view.edges, {
+    const simulation = createMemoryLayout(seeded, view.edges, {
       width: size.width,
       height: size.height,
     });
+    simulationRef.current = simulation;
+
+    // The anchor is pinned at the centre rather than left to the simulation:
+    // every fact hangs off it, so a free anchor would be pulled to wherever the
+    // facts settle and the picture would read as a cloud with no centre. The
+    // layout's own `forceCenter` translates pinned nodes too, but the anchor is
+    // the centroid of its neighbours, so the mean it subtracts is the centre it
+    // was pinned to and the drift is nil.
+    const anchor = view.nodes.find((node) => node.kind === "user");
+    if (anchor) simulation.pin(anchor.id, size.width / 2, size.height / 2);
+
     positionsRef.current = new Map(seeded.map((node) => [node.id, node]));
     cameraRef.current = { x: 0, y: 0, k: 1 };
     startLoop();
@@ -534,8 +555,16 @@ export function MemoryGraphCanvas({
   };
 
   const releaseNode = (id: string) => {
-    // Releasing the pin is what lets the node settle back into the layout.
-    simulationRef.current?.pin(id, 0, null);
+    const anchor = view.nodes.find((node) => node.kind === "user");
+    if (anchor?.id === id) {
+      // The anchor is pinned at the centre for the life of the picture, so a
+      // drag of it is released back to that centre rather than to the
+      // simulation — otherwise dragging the centre would unpin it for good.
+      simulationRef.current?.pin(id, size.width / 2, size.height / 2);
+    } else {
+      // Releasing the pin is what lets the node settle back into the layout.
+      simulationRef.current?.pin(id, 0, null);
+    }
     simulationRef.current?.reheat(0.3);
     startLoop();
   };

@@ -319,6 +319,7 @@ export const MEMORY_GRAPH_NODE_LIMIT = 3000;
  * degree up to `MEMORY_GRAPH_MAX_NODE_RADIUS`.
  */
 export const MEMORY_GRAPH_NODE_BASE_RADIUS = {
+  user: 9,
   fact: 3.5,
   entity: 5,
   predicate: 4.5,

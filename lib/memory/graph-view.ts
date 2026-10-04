@@ -12,6 +12,13 @@
  * `:Entity`, `:Predicate` and `:Value` are all MERGEd and therefore shared — the
  * clustering the drawing shows is in the data, not computed here.
  *
+ * The `:User` anchor is drawn, as a kind of its own. The extractor names the
+ * person themself as the subject of every sentence about them, so the anchor is
+ * the subject of most facts and is the one thing that says whose graph this is.
+ * Drawing it is a star of degree *n*, which the layout is built to hold: the
+ * canvas pins it at the centre, so the picture reads as everything around the
+ * reader rather than as an unlabelled cloud.
+ *
  * It is also the only place the tenant boundary is *not* enforced. That is
  * correct: the query in `cypher.ts` already filters on `userId`, and a second
  * check here would be checking rows this module has no way to authenticate.
@@ -40,7 +47,12 @@ export interface MemoryGraphFactRow {
   objectName: string | null;
 }
 
-export type MemoryGraphNodeKind = "fact" | "entity" | "predicate" | "value";
+export type MemoryGraphNodeKind =
+  | "user"
+  | "fact"
+  | "entity"
+  | "predicate"
+  | "value";
 
 export type MemoryGraphEdgeKind = "SUBJECT" | "PREDICATE" | "OBJECT";
 
@@ -88,17 +100,22 @@ export interface MemoryGraphView {
  * kind spending them would read as a state.
  */
 export const MEMORY_GRAPH_NODE_LABELS: Record<MemoryGraphNodeKind, string> = {
+  user: "You",
   fact: "Memory",
   entity: "Entity",
   predicate: "Predicate",
   value: "Value",
 };
 export const MEMORY_GRAPH_NODE_TOKEN: Record<MemoryGraphNodeKind, string> = {
+  user: "--chart-5",
   fact: "--chart-1",
   entity: "--chart-2",
   predicate: "--chart-3",
   value: "--chart-4",
 };
+
+/** The drawn name of the anchor when the `:User` node carries no name of its own. */
+export const MEMORY_GRAPH_ANCHOR_FALLBACK_LABEL = "You";
 
 /**
  * What each edge kind is called, in one place, for the same reason.
@@ -135,8 +152,16 @@ export function nodeRadius(kind: MemoryGraphNodeKind, degree: number): number {
   return Math.min(grown, MEMORY_GRAPH_MAX_NODE_RADIUS);
 }
 
-/** The Neo4j label → drawn kind map. A subject or object of any other label is not drawn. */
+/**
+ * The Neo4j label → drawn kind map for the two non-fact ends of a fact. A label
+ * of any other kind is not drawn.
+ *
+ * `User` is here rather than skipped: the extractor makes the person themself the
+ * subject of every sentence about them, so the anchor is the subject of most
+ * facts, and the drawing is built around it — see the module header.
+ */
 const SATELLITE_KINDS: Record<string, MemoryGraphNodeKind | undefined> = {
+  User: "user",
   Entity: "entity",
   Value: "value",
 };
@@ -192,11 +217,16 @@ export function buildMemoryGraphView(
     const key = `${kind}:${id}`;
     const existing = satellites.get(key);
     if (existing) return existing;
+    // The anchor's `:User` node carries the person's name when one was ever
+    // recorded; the pronoun is what the drawing falls back to, so the centre of
+    // the picture is never a blank circle.
+    const label =
+      name ?? (kind === "user" ? MEMORY_GRAPH_ANCHOR_FALLBACK_LABEL : "");
     const node: MemoryGraphViewNode = {
       id: key,
       kind,
-      label: name ?? "",
-      detail: name ?? "",
+      label,
+      detail: label,
       createdAt: null,
       degree: 0,
     };
@@ -207,10 +237,7 @@ export function buildMemoryGraphView(
   for (const row of rows) {
     const source = `fact:${row.factId}`;
 
-    // The `:User` anchor is the subject of nearly every fact, so it is not
-    // drawn: a star of degree n says nothing and collapses the layout. Its edge
-    // goes with it, and the fact keeps its predicate and object edges.
-    if (row.subjectId && row.subjectKind !== "User") {
+    if (row.subjectId) {
       const kind = satelliteKindFor(row.subjectKind);
       if (kind) {
         const node = addSatellite(kind, row.subjectId, row.subjectName);
@@ -256,18 +283,24 @@ export function buildMemoryGraphView(
   }
 
   const allSatellites = [...satellites.values()];
+  // The anchor is kept for the same reason a fact is: it is the centre the whole
+  // drawing is read around, so dropping it past the ceiling would leave the
+  // picture without the one node that says whose memories these are.
+  const anchors = allSatellites.filter((node) => node.kind === "user");
+  const rankable = allSatellites.filter((node) => node.kind !== "user");
   let kept = new Set<string>([
     ...factNodes.map((node) => node.id),
     ...allSatellites.map((node) => node.id),
   ]);
 
   if (kept.size > nodeLimit) {
-    const budget = Math.max(nodeLimit - factNodes.length, 0);
-    const ranked = [...allSatellites].sort((a, b) =>
+    const budget = Math.max(nodeLimit - factNodes.length - anchors.length, 0);
+    const ranked = rankable.slice().sort((a, b) =>
       compareSatellites(a, b, fullDegree),
     );
     kept = new Set<string>([
       ...factNodes.map((node) => node.id),
+      ...anchors.map((node) => node.id),
       ...ranked.slice(0, budget).map((node) => node.id),
     ]);
   }
@@ -285,12 +318,17 @@ export function buildMemoryGraphView(
   }
 
   // Facts first, in the order the query returned them (newest first), then
-  // satellites by degree — a stable drawing order.
+  // satellites by degree, then the anchor — a stable drawing order, and the
+  // anchor last so the ring at the centre is painted over the facts that crowd
+  // it rather than under them.
   const nodes: MemoryGraphViewNode[] = [
     ...factNodes.map((node) => ({ ...node, degree: degree.get(node.id) ?? 0 })),
-    ...allSatellites
+    ...rankable
       .filter((node) => kept.has(node.id))
       .sort((a, b) => compareSatellites(a, b, degree))
+      .map((node) => ({ ...node, degree: degree.get(node.id) ?? 0 })),
+    ...anchors
+      .filter((node) => kept.has(node.id))
       .map((node) => ({ ...node, degree: degree.get(node.id) ?? 0 })),
   ];
 
