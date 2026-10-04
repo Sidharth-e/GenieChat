@@ -185,12 +185,24 @@ export const MEMORY_CAPTURE_MAX_ATTEMPTS = 3;
 export const MEMORY_CAPTURE_SWEEP_LIMIT = 10;
 
 /**
- * How long after a capture the list is read once more. Extraction runs after the
- * response, so the response carries no fact and cannot say when one exists; this
- * is the window rather than a poll, and a slower extraction is caught by the
- * next visit.
+ * How often the list re-reads while a capture is still pending.
+ *
+ * Extraction runs after the response, so the response carries no fact and cannot
+ * say when one exists — but the read *can* say a capture is outstanding, and
+ * that signal ends on its own: the capture leaves the pending set the moment the
+ * sweep materializes it, or once its attempts are spent. A poll keyed on it
+ * therefore stops without anyone guessing how long an extraction takes, which a
+ * fixed window cannot do.
  */
-export const MEMORY_CAPTURE_SETTLE_MS = 4000;
+export const MEMORY_CAPTURE_POLL_MS = 1500;
+
+/**
+ * The ceiling on that polling. The pending signal already terminates, so this
+ * bounds the one case it cannot see: an app whose sweep never runs at all, where
+ * the capture would otherwise be pending forever and the tab would poll forever
+ * with it.
+ */
+export const MEMORY_CAPTURE_POLL_MAX_MS = 30_000;
 
 /**
  * The `(subject, predicate)` groups one reconciliation pass reads. Reconciliation

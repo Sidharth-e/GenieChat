@@ -28,6 +28,7 @@ import {
   CAPTURE_CREATE_CYPHER,
   CAPTURE_DELETE_CYPHER,
   CAPTURE_PENDING_CYPHER,
+  CAPTURE_PENDING_COUNT_CYPHER,
   CAPTURE_RETRY_CYPHER,
   ENTITY_ALIAS_CYPHER,
   ENTITY_CREATE_CYPHER,
@@ -613,16 +614,25 @@ export class MemoryGraphStore {
    * The count is a second statement rather than a `count(*) OVER ()` beside the
    * page, because the window function would force the ordering pass over every
    * row on every page; an indexed count is cheaper than that.
+   *
+   * `pending` rides along because the page cannot answer "is a fact on its way?".
+   * A capture is staged before any model sees it, so a save reports success with
+   * no fact in the page; the pending count is what tells the reader to look
+   * again rather than conclude the save was lost.
    */
   async listFacts(
     userId: string,
     limit: number = MEMORY_FACT_PAGE_SIZE,
     offset: number = 0,
-  ): Promise<{ facts: RecalledFact[]; total: number }> {
+  ): Promise<{ facts: RecalledFact[]; total: number; pending: number }> {
     const driver = await this.requireDriver();
-    const [page, count] = await Promise.all([
+    const [page, count, pending] = await Promise.all([
       driver.executeQuery(FACT_LIST_CYPHER, { userId, limit, offset }),
       driver.executeQuery(FACT_COUNT_CYPHER, { userId }),
+      driver.executeQuery(CAPTURE_PENDING_COUNT_CYPHER, {
+        userId,
+        maxAttempts: MEMORY_CAPTURE_MAX_ATTEMPTS,
+      }),
     ]);
 
     return {
@@ -633,6 +643,7 @@ export class MemoryGraphStore {
         createdAt: String(record.get("createdAt") ?? ""),
       })),
       total: Number(count.records[0]?.get("total") ?? 0),
+      pending: Number(pending.records[0]?.get("pending") ?? 0),
     };
   }
 

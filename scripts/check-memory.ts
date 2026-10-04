@@ -33,6 +33,7 @@ import {
   CAPTURE_COUNT_CYPHER,
   CAPTURE_CREATE_CYPHER,
   CAPTURE_PENDING_CYPHER,
+  CAPTURE_PENDING_COUNT_CYPHER,
   CAPTURE_RETRY_CYPHER,
   ENTITY_ALIAS_CYPHER,
   ENTITY_CREATE_CYPHER,
@@ -254,6 +255,19 @@ async function main(): Promise<void> {
         })
       ).records.length;
 
+    // The list's poll reads this count rather than the worklist. It has to carry
+    // the same attempts bound, or a spent capture would keep a tab polling for
+    // work that will never run — so the two are asserted together below.
+    const pendingCount = async () =>
+      Number(
+        (
+          await driver.executeQuery(CAPTURE_PENDING_COUNT_CYPHER, {
+            userId: f.userId,
+            maxAttempts: MEMORY_CAPTURE_MAX_ATTEMPTS,
+          })
+        ).records[0].get("pending"),
+      );
+
     for (let i = 0; i < MEMORY_CAPTURE_MAX_ATTEMPTS - 1; i += 1) {
       await driver.executeQuery(CAPTURE_RETRY_CYPHER, { id, userId: f.userId });
     }
@@ -261,11 +275,19 @@ async function main(): Promise<void> {
       (await pending()) === 1,
       "a capture under the attempt cap must still be pending",
     );
+    assert(
+      (await pendingCount()) === 1,
+      "the pending count must agree with the worklist under the cap",
+    );
 
     await driver.executeQuery(CAPTURE_RETRY_CYPHER, { id, userId: f.userId });
     assert(
       (await pending()) === 0,
       "a capture at the attempt cap must drop out of the worklist",
+    );
+    assert(
+      (await pendingCount()) === 0,
+      "the pending count must drop a spent capture with the worklist",
     );
 
     // Spent, not lost: the sentence is still on disk.

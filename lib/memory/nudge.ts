@@ -16,10 +16,17 @@ import { sweepUser } from "./sweep-runner";
  * the retry for a capture whose extraction failed or whose nudge never ran.
  */
 export function nudgeMemorySweep(userId: string): void {
+  // Synchronous guard on the whole body, not just on the promise: a throw from
+  // the sweep call itself — before any promise exists — would otherwise reach
+  // the request handler and turn a durable capture into a 500.
   const run = () => {
-    void sweepUser(userId).catch((error) => {
+    try {
+      void sweepUser(userId).catch((error) => {
+        logger.error({ err: error, userId }, "Nudged memory sweep failed");
+      });
+    } catch (error) {
       logger.error({ err: error, userId }, "Nudged memory sweep failed");
-    });
+    }
   };
 
   try {

@@ -35,13 +35,13 @@ export async function GET(req: NextRequest) {
             max: Number.MAX_SAFE_INTEGER,
         });
 
-        const { facts, total } = await memoryStore.listFacts(
+        const { facts, total, pending } = await memoryStore.listFacts(
             user.id,
             limit,
             offset,
         );
 
-        return NextResponse.json({ facts, total, limit, offset });
+        return NextResponse.json({ facts, total, pending, limit, offset });
     } catch (error) {
         return handleError(error, "list memories");
     }

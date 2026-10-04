@@ -153,6 +153,19 @@ export const CAPTURE_PENDING_CYPHER = `
   LIMIT toInteger($limit)
 `;
 
+/**
+ * How much of the user's work is still outstanding, for the list's poll.
+ *
+ * Bounded by `attempts` for the same reason the worklist is: a capture whose
+ * extraction has been spent is no longer pending, and a signal that counted it
+ * would keep the tab polling for work that will never run.
+ */
+export const CAPTURE_PENDING_COUNT_CYPHER = `
+  MATCH (c:Capture {userId: $userId})
+  WHERE c.attempts < $maxAttempts
+  RETURN count(c) AS pending
+`;
+
 export const CAPTURE_RETRY_CYPHER = `
   MATCH (c:Capture {id: $id, userId: $userId})
   SET c.attempts = c.attempts + 1
