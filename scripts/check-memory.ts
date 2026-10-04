@@ -42,6 +42,7 @@ import {
   FACT_CURRENT_CYPHER,
   FACT_EDGES_CYPHER,
   FACT_EXPAND_CYPHER,
+  FACT_LIST_CYPHER,
   FACT_SEED_CYPHER,
   PREDICATE_CREATE_CYPHER,
   PREDICATE_GET_CYPHER,
@@ -594,6 +595,48 @@ async function main(): Promise<void> {
       Number(collected.records[0].get("total")) === 0,
       "once nothing points at it, it goes",
     );
+    await cleanup(f);
+  });
+
+  // 9 — the list pages, newest first. `/memories` reads through this statement
+  // and nothing else exercised it, which is how a clause-order error reached a
+  // running dev server: Neo4j accepts `ORDER BY`, `SKIP`/`OFFSET` and `LIMIT`
+  // only in that order, and writes it as a syntax error rather than a plan.
+  await check("the list pages newest-first and honours the offset", async () => {
+    const f = await fixture();
+    const entity = await makeEntity(f, "apple", "Apple");
+    const predicate = await makePredicate(f, "LIKES");
+
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      ids.push(await makeFact(f, entity, predicate, entity, "Entity", "Entity", `fact ${i}`));
+      // `createdAt` is an ISO string and the ordering is lexicographic, so a
+      // same-millisecond batch would page in an arbitrary order.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    const page = await driver.executeQuery(FACT_LIST_CYPHER, {
+      userId: f.userId,
+      limit: 2,
+      offset: 1,
+    });
+    const listed = page.records.map((record) => String(record.get("id")));
+
+    // Newest first, then the first one skipped: the middle fact, then the
+    // oldest. Written as a slice of the expected order so the paging is what is
+    // asserted, not a hard-coded pair of ids.
+    const newestFirst = [...ids].reverse();
+    const expected = newestFirst.slice(1, 3);
+
+    assert(listed.length === 2, `the page is bounded by the limit, got ${listed.length}`);
+    assert(
+      listed[0] === expected[0] && listed[1] === expected[1],
+      `offset 1 of a newest-first list is [${expected}], got [${listed}]`,
+    );
+    // The offset has to skip from the *newest* end; skipping the other way would
+    // pass the assertion above only by accident of a two-row page.
+    assert(!listed.includes(newestFirst[0]), "the offset skips the newest fact");
+
     await cleanup(f);
   });
 

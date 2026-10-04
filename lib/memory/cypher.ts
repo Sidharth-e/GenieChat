@@ -27,6 +27,12 @@ import {
  * The seed statements are the exception, and only because they do not need the
  * coercion: their `LIMIT $k` sits inside the SEARCH clause, whose restricted
  * grammar takes the value as a plain number and accepts the Float.
+ *
+ * Read/write clauses are order-sensitive and Neo4j reports a wrong order as a
+ * *syntax* error, not a plan one: a paging statement must read
+ * `ORDER BY … OFFSET … LIMIT …`, with `LIMIT` last. A statement no check script
+ * executes is a statement whose syntax nothing has verified — which is how
+ * `FACT_LIST_CYPHER` reached a running dev server broken.
  */
 
 /**
@@ -642,7 +648,7 @@ export const FACT_LIST_CYPHER = `
   MATCH (f:Fact {userId: $userId, isCurrent: true})
   RETURN f.id AS id, f.sourceText AS text, f.createdAt AS createdAt
   ORDER BY f.createdAt DESC
-  LIMIT toInteger($limit) OFFSET toInteger($offset)
+  OFFSET toInteger($offset) LIMIT toInteger($limit)
 `;
 
 export const FACT_COUNT_CYPHER = `
