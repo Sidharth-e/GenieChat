@@ -105,21 +105,35 @@ export const MEMORY_SEED_MULTIPLIER = 3;
 export const MEMORY_MIN_TOKEN_LENGTH = 3;
 export const MEMORY_MAX_CONCEPT_FEATURES = 24;
 
-/** High by design: only near-duplicate entities should collapse. */
+/**
+ * High by design: only near-duplicate entities should collapse.
+ *
+ * Read on the same scale as the seed floor below — Neo4j reports a cosine
+ * index's score as `(1 + cos) / 2`, so 0.9 is a cosine of about 0.8, not 0.9.
+ * `ENTITY_NEAREST_CYPHER` compares it inside Cypher.
+ */
 export const MEMORY_ENTITY_MERGE_THRESHOLD = 0.9;
 
 /**
- * The canonicalization threshold: the cosine at which a surface form is judged
- * to *be* an existing predicate rather than a new one. This single number
+ * The canonicalization threshold: the similarity at which a surface form is
+ * judged to *be* an existing predicate rather than a new one. This single number
  * carries the accuracy of both dedup and recall — too high and "made by" /
- * "product of" coexist, too low and "likes" merges into "loves". Tuned only by
- * the eval set (`pnpm memory:eval`), never by taste.
+ * "product of" coexist, too low and "likes" merges into "loves".
+ *
+ * Same `(1 + cos) / 2` scale as the seed floor: 0.86 is a cosine of about 0.72.
+ *
+ * The spec calls this eval-tuned, and §9.3 is the harness that was meant to tune
+ * it — **but `pnpm memory:eval` seeds already-resolved entities, predicates and
+ * objects, so it never runs canonicalization and cannot move this value.** Until
+ * a harness captures sentences through the extractor, treat this as a judgement
+ * call rather than a measured one.
  */
 export const MEMORY_PREDICATE_MERGE_THRESHOLD = 0.86;
 
 /**
  * The merge sweep's threshold, deliberately *tighter* than the resolve
- * threshold. Resolving at 0.86 merges things the extractor phrased differently;
+ * threshold — and on the same `(1 + cos) / 2` scale, so 0.95 is a cosine of
+ * about 0.9. Resolving at 0.86 merges things the extractor phrased differently;
  * merging two already-canonical nodes is destructive and irreversible, so it
  * waits for a near-identical pair.
  */

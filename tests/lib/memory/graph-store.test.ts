@@ -44,4 +44,24 @@ describe("MemoryGraphStore, unconfigured", () => {
       }),
     ).rejects.toThrow(/not configured/);
   });
+
+  it("refuses blank text before it reaches the embedder or the driver", async () => {
+    // Review focus 1. The ordering is the assertion: this graph is
+    // unconfigured *and* has no embedding key, so a store that embedded first
+    // would fail with one of those messages instead. Rejecting on the text is
+    // what proves an empty string is never embedded and never becomes a
+    // `:Capture` — the check runs first, not after the expensive work.
+    const store = new MemoryGraphStore();
+
+    for (const text of ["", "   ", "\n\t "]) {
+      await expect(
+        store.captureSentence({
+          userId: "user-1",
+          userName: "Ada",
+          userEmail: "ada@example.com",
+          text,
+        }),
+      ).rejects.toThrow(/empty memory/);
+    }
+  });
 });

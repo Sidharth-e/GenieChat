@@ -5,7 +5,6 @@ import {
   normalizeEntityName,
   normalizePredicate,
   predicateEmbeddingText,
-  selectCanonicalMatch,
 } from "@/lib/memory/canonicalize";
 
 describe("normalizeEntityName", () => {
@@ -27,9 +26,25 @@ describe("normalizeEntityName", () => {
     expect(normalizeEntityName('"Acme!"')).toBe("acme");
   });
 
+  it("keeps the symbols that distinguish technical names", () => {
+    // "C++", "C#" and "C" are three languages, not three spellings of one. A
+    // strip-everything rule collapses all three to "c", so a user who writes
+    // C++ and later C# gets one entity and the second fact supersedes the
+    // first — a wrong answer in exactly the area this feature exists for.
+    expect(normalizeEntityName("C++")).toBe("c++");
+    expect(normalizeEntityName("C#")).toBe("c#");
+    expect(normalizeEntityName("C")).toBe("c");
+  });
+
+  it("still strips a trailing sentence period from an ordinary name", () => {
+    // Keeping "+" and "#" must not turn prose punctuation into part of a name.
+    expect(normalizeEntityName("Acme Corp.")).toBe("acme corp");
+  });
+
   it("returns an empty string for input with no letters or digits", () => {
-    // The empty name must never reach a MERGE: one (:Entity {normalizedName: ""})
-    // would be shared by every user and bridge their graphs.
+    // The empty name must never reach a MERGE: the store keys a `:Entity` on
+    // `(userId, normalizedName)`, so "" is a junk node every punctuation-only
+    // surface in that one user's corpus collapses into.
     expect(normalizeEntityName("()")).toBe("");
     expect(normalizeEntityName("'s")).toBe("");
     expect(normalizeEntityName("   ")).toBe("");
@@ -91,34 +106,5 @@ describe("isFunctionalPredicate", () => {
     for (const name of FUNCTIONAL_PREDICATES) {
       expect(isFunctionalPredicate(name)).toBe(true);
     }
-  });
-});
-
-describe("selectCanonicalMatch", () => {
-  it("returns null when every candidate is below the threshold", () => {
-    expect(selectCanonicalMatch([{ id: "a", score: 0.5 }], 0.86)).toBeNull();
-    expect(selectCanonicalMatch([], 0.86)).toBeNull();
-  });
-
-  it("accepts a candidate exactly on the threshold", () => {
-    expect(selectCanonicalMatch([{ id: "a", score: 0.86 }], 0.86)?.id).toBe("a");
-  });
-
-  it("returns the highest-scoring candidate above it, not the first", () => {
-    const picked = selectCanonicalMatch(
-      [
-        { id: "low", score: 0.87 },
-        { id: "high", score: 0.98 },
-        { id: "mid", score: 0.9 },
-      ],
-      0.86,
-    );
-    expect(picked?.id).toBe("high");
-  });
-
-  it("does not mutate the input", () => {
-    const candidates = [{ id: "a", score: 0.9 }];
-    selectCanonicalMatch(candidates, 0.86);
-    expect(candidates).toEqual([{ id: "a", score: 0.9 }]);
   });
 });

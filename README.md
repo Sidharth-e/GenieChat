@@ -78,7 +78,7 @@ The application is designed for teams that need AI assistance without shipping t
 ### 🧠 Knowledge & Memory
 
 - **Knowledge RAG** — agent and thread documents chunked, embedded and searched with **hybrid retrieval** (pgvector cosine + Postgres full-text, fused by Reciprocal Rank Fusion) on PostgreSQL + pgvector.
-- **Memory graph** — long-term memories stored as `:Memory` and `:Entity` nodes in **Neo4j**, with vector recall, automatic enrichment, contradiction and supersession edges, and an interactive force-directed graph view at `/memories`.
+- **Memory graph** — long-term memories as a user-rooted, typed **fact graph** in **Neo4j**: `:Fact` triples over `:Entity`, `:Predicate` and `:Value` nodes, anchored on `:User`. A sentence is captured durably first and extracted later, facts are closed rather than deleted so a changed fact stays as dated history, and recall is a current-only, tenant-scoped vector seed plus a bounded traversal.
 - **Workspace notes** — a rich-text BlockNote workspace alongside your conversations.
 
 ### 🔒 Platform
@@ -293,9 +293,10 @@ Ports are chosen to avoid clashing with personal instances — MongoDB on `27018
 | `pnpm embeddings:check` | Exercise the Ollama embedding path (`scripts/check-embeddings.ts`) |
 | `pnpm knowledge:check` | Exercise the knowledge store end to end |
 | `pnpm knowledge:backfill` | Re-chunk and re-embed existing documents |
-| `pnpm memory:check` | Exercise the memory graph |
+| `pnpm memory:check` | Exercise the fact graph: writes, recall, orphan GC, paging, statement syntax |
+| `pnpm memory:eval` | Score recall against the fixed probe set |
 | `pnpm memory:sweep` | Run one memory sweep pass (calls the running app's `CRON_SECRET` endpoint) |
-| `pnpm memory:migrate` | One-off importer for pre-graph memories |
+| `pnpm memory:drop-prose` | One-off: drop every `:Memory` node and the index and constraint that served them |
 | `pnpm schedules:check` | Exercise scheduling concurrency properties |
 | `pnpm schedules:migrate` | Convert legacy workflow cron triggers into schedules |
 | `pnpm storage:check` | Exercise the Garage S3 client |

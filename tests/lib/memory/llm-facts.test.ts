@@ -106,6 +106,27 @@ describe("parseFactExtraction", () => {
     expect(facts).toEqual([]);
   });
 
+  it("drops a triple whose entity end normalizes to nothing", () => {
+    // The containment guard passes — "..." is in the sentence — but the name
+    // does not survive normalization, and the store keys a `:Entity` on
+    // `(userId, normalizedName)`. Letting "" through would MERGE every
+    // punctuation-only surface in the corpus into one junk node, so it is
+    // dropped here, through the same gate the predicate already passes.
+    const facts = parseFactExtraction(
+      { facts: [{ ...triple, subject: "user", object: "..." }] },
+      `${text} ...`,
+    );
+    expect(facts).toEqual([]);
+  });
+
+  it("keeps an object whose symbols are part of the name", () => {
+    const facts = parseFactExtraction(
+      { facts: [{ ...triple, subject: "user", object: "C++" }] },
+      `${text}, and I write C++`,
+    );
+    expect(facts?.map((fact) => fact.object)).toEqual(["C++"]);
+  });
+
   it("does not exempt `user` as an object", () => {
     const facts = parseFactExtraction(
       { facts: [{ ...triple, object: "user" }] },

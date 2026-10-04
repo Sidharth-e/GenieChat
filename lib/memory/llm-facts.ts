@@ -1,16 +1,16 @@
 import { z } from "zod";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { normalizePredicate } from "./canonicalize";
+import { normalizeEntityName, normalizePredicate } from "./canonicalize";
 import type { ExtractedFact } from "./facts";
 
 /**
  * The model call and the schema it is held to, deliberately without a
  * `"server-only"` guard.
  *
- * `scripts/sweep-memories.ts` is the sweep, and a guarded import does not
- * resolve under `tsx` — so the module both the store and the sweep share cannot
- * be guarded. Unlike `graph-store.ts` this leaks nothing: it holds no
- * connection, reads no config, and takes its model as an argument.
+ * The sweep is `POST /api/memories/sweep`, and `sweep-runner.ts` drives it — a
+ * guarded import does not resolve under `tsx`, so the module the store and the
+ * runner share cannot be guarded. Unlike `graph-store.ts` this leaks nothing: it
+ * holds no connection, reads no config, and takes its model as an argument.
  */
 
 export const FACT_EXTRACTION_PROMPT = `You turn one remembered sentence into facts.
@@ -78,9 +78,10 @@ const USER_SUBJECT = "user";
  * tells the two apart.
  *
  * A validated response is still filtered: a triple naming something the sentence
- * does not contain is dropped, and so is one whose predicate normalizes to
- * nothing. Both are the model's failure, not the user's, so they are silent —
- * the returned list may legitimately be shorter than the model's, or empty.
+ * does not contain is dropped, and so is one whose predicate or entity end
+ * normalizes to nothing. Both are the model's failure, not the user's, so they
+ * are silent — the returned list may legitimately be shorter than the model's,
+ * or empty.
  */
 export function parseFactExtraction(
   raw: unknown,
@@ -94,6 +95,17 @@ export function parseFactExtraction(
   return parsed.data.facts
     .map((fact) => ({ ...fact, predicate: normalizePredicate(fact.predicate) }))
     .filter((fact) => fact.predicate !== "")
+    // The store keys an `:Entity` on `(userId, normalizedName)`, so an
+    // entity end that normalizes to "" would MERGE every punctuation-only
+    // surface in the corpus into one junk node. `:User` is the anchor rather
+    // than a resolved entity, and a value is keyed by its text, so neither is
+    // held to this.
+    .filter(
+      (fact) =>
+        normalizeEntityName(fact.subject) !== "" &&
+        (fact.objectKind === "value" ||
+          normalizeEntityName(fact.object) !== ""),
+    )
     .filter(
       (fact) =>
         (fact.subject.trim().toLowerCase() === USER_SUBJECT ||

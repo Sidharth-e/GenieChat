@@ -644,7 +644,83 @@ async function main(): Promise<void> {
     await cleanup(f);
   });
 
-  // 10 — every statement parses. `EXPLAIN` plans a query without executing it
+  // 10 — a second identical fact supersedes rather than duplicates. The
+  // *decision* is `decideFactWrite`, unit-tested; what cannot be unit-tested is
+  // that the store's two statements compose into the property end to end, so
+  // that is what this asserts. Without it a duplicate save would either leave
+  // two current facts — two answers to one question — or silently drop the
+  // second occurrence instead of closing the first.
+  await check("a re-saved fact supersedes instead of duplicating", async () => {
+    const f = await fixture();
+    const subject = await makeEntity(f, "apple", "Apple");
+    const object = await makeEntity(f, "iphone", "iPhone");
+    const predicate = await makePredicate(f, "PRODUCT_OF");
+
+    const first = await makeFact(f, subject, predicate, object);
+    await driver.executeQuery(FACT_CLOSE_CYPHER, {
+      userId: f.userId,
+      factIds: [first],
+      now: new Date().toISOString(),
+    });
+    await makeFact(f, subject, predicate, object);
+
+    const current = await currentObjectIds(f, subject, predicate);
+    assert(
+      current.length === 1 && current[0] === object,
+      `exactly one current fact must remain, got ${current.length}`,
+    );
+    const counted = await driver.executeQuery(FACT_COUNT_ALL_CYPHER, {
+      userId: f.userId,
+    });
+    assert(
+      Number(counted.records[0].get("total")) === 2,
+      "the superseded fact must still exist — closing is not deleting",
+    );
+    assert(
+      Number(counted.records[0].get("current")) === 1,
+      "isCurrent must be true for exactly one of the two",
+    );
+
+    await cleanup(f);
+  });
+
+  // 11 — the anchor is created lazily and only once. Every personal fact hangs
+  // off `:User`, so a first write for a user with no anchor must create it in
+  // the same pass rather than leaving the fact to be written with a missing
+  // subject; and a second write must find the anchor rather than a second copy
+  // of it, which would split the user's facts across two roots.
+  await check("the user anchor is created lazily and is one node", async () => {
+    const userId = randomUUID();
+    const countAnchor = async () =>
+      Number(
+        (
+          await driver.executeQuery(
+            "MATCH (u:User {id: $userId}) RETURN count(u) AS n",
+            { userId },
+          )
+        ).records[0].get("n"),
+      );
+
+    assert((await countAnchor()) === 0, "the fixture user must start with no anchor");
+
+    for (let i = 0; i < 2; i += 1) {
+      await driver.executeQuery(USER_UPSERT_CYPHER, {
+        userId,
+        name: "Check Fixture",
+        email: "check@example.invalid",
+      });
+    }
+    assert(
+      (await countAnchor()) === 1,
+      "two upserts must leave exactly one anchor, not two",
+    );
+
+    await driver.executeQuery("MATCH (u:User {id: $userId}) DETACH DELETE u", {
+      userId,
+    });
+  });
+
+  // 12 — every statement parses. `EXPLAIN` plans a query without executing it
   // and without needing parameters, so this is a syntax sweep over the whole
   // module rather than over the handful another check happens to run. It is the
   // only cover for a statement nothing else touches, and the clause order is

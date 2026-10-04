@@ -250,6 +250,10 @@ export class MemoryGraphStore {
         embedding,
       });
       const best = nearest.records[0];
+      // At-or-above, not strictly above, so a threshold of `t` means "similarity
+      // t suffices" — which is what the constant's comment promises. The vector
+      // index returns rows nearest-first and the statement asks for one, so this
+      // record is the best match.
       if (best && Number(best.get("score")) >= MEMORY_PREDICATE_MERGE_THRESHOLD) {
         const id = String(best.get("id"));
         await driver.executeQuery(PREDICATE_ALIAS_CYPHER, {

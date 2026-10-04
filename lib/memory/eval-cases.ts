@@ -107,7 +107,12 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
     expect: ["apple", "banana"],
   },
   {
-    name: "saving the same sentence twice changes nothing",
+    // The harness seeds the facts below directly, so this cannot be about
+    // idempotency no matter what it is called — it asserts that a first-person
+    // fact is recallable by name. Duplicate saves are covered where they
+    // actually happen: `decideFactWrite` in the unit suite, and the
+    // re-saved-fact check in `scripts/check-memory.ts`.
+    name: "recalls the user's own name",
     facts: [
       { text: "My name is Sidharth", subject: "user", predicate: "named", object: "Sidharth" },
     ],

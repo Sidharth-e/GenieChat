@@ -17,13 +17,19 @@ import { FUNCTIONAL_PREDICATES } from "@/constants/memory";
  * Lowercase, collapse whitespace, drop a possessive, strip surrounding
  * punctuation. Returns "" when nothing survives — and callers must treat "" as
  * "no entity", never as a name. An empty normalizedName would MERGE every
- * user's punctuation into one shared node.
+ * punctuation-only surface in a user's corpus into one junk node.
+ *
+ * `+` and `#` survive the strip because they are part of a name rather than
+ * punctuation around one: "C++", "C#" and "C" are three languages, and
+ * collapsing them to "c" makes the second fact about one supersede the fact
+ * about another. Every other non-alphanumeric — including a trailing sentence
+ * period — is still removed.
  */
 export function normalizeEntityName(raw: string): string {
   return (raw ?? "")
     .replace(/[’']s\b/g, "")
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/[^\p{L}\p{N}\s+#]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -75,23 +81,4 @@ export function predicateEmbeddingText(canonicalName: string): string {
 
 export function isFunctionalPredicate(canonicalName: string): boolean {
   return (FUNCTIONAL_PREDICATES as readonly string[]).includes(canonicalName);
-}
-
-/**
- * The best candidate at or above the threshold, or null.
- *
- * At-or-above rather than strictly-above so a threshold of `t` means "similarity
- * t suffices", which is what the constant's comment promises. Ties resolve to
- * the first in order, so the caller controls the tiebreak by ordering the read.
- */
-export function selectCanonicalMatch<T extends { score: number }>(
-  candidates: T[],
-  threshold: number,
-): T | null {
-  let best: T | null = null;
-  for (const candidate of candidates) {
-    if (candidate.score < threshold) continue;
-    if (best === null || candidate.score > best.score) best = candidate;
-  }
-  return best;
 }
