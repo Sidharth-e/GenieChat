@@ -23,7 +23,6 @@ interface PromptCardProps {
   prompt: Prompt;
   index?: number;
   isFavorite: boolean;
-  showQuickActions?: boolean;
   onEdit: (e: MouseEvent) => void;
   onCopy: (e: MouseEvent) => void;
   onDelete: (e: MouseEvent) => void;
@@ -34,7 +33,6 @@ export function PromptCard({
   prompt,
   index = 0,
   isFavorite,
-  showQuickActions = true,
   onEdit,
   onCopy,
   onDelete,
@@ -65,26 +63,24 @@ export function PromptCard({
           {prompt.title}
         </h3>
 
-        {showQuickActions && (
-          <button
-            type="button"
-            className="shrink-0 rounded-md p-0.5 transition-colors hover:bg-hover-bg"
-            onClick={(e) => {
-              e.stopPropagation();
-              onFavoriteToggle(e);
-            }}
-            title={isFavorite ? "Remove from favorites" : "Add to favorites"}
-          >
-            <Heart
-              className={cn(
-                "h-3 w-3 transition-colors",
-                isFavorite
-                  ? "fill-red-500 text-red-500"
-                  : "text-text-secondary/40 hover:text-red-400",
-              )}
-            />
-          </button>
-        )}
+        <button
+          type="button"
+          className="shrink-0 rounded-md p-0.5 transition-colors hover:bg-hover-bg"
+          onClick={(e) => {
+            e.stopPropagation();
+            onFavoriteToggle(e);
+          }}
+          title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+        >
+          <Heart
+            className={cn(
+              "h-3 w-3 transition-colors",
+              isFavorite
+                ? "fill-red-500 text-red-500"
+                : "text-text-secondary/40 hover:text-red-400",
+            )}
+          />
+        </button>
       </div>
 
       <p className="mt-1.5 min-h-10 line-clamp-2 text-xs leading-relaxed text-text-secondary">
@@ -108,54 +104,50 @@ export function PromptCard({
           </span>
         )}
 
-        {showQuickActions && (
-          <>
-            <div className="flex-1" />
+        <div className="flex-1" />
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="rounded-md p-0.5 text-text-secondary/50 transition-colors hover:bg-hover-bg hover:text-text-secondary"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <EllipsisVertical className="h-3.5 w-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                // Radix portals this menu to `document.body`, and the prompt library
-                // modal it lives in is `z-100` — without clearing that the menu
-                // renders behind the modal and cannot be clicked.
-                className="z-[110] w-44 border-card-border bg-card-bg shadow-lg"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2 text-xs"
-                  onClick={(e) => onEdit(e)}
-                >
-                  <Pencil className="h-3.5 w-3.5 text-text-secondary" />
-                  Edit prompt
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2 text-xs"
-                  onClick={(e) => onCopy(e)}
-                >
-                  <Copy className="h-3.5 w-3.5 text-text-secondary" />
-                  Copy content
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2 text-xs text-red-500 focus:text-red-500"
-                  onClick={(e) => onDelete(e)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete prompt
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
-        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="rounded-md p-0.5 text-text-secondary/50 transition-colors hover:bg-hover-bg hover:text-text-secondary"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <EllipsisVertical className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            // Radix portals this menu to `document.body`, and the prompt library
+            // modal it lives in is `z-100` — without clearing that the menu
+            // renders behind the modal and cannot be clicked.
+            className="z-[110] w-44 border-card-border bg-card-bg shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-xs"
+              onClick={(e) => onEdit(e)}
+            >
+              <Pencil className="h-3.5 w-3.5 text-text-secondary" />
+              Edit prompt
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-xs"
+              onClick={(e) => onCopy(e)}
+            >
+              <Copy className="h-3.5 w-3.5 text-text-secondary" />
+              Copy content
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-xs text-red-500 focus:text-red-500"
+              onClick={(e) => onDelete(e)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete prompt
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </motion.div>
   );

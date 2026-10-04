@@ -4,11 +4,9 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import { NavRail } from "@/components/layout/nav-rail";
 import { Header } from "@/components/chat/header";
-import { QuickActionsModal } from "@/components/chat/quick-actions-modal";
 import { CanvasPanel } from "@/components/chat/canvas-panel";
 import { MachineStatePanel } from "@/components/chat/machine-state-panel";
 import { cn } from "@/lib/utils";
-import { useQuickActionsStore } from "@/lib/stores";
 
 interface MainShellProps {
   children: React.ReactNode;
@@ -17,7 +15,6 @@ interface MainShellProps {
 
 export function MainShell({ children, showHeader = true }: MainShellProps) {
   const pathname = usePathname();
-  const { isModalOpen, setIsModalOpen } = useQuickActionsStore();
   const isConversationRoute = Boolean(
     pathname &&
       (/^\/chat\/(?!new$|history$).+/.test(pathname) ||
@@ -44,11 +41,6 @@ export function MainShell({ children, showHeader = true }: MainShellProps) {
         <CanvasPanel />
         <MachineStatePanel />
       </main>
-
-      <QuickActionsModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-      />
     </div>
   );
 }

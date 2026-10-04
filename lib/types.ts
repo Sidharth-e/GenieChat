@@ -568,20 +568,6 @@ export interface Memory {
   enrichedAt?: string | null;
 }
 
-export interface QuickAction {
-  id: string;
-  userId: string;
-  userName: string;
-  userEmail: string;
-  name: string;
-  prompt: string;
-  medium: "chat" | "agent";
-  agentId?: string;
-  pinned?: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 // API Key for external agent access
 export interface ApiKey {
   id: string;

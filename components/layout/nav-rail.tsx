@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { Hammer, FolderOpen, Zap, NotebookTabs, type LucideIcon } from "lucide-react";
+import { Hammer, FolderOpen, NotebookTabs, type LucideIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +28,6 @@ import {
   type NavItem,
 } from "@/constants/nav-routes";
 import { AI_NAME } from "@/constants/main";
-import { useQuickActionsStore } from "@/lib/stores";
 import { NotesModal } from "@/components/chat/notes-modal";
 import { ThemeToggleButton } from "@/components/common/theme-toggle-button";
 import { UserMenu } from "@/components/common/user-menu";
@@ -120,7 +119,6 @@ function RailFlyout({
 export function NavRail() {
   const pathname = usePathname();
   const router = useRouter();
-  const { setIsModalOpen } = useQuickActionsStore();
   const [isNotesOpen, setIsNotesOpen] = useState(false);
 
   useEffect(() => {
@@ -174,22 +172,6 @@ export function NavRail() {
         </nav>
 
         <div className="mt-auto flex flex-col gap-2 items-center">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(true)}
-                className="p-3 rounded-sm text-tertiary/40 hover:text-foreground hover:bg-tertiary/8 transition-colors cursor-pointer"
-                aria-label="Quick Actions"
-              >
-                <Zap className="w-5 h-5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={14} className={TOOLTIP_CLASS}>
-              Quick Actions
-            </TooltipContent>
-          </Tooltip>
-
           <Tooltip>
             <TooltipTrigger asChild>
               <button
