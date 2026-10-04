@@ -1,7 +1,10 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { MEMORY_FACT_PAGE_MAX } from "@/constants/memory";
+import {
+    MEMORY_CAPTURE_SETTLE_MS,
+    MEMORY_FACT_PAGE_MAX,
+} from "@/constants/memory";
 import type { RecalledFact } from "@/lib/memory/types";
 import type { MemoryGraphView } from "@/lib/memory/graph-view";
 
@@ -102,6 +105,12 @@ export function useCreateMemory() {
             // drawn version wrong until it is refetched. Marking it stale is
             // free when the graph is not mounted.
             queryClient.invalidateQueries({ queryKey: memoryKeys.graph() });
+            // The fact does not exist yet — the sweep runs after the response.
+            // Read once more after the extraction window.
+            setTimeout(() => {
+                queryClient.invalidateQueries({ queryKey: memoryKeys.lists() });
+                queryClient.invalidateQueries({ queryKey: memoryKeys.graph() });
+            }, MEMORY_CAPTURE_SETTLE_MS);
         },
     });
 }

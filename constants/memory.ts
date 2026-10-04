@@ -185,6 +185,14 @@ export const MEMORY_CAPTURE_MAX_ATTEMPTS = 3;
 export const MEMORY_CAPTURE_SWEEP_LIMIT = 10;
 
 /**
+ * How long after a capture the list is read once more. Extraction runs after the
+ * response, so the response carries no fact and cannot say when one exists; this
+ * is the window rather than a poll, and a slower extraction is caught by the
+ * next visit.
+ */
+export const MEMORY_CAPTURE_SETTLE_MS = 4000;
+
+/**
  * The `(subject, predicate)` groups one reconciliation pass reads. Reconciliation
  * is a repair for facts the extractor could not settle, so the bound is on
  * per-pass work rather than on correctness: an unvisited group is simply visited
