@@ -301,7 +301,7 @@ async function runChecks(
   const indexResult = await session.run(
     `SHOW INDEXES YIELD name, type, properties
      WHERE type = 'VECTOR' AND name = $name`,
-    { name: MEMORY_VECTOR_INDEX_NAMES.memory },
+    { name: "memory_embedding" },
   );
   const indexRecord = indexResult.records[0];
   const properties: string[] = indexRecord ? indexRecord.get("properties") : [];

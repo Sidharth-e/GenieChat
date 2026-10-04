@@ -1,46 +1,73 @@
 export const MEMORY_VECTOR_INDEX_NAMES = {
-  memory: "memory_embedding",
+  fact: "fact_embedding",
   entity: "entity_embedding",
+  predicate: "predicate_embedding",
+  capture: "capture_embedding",
 } as const;
 
 export const MEMORY_CONSTRAINT_NAMES = {
-  memoryId: "memory_id",
+  userId: "user_id",
   entityId: "entity_id",
   entityUserName: "entity_user_name",
+  predicateId: "predicate_id",
+  predicateUserName: "predicate_user_name",
+  valueId: "value_id",
+  factId: "fact_id",
+  captureId: "capture_id",
 } as const;
 
 /**
  * The schema, as an ordered list of idempotent statements. Pure so it can be
  * unit tested without a server; the dimension is interpolated because
  * `vector.dimensions` is a literal in the index config.
+ *
+ * No statement here concerns `:Memory`: the fact graph is the only store this
+ * schema maintains.
  */
 export function buildNeo4jDdl(dimensions: number): string[] {
   if (!Number.isInteger(dimensions) || dimensions <= 0) {
     throw new Error(`Invalid embedding dimensions: ${dimensions}`);
   }
   return [
-    `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.memoryId} IF NOT EXISTS
-       FOR (m:Memory) REQUIRE m.id IS UNIQUE`,
+    `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.userId} IF NOT EXISTS
+       FOR (u:User) REQUIRE u.id IS UNIQUE`,
     `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.entityId} IF NOT EXISTS
        FOR (e:Entity) REQUIRE e.id IS UNIQUE`,
     // The entity-resolution key *and* the thing that keeps two users' "Acme"
     // from becoming one node. Both matter.
     `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.entityUserName} IF NOT EXISTS
        FOR (e:Entity) REQUIRE (e.userId, e.normalizedName) IS UNIQUE`,
-    // The sort key is the point. `EDGE_CANDIDATE_CYPHER` reads
-    // `MATCH (other:Memory {userId}) ... ORDER BY other.createdAt DESC LIMIT
-    // $limit` on every write, and without `createdAt` in the index Neo4j has to
-    // read *and sort* the user's whole memory set before it can take the newest
-    // 200 — the write cost then tracks the corpus, not the entity count. A
-    // `(userId)`-only index is this index minus the sort key, so it is replaced
-    // rather than kept beside it: same prefix, same lookups, extra write cost.
-    `CREATE INDEX memory_user_created IF NOT EXISTS
-       FOR (m:Memory) ON (m.userId, m.createdAt)`,
-    `CREATE INDEX memory_enriched IF NOT EXISTS FOR (m:Memory) ON (m.enrichedAt)`,
+    `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.predicateId} IF NOT EXISTS
+       FOR (p:Predicate) REQUIRE p.id IS UNIQUE`,
+    // Same role as the entity key: `normalizePredicate` collapses "PRODUCT_OF"
+    // and "product of" to one string, and this is what makes the MERGE that
+    // string keys actually dedupe.
+    `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.predicateUserName} IF NOT EXISTS
+       FOR (p:Predicate) REQUIRE (p.userId, p.canonicalName) IS UNIQUE`,
+    `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.valueId} IF NOT EXISTS
+       FOR (v:Value) REQUIRE v.id IS UNIQUE`,
+    `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.factId} IF NOT EXISTS
+       FOR (f:Fact) REQUIRE f.id IS UNIQUE`,
+    `CREATE CONSTRAINT ${MEMORY_CONSTRAINT_NAMES.captureId} IF NOT EXISTS
+       FOR (c:Capture) REQUIRE c.id IS UNIQUE`,
     `CREATE INDEX entity_user IF NOT EXISTS FOR (e:Entity) ON (e.userId)`,
-    `CREATE VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.memory} IF NOT EXISTS
-       FOR (m:Memory) ON m.embedding
-       WITH [m.userId]
+    `CREATE INDEX predicate_user IF NOT EXISTS FOR (p:Predicate) ON (p.userId)`,
+    // The seed's in-index WHERE is the restricted grammar — equality and AND
+    // only — so it cannot ask for `validTo IS NULL`. `isCurrent` is the
+    // denormalization that puts the test where the index can see it, and this
+    // index is what makes the filter a seek rather than a scan.
+    `CREATE INDEX fact_user_current IF NOT EXISTS
+       FOR (f:Fact) ON (f.userId, f.isCurrent)`,
+    // Reconciliation and the listing read a user's facts in creation order.
+    `CREATE INDEX fact_user_created IF NOT EXISTS
+       FOR (f:Fact) ON (f.userId, f.createdAt)`,
+    // The sweep selects pending captures oldest-first; without this it sorts
+    // the user's whole capture set on every pass.
+    `CREATE INDEX capture_user_created IF NOT EXISTS
+       FOR (c:Capture) ON (c.userId, c.createdAt)`,
+    `CREATE VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.fact} IF NOT EXISTS
+       FOR (f:Fact) ON f.embedding
+       WITH [f.userId]
        OPTIONS { indexConfig: {
          \`vector.dimensions\`: ${dimensions},
          \`vector.similarity_function\`: 'cosine'
@@ -48,6 +75,22 @@ export function buildNeo4jDdl(dimensions: number): string[] {
     `CREATE VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.entity} IF NOT EXISTS
        FOR (e:Entity) ON e.embedding
        WITH [e.userId]
+       OPTIONS { indexConfig: {
+         \`vector.dimensions\`: ${dimensions},
+         \`vector.similarity_function\`: 'cosine'
+       }}`,
+    `CREATE VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.predicate} IF NOT EXISTS
+       FOR (p:Predicate) ON p.embedding
+       WITH [p.userId]
+       OPTIONS { indexConfig: {
+         \`vector.dimensions\`: ${dimensions},
+         \`vector.similarity_function\`: 'cosine'
+       }}`,
+    // Captures are seeded too, so a sentence saved one second ago is recallable
+    // before any model has looked at it (§8.5).
+    `CREATE VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.capture} IF NOT EXISTS
+       FOR (c:Capture) ON c.embedding
+       WITH [c.userId]
        OPTIONS { indexConfig: {
          \`vector.dimensions\`: ${dimensions},
          \`vector.similarity_function\`: 'cosine'
@@ -80,6 +123,59 @@ export const MEMORY_MAX_CONCEPT_FEATURES = 24;
 
 /** New. High by design: only near-duplicate entities should collapse. */
 export const MEMORY_ENTITY_MERGE_THRESHOLD = 0.9;
+
+/**
+ * The canonicalization threshold: the cosine at which a surface form is judged
+ * to *be* an existing predicate rather than a new one. This single number
+ * carries the accuracy of both dedup and recall — too high and "made by" /
+ * "product of" coexist, too low and "likes" merges into "loves". Tuned only by
+ * the eval set (`pnpm memory:eval`), never by taste.
+ */
+export const MEMORY_PREDICATE_MERGE_THRESHOLD = 0.86;
+
+/**
+ * The merge sweep's threshold, deliberately *tighter* than the resolve
+ * threshold. Resolving at 0.86 merges things the extractor phrased differently;
+ * merging two already-canonical nodes is destructive and irreversible, so it
+ * waits for a near-identical pair.
+ */
+export const MEMORY_PREDICATE_CLUSTER_THRESHOLD = 0.95;
+
+/** How many ranked facts reach the prompt. */
+export const MEMORY_FACT_TOP = 5;
+
+/** Pending captures seeded alongside facts — the "saved is instantly recallable" arm. */
+export const MEMORY_CAPTURE_SEED_LIMIT = 5;
+
+/** After this many failed extractions a capture stops costing a model call. */
+export const MEMORY_CAPTURE_MAX_ATTEMPTS = 3;
+
+/** Captures one sweep pass may extract. */
+export const MEMORY_CAPTURE_SWEEP_LIMIT = 10;
+
+/**
+ * The `(subject, predicate)` groups one reconciliation pass reads. Reconciliation
+ * is a repair for facts the extractor could not settle, so the bound is on
+ * per-pass work rather than on correctness: an unvisited group is simply visited
+ * next pass.
+ */
+export const MEMORY_RECONCILE_LIMIT = 200;
+
+/**
+ * Predicates that admit exactly one current object. "works as" is functional —
+ * a person has one job — so a new value replaces the old even when the
+ * extractor did not say so. "likes" is not, which is exactly why this is an
+ * allow-list and not a heuristic.
+ *
+ * The names are canonical (`normalizePredicate` output), not surface forms.
+ */
+export const FUNCTIONAL_PREDICATES = [
+  "WORKS_AS",
+  "WORKS_AT",
+  "LIVES_IN",
+  "IS_BASED_IN",
+  "HAS_NAME",
+] as const;
 
 /** Parity with the old GRAPH_SECOND_HOP_LIMIT: two hops, as today. */
 export const MEMORY_RECALL_HOPS = 2;

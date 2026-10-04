@@ -42,7 +42,7 @@ import {
 export const SEED_CYPHER = `
   MATCH (m:Memory)
     SEARCH m IN (
-      VECTOR INDEX ${MEMORY_VECTOR_INDEX_NAMES.memory}
+      VECTOR INDEX "memory_embedding"
       FOR $queryVector
       WHERE m.userId = $userId
       LIMIT $k

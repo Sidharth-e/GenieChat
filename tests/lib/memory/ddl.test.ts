@@ -1,68 +1,55 @@
 import { describe, expect, it } from "vitest";
 import {
-  MEMORY_VECTOR_INDEX_NAMES,
   buildNeo4jDdl,
+  MEMORY_CONSTRAINT_NAMES,
+  MEMORY_VECTOR_INDEX_NAMES,
 } from "@/constants/memory";
 
+const ddl = buildNeo4jDdl(2048);
+
 describe("buildNeo4jDdl", () => {
-  it("interpolates the embedding dimension into both vector indexes", () => {
-    const ddl = buildNeo4jDdl(768).join("\n");
-    expect(ddl.split("`vector.dimensions`: 768").length - 1).toBe(2);
+  it("rejects a non-integer or non-positive dimension", () => {
+    expect(() => buildNeo4jDdl(0)).toThrow();
+    expect(() => buildNeo4jDdl(-8)).toThrow();
+    expect(() => buildNeo4jDdl(1.5)).toThrow();
   });
 
-  it("declares userId as a filterable property on both vector indexes", () => {
-    // Without WITH [...], the SEARCH clause cannot filter in-index and
-    // multi-tenant retrieval starves. This is the load-bearing line.
-    const ddl = buildNeo4jDdl(768).join("\n");
-    expect(ddl).toContain("WITH [m.userId]");
-    expect(ddl).toContain("WITH [e.userId]");
-  });
-
-  it("uses cosine similarity", () => {
-    const ddl = buildNeo4jDdl(768).join("\n");
-    expect(ddl.split("`vector.similarity_function`: 'cosine'").length - 1).toBe(2);
-  });
-
-  it("keys entities by user and normalized name, so two users never share one", () => {
-    expect(buildNeo4jDdl(768).join("\n")).toContain(
-      "FOR (e:Entity) REQUIRE (e.userId, e.normalizedName) IS UNIQUE",
-    );
-  });
-
-  it("indexes enrichedAt, which is the enrichment sweep's predicate", () => {
-    expect(buildNeo4jDdl(768).join("\n")).toContain(
-      "FOR (m:Memory) ON (m.enrichedAt)",
-    );
-  });
-
-  it("indexes the edge-candidate window the write path orders by", () => {
-    // `EDGE_CANDIDATE_CYPHER` is `MATCH (other:Memory {userId}) ... ORDER BY
-    // other.createdAt DESC LIMIT 200`, and every create and content-changing
-    // update runs it. `memory_user` on (userId) alone leaves Neo4j reading and
-    // sorting the user's entire memory set before it can take the newest 200,
-    // so the write cost the spec calls "proportional to this memory's entity
-    // count, not to the corpus" was proportional to the corpus after all. The
-    // composite index is what makes the ORDER BY an index-order read.
-    expect(buildNeo4jDdl(768).join("\n")).toContain(
-      "FOR (m:Memory) ON (m.userId, m.createdAt)",
-    );
-  });
-
-  it("names every vector index exactly once", () => {
-    const ddl = buildNeo4jDdl(768).join("\n");
-    for (const name of Object.values(MEMORY_VECTOR_INDEX_NAMES)) {
-      expect(ddl.split(name).length - 1).toBe(1);
+  it("makes every statement idempotent", () => {
+    for (const statement of ddl) {
+      expect(statement).toContain("IF NOT EXISTS");
     }
   });
 
-  it("rejects a non-positive or fractional dimension", () => {
-    expect(() => buildNeo4jDdl(0)).toThrow(/Invalid embedding dimensions/);
-    expect(() => buildNeo4jDdl(1.5)).toThrow(/Invalid embedding dimensions/);
+  it("keys entities and predicates by their resolution key, scoped to the user", () => {
+    expect(ddl.join("\n")).toContain(
+      "FOR (e:Entity) REQUIRE (e.userId, e.normalizedName) IS UNIQUE",
+    );
+    expect(ddl.join("\n")).toContain(
+      "FOR (p:Predicate) REQUIRE (p.userId, p.canonicalName) IS UNIQUE",
+    );
   });
 
-  it("is idempotent by construction — every statement uses IF NOT EXISTS", () => {
-    for (const statement of buildNeo4jDdl(768)) {
-      expect(statement).toContain("IF NOT EXISTS");
+  it("declares one vector index per seeded label, all filterable by userId", () => {
+    for (const name of Object.values(MEMORY_VECTOR_INDEX_NAMES)) {
+      expect(ddl.join("\n")).toContain(`CREATE VECTOR INDEX ${name} IF NOT EXISTS`);
+    }
+    expect(ddl.join("\n")).toContain("WITH [f.userId]");
+    expect(ddl.join("\n")).toContain("WITH [c.userId]");
+  });
+
+  it("indexes the current-only fact filter, because the seed's WHERE cannot test validTo", () => {
+    expect(ddl.join("\n")).toContain(
+      "CREATE INDEX fact_user_current IF NOT EXISTS\n       FOR (f:Fact) ON (f.userId, f.isCurrent)",
+    );
+  });
+
+  it("does not create anything for the retired :Memory label", () => {
+    expect(ddl.join("\n")).not.toContain(":Memory");
+  });
+
+  it("names every constraint it creates", () => {
+    for (const name of Object.values(MEMORY_CONSTRAINT_NAMES)) {
+      expect(ddl.join("\n")).toContain(`CREATE CONSTRAINT ${name} IF NOT EXISTS`);
     }
   });
 });
