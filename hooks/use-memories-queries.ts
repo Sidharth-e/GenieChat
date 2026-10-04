@@ -99,6 +99,12 @@ export function useMemoryGraph() {
             return response.json();
         },
         staleTime: 0,
+        // A new read is a new node set, and a new node set is a new layout with
+        // the camera back at its origin. The default focus refetch would
+        // therefore throw away the reader's zoom and pan every time they alt-tab
+        // back to a page they never left. `staleTime: 0` still re-reads on a
+        // real remount, so leaving the graph tab and returning does refresh it.
+        refetchOnWindowFocus: false,
     });
 }
 

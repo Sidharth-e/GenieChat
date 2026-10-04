@@ -1,15 +1,14 @@
 /**
  * Positions the drawn graph with d3-force.
  *
- * Pure, deterministic and renderer-unaware, like the module it replaces: the
- * simulation owns the geometry and knows nothing about a canvas, so the
- * decisions worth testing — where a node starts, what a tick changes, what
- * "settled" means — need no browser.
+ * Pure, deterministic and renderer-unaware: the simulation owns the geometry and
+ * knows nothing about a canvas, so the decisions worth testing — where a node
+ * starts, what a tick changes, what "settled" means — need no browser.
  *
- * It is a *stepper* rather than a one-shot call. The renderer owns the frame
- * loop and asks for ticks while the simulation is hot, which is what keeps a
- * layout of thousands of nodes off the render path: the work is spread across
- * frames instead of blocking the one that mounted the component.
+ * It is a *stepper*, not a one-shot call. The renderer owns the frame loop and
+ * asks for ticks while the simulation is hot, which is what keeps a layout of
+ * thousands of nodes off the render path: the work is spread across frames
+ * rather than blocking the one that mounted the component.
  *
  * `forceSimulation()` starts a timer of its own the moment it is constructed.
  * That timer is stopped here and never restarted — a `restart()` would tick the

@@ -6,8 +6,9 @@
  * The canvas is the reason this is a separate component from the tab's chrome:
  * every frame paints straight into a 2D context, so nothing here goes through
  * React. The camera, the simulation and the animation frame live in refs, and
- * the component re-renders only when the hovered, focused or selected node
- * changes — which is what keeps a few thousand nodes off the render path.
+ * the frame loop is driven by `requestAnimationFrame` rather than by a render —
+ * which is what keeps a few thousand nodes off the render path. React re-renders
+ * this component only when a prop changes, and a frame needs no prop to change.
  *
  * It owns the drawing and the pointing, and nothing else: selection, the detail
  * card and the keyboard order belong to the chrome around it, which is also
@@ -519,23 +520,47 @@ export function MemoryGraphCanvas({
     if (hit !== hoveredId) onHover(hit);
   };
 
-  const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+  /**
+   * Ends a drag and returns it. Shared by the pointer-up and the cancel path,
+   * because both have to release the capture and clear the drag.
+   */
+  const endDrag = (event: React.PointerEvent<HTMLCanvasElement>): DragState | null => {
     const drag = dragRef.current;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    return drag;
+  };
+
+  const releaseNode = (id: string) => {
+    // Releasing the pin is what lets the node settle back into the layout.
+    simulationRef.current?.pin(id, 0, null);
+    simulationRef.current?.reheat(0.3);
+    startLoop();
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = endDrag(event);
     if (!drag) return;
 
     if (drag.mode === "node") {
-      // Releasing the pin is what lets the node settle back into the layout.
-      simulationRef.current?.pin(drag.id, 0, null);
-      simulationRef.current?.reheat(0.3);
-      startLoop();
+      releaseNode(drag.id);
       if (drag.moved < CLICK_SLOP) onSelect(drag.id);
       return;
     }
     if (drag.moved < CLICK_SLOP) onSelect(null);
+  };
+
+  /**
+   * A cancelled pointer never sends `pointerup`. Without this the drag stays
+   * live — every later move keeps panning — and a node dragged when the gesture
+   * was taken over stays pinned where it was put for the life of the
+   * simulation. Nothing is selected: a cancelled gesture is not a click.
+   */
+  const handlePointerCancel = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = endDrag(event);
+    if (drag?.mode === "node") releaseNode(drag.id);
   };
 
   const handlePointerLeave = () => {
@@ -553,6 +578,7 @@ export function MemoryGraphCanvas({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onPointerLeave={handlePointerLeave}
         className="h-full w-full cursor-grab touch-none outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       />
