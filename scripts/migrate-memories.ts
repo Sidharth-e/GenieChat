@@ -14,6 +14,7 @@ import {
   extractEntityNames,
   type ScorableMemory,
 } from "@/lib/memory/extract";
+import { normalizeEntityName } from "@/lib/memory/canonicalize";
 import { generateId } from "@/lib/utils";
 
 /**

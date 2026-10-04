@@ -9,6 +9,7 @@ import {
   MEMORY_EDGE_NEIGHBOR_LIMIT,
   MEMORY_EDGE_THRESHOLD,
 } from "@/constants/memory";
+import { normalizeEntityName } from "./canonicalize";
 import {
   buildConceptSpace,
   buildConceptVector,
@@ -55,21 +56,6 @@ const NEAR_PAIR_BONUS = 0.03;
 export interface ScorableMemory {
   content: string;
   createdAt?: string;
-}
-
-/**
- * Lowercase, collapse whitespace, drop a possessive, strip surrounding
- * punctuation. Returns "" when nothing survives — and callers must treat "" as
- * "no entity", never as a name. An empty normalizedName would MERGE every
- * user's punctuation into one shared node.
- */
-export function normalizeEntityName(raw: string): string {
-  return (raw ?? "")
-    .replace(/[’']s\b/g, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /**

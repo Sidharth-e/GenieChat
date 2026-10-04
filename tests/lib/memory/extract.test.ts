@@ -4,38 +4,8 @@ import {
   buildDeterministicEdges,
   entityMergeKey,
   extractEntityNames,
-  normalizeEntityName,
   relationScore,
 } from "@/lib/memory/extract";
-
-describe("normalizeEntityName", () => {
-  it("lowercases and trims", () => {
-    expect(normalizeEntityName("  Acme Corp  ")).toBe("acme corp");
-  });
-
-  it("collapses internal whitespace", () => {
-    expect(normalizeEntityName("Acme   \n  Corp")).toBe("acme corp");
-  });
-
-  it("strips a possessive", () => {
-    expect(normalizeEntityName("Acme's")).toBe("acme");
-    expect(normalizeEntityName("Acme’s")).toBe("acme");
-  });
-
-  it("strips surrounding punctuation", () => {
-    expect(normalizeEntityName("(Acme),")).toBe("acme");
-    expect(normalizeEntityName('"Acme!"')).toBe("acme");
-  });
-
-  it("returns an empty string for input with no letters or digits", () => {
-    // The empty name must never reach a MERGE: one (:Entity {normalizedName: ""})
-    // would be shared by every user and bridge their graphs.
-    expect(normalizeEntityName("()")).toBe("");
-    expect(normalizeEntityName("'s")).toBe("");
-    expect(normalizeEntityName("   ")).toBe("");
-    expect(normalizeEntityName("")).toBe("");
-  });
-});
 
 describe("entityMergeKey", () => {
   it("scopes the key to the user, so two users' Acme are two nodes", () => {

@@ -2,7 +2,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import {
   MEMORY_CAPTURE_MAX_ATTEMPTS,
-  MEMORY_CAPTURE_SEED_LIMIT,
   MEMORY_CAPTURE_SWEEP_LIMIT,
   MEMORY_ENTITY_MERGE_THRESHOLD,
   MEMORY_FACT_PAGE_SIZE,
@@ -13,12 +12,16 @@ import {
   MEMORY_PREDICATE_MERGE_THRESHOLD,
   MEMORY_RECONCILE_LIMIT,
   FUNCTIONAL_PREDICATES,
-  memorySeedLimit,
 } from "@/constants/memory";
 import { generateEmbedding, isEmbeddingDimensionError } from "@/lib/embeddings";
 import { logger } from "@/lib/logger";
 import { getNeo4jDriver, isNeo4jConfigured } from "@/lib/neo4j/client";
-import { normalizePredicate, predicateEmbeddingText } from "./canonicalize";
+import { emptyRecallResult, runRecallPipeline } from "./pipeline";
+import {
+  normalizeEntityName,
+  normalizePredicate,
+  predicateEmbeddingText,
+} from "./canonicalize";
 import {
   buildFactCreateCypher,
   buildOrphanGcCypher,
@@ -26,7 +29,6 @@ import {
   CAPTURE_DELETE_CYPHER,
   CAPTURE_PENDING_CYPHER,
   CAPTURE_RETRY_CYPHER,
-  CAPTURE_SEED_CYPHER,
   ENTITY_ALIAS_CYPHER,
   ENTITY_CREATE_CYPHER,
   ENTITY_EXACT_CYPHER,
@@ -36,12 +38,9 @@ import {
   FACT_CURRENT_CYPHER,
   FACT_DELETE_CYPHER,
   FACT_EMBEDDING_CYPHER,
-  FACT_EXPAND_CYPHER,
   FACT_GET_CYPHER,
   FACT_LIST_CYPHER,
-  FACT_PREDECESSOR_CYPHER,
   FACT_RECONCILE_CYPHER,
-  FACT_SEED_CYPHER,
   FACT_VECTORLESS_CYPHER,
   type FactEndLabel,
   GRAPH_ABOUT_CYPHER,
@@ -58,22 +57,16 @@ import {
   USER_UPSERT_CYPHER,
   VALUE_MERGE_CYPHER,
 } from "./cypher";
-import { normalizeEntityName } from "./extract";
 import {
   decideFactWrite,
-  renderRecalledFact,
   selectSuperseded,
-  toRecallCandidate,
   type ExtractedFact,
 } from "./facts";
 import type { MemoryGraphRows } from "./graph-view";
 import { extractFacts } from "./llm-facts";
 import { selectMergePairs } from "./merge";
 import { createMemoryModel } from "./model";
-import { mergeRecallCandidates, rankRecall } from "./recall";
-import { normalizeQueryForRetrieval } from "./text";
 import type {
-  FactRecallMode,
   FactRecallResult,
   RecalledFact,
   SweepSummary,
@@ -580,174 +573,32 @@ export class MemoryGraphStore {
   /**
    * Recall for one turn.
    *
-   * The shape is seed -> expand -> rank -> render, and the failure policy is the
-   * part worth reading:
-   *
-   * - No query, no Neo4j, or no seeds returns **empty** with a reason. It never
-   *   falls back to the newest N facts, because the first rows of a corpus are
-   *   not an answer to a question.
-   * - If **expansion** fails after the seeds arrived, the seeds are ranked and
-   *   returned anyway. They came from the index and they are good matches;
-   *   discarding them because the traversal hit an error throws away the half
-   *   that worked.
-   *
-   * Captures are seeded alongside facts so a sentence saved one second ago is
-   * recallable before any model has read it.
+   * The composition lives in `lib/memory/pipeline.ts` — a guardless module, so
+   * `scripts/eval-memory.ts` can measure the same code chat runs rather than a
+   * copy of it. This method supplies only the two things the pipeline cannot
+   * build itself: a driver and an embedder, the latter carrying the embedding
+   * policy (`null` for an outage, a throw for a broken index).
    */
   async recallFacts(
     userId: string,
     query: string,
     top: number = MEMORY_FACT_TOP,
   ): Promise<FactRecallResult> {
-    const empty = (mode: FactRecallMode): FactRecallResult => ({
-      facts: [],
-      metadata: { mode, seedCount: 0, expandedCount: 0, totalCandidates: 0 },
-    });
-
-    const normalized = normalizeQueryForRetrieval(query);
-    if (normalized.trim() === "") return empty("vector");
-
     if (!isNeo4jConfigured()) {
       logger.warn("Neo4j is not configured; memory recall is disabled");
-      return empty("vector");
+      return emptyRecallResult();
     }
 
     const driver = await this.requireDriver();
-
-    let queryVector: number[] | null;
-    try {
-      queryVector = await generateEmbedding(normalized);
-    } catch (error) {
-      if (isEmbeddingDimensionError(error)) throw error;
-      logger.error({ err: error }, "Query embedding failed; recall returns nothing");
-      return empty("vector");
-    }
-
-    const seedLimit = memorySeedLimit(top);
-
-    const factSeeds = await driver.executeQuery(FACT_SEED_CYPHER, {
-      userId,
-      queryVector,
-      k: seedLimit,
-    });
-    const captureSeeds = await driver.executeQuery(CAPTURE_SEED_CYPHER, {
-      userId,
-      queryVector,
-      k: MEMORY_CAPTURE_SEED_LIMIT,
-    });
-
-    const factCandidates = factSeeds.records.map((record) =>
-      toRecallCandidate({
-        id: String(record.get("id")),
-        sourceText: String(record.get("sourceText") ?? ""),
-        createdAt: String(record.get("createdAt") ?? ""),
-        vectorScore: Number(record.get("vectorScore")),
-        hops: 0,
-        pathWeight: 1,
-      }),
-    );
-
-    const captureCandidates = captureSeeds.records.map((record) =>
-      toRecallCandidate({
-        id: String(record.get("id")),
-        sourceText: String(record.get("text") ?? ""),
-        createdAt: String(record.get("createdAt") ?? ""),
-        vectorScore: Number(record.get("vectorScore")),
-        hops: 0,
-        pathWeight: 1,
-      }),
-    );
-
-    if (factCandidates.length === 0 && captureCandidates.length === 0) {
-      return empty("vector");
-    }
-
-    let expandedCandidates: typeof factCandidates = [];
-    let mode: FactRecallMode = "vector";
-
-    if (factCandidates.length > 0) {
-      try {
-        const expanded = await driver.executeQuery(FACT_EXPAND_CYPHER, {
-          userId,
-          seedIds: factCandidates.map((candidate) => candidate.id),
-          expansionLimit: seedLimit,
-        });
-        expandedCandidates = expanded.records.map((record) =>
-          toRecallCandidate({
-            id: String(record.get("id")),
-            sourceText: String(record.get("sourceText") ?? ""),
-            createdAt: String(record.get("createdAt") ?? ""),
-            vectorScore: 0,
-            hops: Number(record.get("hops")),
-            pathWeight: Number(record.get("pathWeight")),
-          }),
-        );
-        mode = "graph";
-      } catch (error) {
-        // Seeds survived seed-level work; throw away only the traversal.
-        logger.error(
-          { err: error },
-          "Memory expansion failed; returning the seeds unexpanded",
-        );
-      }
-    }
-
-    const merged = mergeRecallCandidates(factCandidates, expandedCandidates);
-    const rankedFacts = rankRecall([...merged.candidates, ...captureCandidates], {
-      top,
-    });
-
-    const captureIds = new Set(captureCandidates.map((candidate) => candidate.id));
-    const factIds = rankedFacts.map((row) => row.id).filter((id) => !captureIds.has(id));
-
-    const predecessors = await this.loadPredecessors(userId, factIds);
-
-    const facts: RecalledFact[] = rankedFacts.map((row) => ({
-      id: row.id,
-      kind: captureIds.has(row.id) ? "capture" : "fact",
-      text: renderRecalledFact(row.content, predecessors.get(row.id) ?? null),
-      createdAt: row.createdAt,
-    }));
-
-    return {
-      facts,
-      metadata: {
-        mode,
-        seedCount: factCandidates.length + captureCandidates.length,
-        expandedCount: merged.addedCount,
-        totalCandidates: merged.candidates.length + captureCandidates.length,
+    return runRecallPipeline(
+      {
+        driver,
+        embed: (text) => this.embedOrThrowOnMismatch(text, "memory query"),
       },
-    };
-  }
-
-  /**
-   * One predecessor per recalled fact: the most recent fact the graph closed on
-   * the same `(S, P)`. The query orders by `validTo DESC`, so the first row per
-   * fact id wins and the rest are dropped — bounded history, no classifier.
-   */
-  private async loadPredecessors(
-    userId: string,
-    factIds: string[],
-  ): Promise<Map<string, { sourceText: string; validTo: string }>> {
-    const predecessors = new Map<string, { sourceText: string; validTo: string }>();
-    if (factIds.length === 0) return predecessors;
-
-    const driver = await this.requireDriver();
-    const result = await driver.executeQuery(FACT_PREDECESSOR_CYPHER, {
       userId,
-      factIds,
-    });
-
-    for (const record of result.records) {
-      const factId = String(record.get("factId"));
-      if (predecessors.has(factId)) continue;
-      predecessors.set(factId, {
-        sourceText: String(record.get("sourceText") ?? ""),
-        validTo: String(record.get("validTo") ?? ""),
-      });
-    }
-
-    return predecessors;
+      query,
+      top,
+    );
   }
 
   /**

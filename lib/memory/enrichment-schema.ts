@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { MEMORY_LLM_EDGE_TYPES, type MemoryLlmEdgeType } from "@/constants/memory";
-import { normalizeEntityName } from "./extract";
+import { normalizeEntityName } from "./canonicalize";
 
 const rawEntity = z.object({
   name: z.string().min(1),

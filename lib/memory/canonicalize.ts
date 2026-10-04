@@ -1,7 +1,35 @@
 import { FUNCTIONAL_PREDICATES } from "@/constants/memory";
 
 /**
- * The predicate half of canonicalization, pure and deterministic.
+ * Canonicalization, pure and deterministic: the two functions that turn a
+ * surface form into the string a uniqueness constraint keys on, one for each
+ * side of a triple.
+ *
+ * The model emits surface forms ("is made by", "Acme Corp"); these turn them
+ * into the strings the `(userId, canonicalName)` and `(userId, normalizedName)`
+ * constraints key on.
+ *
+ * Deliberately no `"server-only"` guard: `scripts/check-memory.ts` and
+ * `scripts/eval-memory.ts` import it under `tsx`.
+ */
+
+/**
+ * Lowercase, collapse whitespace, drop a possessive, strip surrounding
+ * punctuation. Returns "" when nothing survives — and callers must treat "" as
+ * "no entity", never as a name. An empty normalizedName would MERGE every
+ * user's punctuation into one shared node.
+ */
+export function normalizeEntityName(raw: string): string {
+  return (raw ?? "")
+    .replace(/[’']s\b/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The predicate half of canonicalization.
  *
  * The model emits surface forms ("is made by", "PRODUCT_OF"); this turns them
  * into the one string the `(userId, canonicalName)` constraint keys on. Keeping

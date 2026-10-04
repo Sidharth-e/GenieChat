@@ -147,6 +147,35 @@ export const MEMORY_PREDICATE_CLUSTER_THRESHOLD = 0.95;
 /** How many ranked facts reach the prompt. */
 export const MEMORY_FACT_TOP = 5;
 
+/**
+ * The similarity a seed must reach to count as a match at all.
+ *
+ * A vector index always returns its `k` nearest rows, however far away they are,
+ * so without a floor every question returns five memories — the unrelated ones
+ * crowding the prompt is the failure a user actually notices, and it is the one
+ * the eval's precision metric exists to catch.
+ *
+ * **Read the scale before reading the number.** Neo4j reports a cosine index's
+ * score as `(1 + cos) / 2`, not as the cosine: a *fully orthogonal* pair — no
+ * relationship at all — scores **0.5**, and the range is [0, 1]. So this floor
+ * is not a small number, it is 0.1 above the no-relationship point: it demands a
+ * cosine of at least 0.2 before a row counts as a match.
+ *
+ * Measured against the eval's probe set: the weakest relevant seed scores 0.71
+ * and an unrelated question's best seed scores 0.51. The gap is real but narrow,
+ * because this embedding model compresses short sentences into a high band. The
+ * floor sits at the gap's lower end, because dropping a real memory costs the
+ * user more than one irrelevant line does.
+ *
+ * It is tied to the embedding model: a different one re-scales every number
+ * here, and the floor has to be re-measured with `pnpm memory:eval`.
+ *
+ * Applied to hops-0 candidates only. A fact reached by traversal carries a path
+ * instead of a similarity — its vector score is zero by construction — so a
+ * floor on it would delete expansion wholesale.
+ */
+export const MEMORY_SEED_SCORE_FLOOR = 0.6;
+
 /** One page of the memory list. The cap bounds what a single request can pull. */
 export const MEMORY_FACT_PAGE_SIZE = 20;
 export const MEMORY_FACT_PAGE_MAX = 100;
