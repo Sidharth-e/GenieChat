@@ -277,9 +277,15 @@ export class ChatHistoryStore {
     const hasLimit =
       typeof limit === "number" && Number.isFinite(limit) && limit > 0;
 
+    // The history list renders these fields directly, so the projection has to
+    // carry them: a read narrowed past `messageCount` and `model` reports every
+    // thread as empty, and the counters are maintained on this document by
+    // `addMessage`, not derivable from anything else here. Message *content*
+    // stays out of the payload — only the counters and the model id travel.
     const projection = {
-      _id: 1, title: 1, lastMessageAt: 1, agentId: 1, isMultiAgent: 1, isSwarm: 1,
-      isBookmarked: 1, userId: 1, type: 1, createdAt: 1,
+      _id: 1, title: 1, lastMessageAt: 1, updatedAt: 1, agentId: 1, isMultiAgent: 1,
+      isSwarm: 1, isBookmarked: 1, userId: 1, type: 1, createdAt: 1, model: 1,
+      threadType: 1, messageCount: 1, imageCount: 1, attachmentCount: 1,
     } as const;
 
     const cursor = this.threadCollection

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useQueries } from "@tanstack/react-query";
 import {
   useThreads,
   useDeleteThread,
@@ -19,11 +18,13 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { isToday, isYesterday, format } from "date-fns";
 import { cn } from "@/lib/utils";
-import { Message, Thread } from "@/lib/types";
+import { Thread } from "@/lib/types";
+import { formatModelName } from "@/lib/langchain/model-config";
 import { getThreadRoute } from "@/constants/nav-routes";
 import { DeleteConfirmationModal } from "@/components/common/delete-confirmation-modal";
 import { ContentLayout } from "@/components/common/content-layout";
@@ -59,7 +60,6 @@ export function ChatHistory() {
   const [pageSize, setPageSize] =
     React.useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
   const [currentPage, setCurrentPage] = React.useState(1);
-  const [isPageSwitching, setIsPageSwitching] = React.useState(false);
   const [threadToDelete, setThreadToDelete] = React.useState<Thread | null>(
     null,
   );
@@ -92,84 +92,18 @@ export function ChatHistory() {
     setCurrentPage(1);
   }, [normalizedSearchQuery, activeFilter, dateFilter, pageSize]);
 
-  const previewThreadIds = React.useMemo(() => {
-    if (normalizedSearchQuery) {
-      return threadsAfterFacetFilters.map((thread) => thread.id);
-    }
-    const startIndex = (currentPage - 1) * pageSize;
-    return threadsAfterFacetFilters
-      .slice(startIndex, startIndex + pageSize)
-      .map((thread) => thread.id);
-  }, [normalizedSearchQuery, threadsAfterFacetFilters, currentPage, pageSize]);
-
-  const previewQueries = useQueries({
-    queries: previewThreadIds.map((threadId) => ({
-      queryKey: ["thread-messages", threadId],
-      queryFn: () => fetchThreadMessages(threadId),
-      staleTime: 1000 * 60 * 5,
-      gcTime: 1000 * 60 * 30,
-      retry: 1,
-    })),
-  });
-
-  const previewByThreadId = React.useMemo(() => {
-    const previews: Record<string, string> = {};
-    previewThreadIds.forEach((threadId, index) => {
-      const query = previewQueries[index];
-      if (query?.data) {
-        previews[threadId] = buildThreadPreview(query.data);
-      }
-    });
-    return previews;
-  }, [previewThreadIds, previewQueries]);
-
-  const previewLoadingByThreadId = React.useMemo(() => {
-    const loading: Record<string, boolean> = {};
-    previewThreadIds.forEach((threadId, index) => {
-      const query = previewQueries[index];
-      loading[threadId] = Boolean(
-        query && (query.isPending || query.isFetching),
-      );
-    });
-    return loading;
-  }, [previewThreadIds, previewQueries]);
-
-  const previewResolvedByThreadId = React.useMemo(() => {
-    const resolved: Record<string, boolean> = {};
-    previewThreadIds.forEach((threadId, index) => {
-      const query = previewQueries[index];
-      resolved[threadId] = Boolean(query && (query.isSuccess || query.isError));
-    });
-    return resolved;
-  }, [previewThreadIds, previewQueries]);
-
   const filteredThreads = React.useMemo(() => {
     if (!normalizedSearchQuery) {
       return threadsAfterFacetFilters;
     }
 
-    return threadsAfterFacetFilters.filter((thread) => {
-      const titleMatch = thread.title
-        .toLowerCase()
-        .includes(normalizedSearchQuery);
-      if (titleMatch) {
-        return true;
-      }
-
-      const previewResolved = previewResolvedByThreadId[thread.id];
-      if (!previewResolved) {
-        return false;
-      }
-
-      const preview = previewByThreadId[thread.id] || "";
-      return preview.toLowerCase().includes(normalizedSearchQuery);
-    });
-  }, [
-    normalizedSearchQuery,
-    threadsAfterFacetFilters,
-    previewByThreadId,
-    previewResolvedByThreadId,
-  ]);
+    // Search matches titles only: the list carries no message text, and
+    // fetching every visible thread's messages to search their content would
+    // issue one request per row on every keystroke.
+    return threadsAfterFacetFilters.filter((thread) =>
+      thread.title.toLowerCase().includes(normalizedSearchQuery),
+    );
+  }, [normalizedSearchQuery, threadsAfterFacetFilters]);
 
   const totalPages = Math.max(1, Math.ceil(filteredThreads.length / pageSize));
 
@@ -189,42 +123,6 @@ export function ChatHistory() {
     [currentPage, totalPages],
   );
 
-  const currentPageItemCount = React.useMemo(() => {
-    const remaining = filteredThreads.length - (currentPage - 1) * pageSize;
-    return Math.max(0, Math.min(pageSize, remaining));
-  }, [filteredThreads.length, currentPage, pageSize]);
-
-  React.useEffect(() => {
-    if (!isPageSwitching) {
-      return;
-    }
-
-    if (currentPageItemCount === 0) {
-      setIsPageSwitching(false);
-      return;
-    }
-
-    const isAnyPreviewStillLoading = paginatedThreads.some(
-      (thread) => previewLoadingByThreadId[thread.id],
-    );
-
-    if (!isAnyPreviewStillLoading) {
-      const timeout = setTimeout(() => {
-        setIsPageSwitching(false);
-      }, 150);
-      return () => clearTimeout(timeout);
-    }
-  }, [
-    isPageSwitching,
-    currentPageItemCount,
-    paginatedThreads,
-    previewLoadingByThreadId,
-  ]);
-
-  const isSearchingMessages =
-    Boolean(normalizedSearchQuery) &&
-    previewQueries.some((query) => query.isPending || query.isFetching);
-
   const goToPage = React.useCallback(
     (page: number) => {
       const clampedPage = Math.min(Math.max(1, page), totalPages);
@@ -235,7 +133,6 @@ export function ChatHistory() {
         behavior: "smooth",
         block: "start",
       });
-      setIsPageSwitching(true);
       setCurrentPage(clampedPage);
     },
     [currentPage, totalPages],
@@ -276,7 +173,7 @@ export function ChatHistory() {
     <ContentLayout
       title="Session History"
       description="Review and manage your previous conversations"
-      searchPlaceholder="Search past workspaces or outputs..."
+      searchPlaceholder="Search conversations by title..."
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
       actionButton={
@@ -293,11 +190,6 @@ export function ChatHistory() {
           {/* The pagination scroll anchor sits inside the strip, not above the
               title, so paging lands on the filters and the list. */}
           <div ref={topAnchorRef} />
-          {isSearchingMessages && (
-            <p className="text-xs text-text-secondary">
-              Searching message content...
-            </p>
-          )}
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <ContentFilterPills
               ariaLabel="Filter conversations"
@@ -352,20 +244,12 @@ export function ChatHistory() {
               Try starting a new chat or adjusting your filters.
             </p>
           </div>
-        ) : isPageSwitching ? (
-          <div className="flex flex-col border-l border-card-border ml-2 pl-6 relative">
-            {Array.from({ length: currentPageItemCount || pageSize }).map(
-              (_, index) => <ThreadCardSkeleton key={`skeleton-${index}`} />,
-            )}
-          </div>
         ) : (
           <div className="flex flex-col border-l border-card-border ml-2 pl-6 relative">
             {paginatedThreads.map((thread) => (
               <ThreadCard
                 key={thread.id}
                 thread={thread}
-                preview={previewByThreadId[thread.id]}
-                isPreviewLoading={previewLoadingByThreadId[thread.id]}
                 onClick={() => handleThreadClick(thread)}
                 onDelete={() => setThreadToDelete(thread)}
               />
@@ -434,14 +318,10 @@ function ThreadCard({
   thread,
   onClick,
   onDelete,
-  preview,
-  isPreviewLoading,
 }: {
   thread: Thread;
   onClick: () => void;
   onDelete: () => void;
-  preview?: string;
-  isPreviewLoading?: boolean;
 }) {
   const { mutate: toggleBookmark } = useToggleBookmark();
 
@@ -459,14 +339,32 @@ function ThreadCard({
     formatRelativeTime(thread.lastMessageAt || thread.updatedAt) ||
     formatThreadDate(thread.updatedAt);
 
+  const messageCount = thread.messageCount || 0;
+  const imageCount = thread.imageCount || 0;
+  const attachmentCount = thread.attachmentCount || 0;
+  const modelName = formatModelName(thread.model);
+  const modeLabel = getThreadModeLabel(thread);
+
   return (
-    <div className="relative pb-10 group">
+    <div className="relative pb-6 group">
       <div className="absolute -left-[29px] top-1.5 w-2 h-2 rounded-full bg-tertiary/20 group-hover:bg-foreground transition-colors" />
 
-      <div className="flex items-center justify-between gap-4 mb-1">
-        <span className="font-mono text-xs text-tertiary/40">
-          {formattedTime}
-        </span>
+      <div className="flex items-center justify-between gap-4 mb-1.5">
+        <div
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.target !== e.currentTarget) return;
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onClick();
+            }
+          }}
+          onClick={onClick}
+          className="font-sans text-base text-foreground cursor-pointer hover:underline inline-block font-medium"
+        >
+          {thread.title || "Untitled Conversation"}
+        </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={handleBookmark}
@@ -492,39 +390,52 @@ function ThreadCard({
         </div>
       </div>
 
-      <div
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onClick();
-          }
-        }}
-        onClick={onClick}
-        className="font-sans text-base text-foreground mb-1 cursor-pointer hover:underline inline-block font-medium"
-      >
-        {thread.title || "Untitled Conversation"}
+      {/* Detail is read off the thread record itself — showing message text here
+          would mean one request per visible row. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-secondary">
+        <span className="font-mono text-tertiary/40">{formattedTime}</span>
+        <span className="inline-flex items-center gap-1.5">
+          <MessageSquare className="h-3.5 w-3.5" />
+          {messageCount} {messageCount === 1 ? "message" : "messages"}
+        </span>
+        {imageCount > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <ImageIcon className="h-3.5 w-3.5" />
+            {imageCount} {imageCount === 1 ? "image" : "images"}
+          </span>
+        )}
+        {attachmentCount > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <Paperclip className="h-3.5 w-3.5" />
+            {attachmentCount}{" "}
+            {attachmentCount === 1 ? "attachment" : "attachments"}
+          </span>
+        )}
+        {modelName && <span>{modelName}</span>}
+        {modeLabel && <span>{modeLabel}</span>}
       </div>
-
-      {(preview || isPreviewLoading) && (
-        <p className="font-serif text-sm text-text-secondary italic max-w-2xl line-clamp-2">
-          {isPreviewLoading ? "Loading latest message..." : `"${preview}"`}
-        </p>
-      )}
     </div>
   );
 }
 
+/**
+ * Only the modes that change what the conversation *is*. A plain chat — agent
+ * or not — needs no label, because the model beside it already names it.
+ */
+function getThreadModeLabel(thread: Thread): string {
+  if (thread.isSwarm) return "Swarm";
+  if (thread.isMultiAgent) return "Multi-agent";
+  if (thread.threadType === "research") return "Research";
+  return "";
+}
+
 function ThreadCardSkeleton() {
   return (
-    <div className="relative pb-10">
+    <div className="relative pb-6">
       <div className="absolute -left-[29px] top-1.5 w-2 h-2 rounded-full bg-tertiary/20" />
       <div className="animate-pulse space-y-2">
-        <div className="h-3 w-20 bg-hover-bg rounded-xs" />
         <div className="h-4 w-64 bg-hover-bg rounded-xs" />
-        <div className="h-3 w-96 bg-hover-bg rounded-xs" />
+        <div className="h-3 w-48 bg-hover-bg rounded-xs" />
       </div>
     </div>
   );
@@ -543,52 +454,6 @@ function formatThreadDate(dateString: string) {
   } catch {
     return "";
   }
-}
-
-function normalizePreviewText(content: string): string {
-  const withoutCodeBlocks = content.replace(/```[\s\S]*?```/g, " [code] ");
-  const withoutInlineCode = withoutCodeBlocks.replace(/`([^`]+)`/g, "$1");
-  const withoutLinks = withoutInlineCode.replace(
-    /\[([^\]]+)\]\([^)]+\)/g,
-    "$1",
-  );
-  const withoutFormatting = withoutLinks.replace(/[#>*_~-]/g, " ");
-  return withoutFormatting.replace(/\s+/g, " ").trim();
-}
-
-function buildThreadPreview(messages: Message[]): string {
-  if (messages.length === 0) {
-    return "No messages yet.";
-  }
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    const normalized = normalizePreviewText(message.content || "");
-    if (normalized) {
-      return normalized.length > 180
-        ? `${normalized.slice(0, 177).trimEnd()}...`
-        : normalized;
-    }
-  }
-
-  const latestMessage = messages[messages.length - 1];
-  const imageCount = latestMessage.images?.length || 0;
-  const attachmentCount = latestMessage.documents?.length || 0;
-
-  if (imageCount > 0 || attachmentCount > 0) {
-    const labels: string[] = [];
-    if (imageCount > 0) {
-      labels.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
-    }
-    if (attachmentCount > 0) {
-      labels.push(
-        `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`,
-      );
-    }
-    return `Shared ${labels.join(" and ")}`;
-  }
-
-  return "No message content available yet.";
 }
 
 function matchesDateFilter(dateString: string, filter: DateFilter): boolean {
@@ -650,14 +515,4 @@ function getVisiblePageNumbers(
   }
 
   return Array.from({ length: end - start + 1 }, (_, index) => start + index);
-}
-
-async function fetchThreadMessages(threadId: string): Promise<Message[]> {
-  const response = await fetch(
-    `/api/chat/threads/${encodeURIComponent(threadId)}`,
-  );
-  if (!response.ok) {
-    throw new Error("Failed to fetch thread messages");
-  }
-  return response.json();
 }
