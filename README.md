@@ -415,7 +415,11 @@ Keep `CLAUDE.md` current when you change architecture, conventions, dependencies
 
 ## License
 
-No license file is currently included in this repository, and `package.json` marks the package `private`. Unless a license is added, all rights are reserved by the author. If you intend for others to use, modify or distribute GenieChat, add a `LICENSE` file (MIT and Apache-2.0 are common choices for open-source projects).
+GenieChat is released under the [**MIT License**](LICENSE).
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense and sell it — the only requirement is that you keep the copyright notice and this permission notice. The software is provided *"as is"*, without warranty of any kind.
+
+Copyright © 2026 Sidharth E.
 
 <div align="center">
 
@@ -426,5 +430,3 @@ No license file is currently included in this repository, and `package.json` mar
 Built with [Next.js](https://nextjs.org) · [LangChain](https://js.langchain.com) · [Neo4j](https://neo4j.com) · [pgvector](https://github.com/pgvector/pgvector)
 
 </div>
-</content>
-</invoke>
