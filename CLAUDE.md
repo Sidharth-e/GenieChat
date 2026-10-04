@@ -64,7 +64,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/postgres/` — PostgreSQL + pgvector, the knowledge-RAG store. `config.ts` reads `config.postgres` and is pure; `client.ts` is the `"server-only"` layer holding one lazily-built `Pool`; `vector.ts` holds `toVectorLiteral()` and is pure and unit-tested. `lib/knowledge/` sits on top: `chunking.ts`, `ranking.ts` and `embed.ts` are pure and unit-tested, `index.ts` is the writer, `search.ts` the hybrid retriever, `documents.ts` and `citation-services.ts` the document and citation ports. `embed.ts` holds the embed-before-transaction loop and the policy that separates a width mismatch (rethrow — the index is broken) from an outage (store the chunk vectorless). See [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector).
 - `lib/embeddings/` — Ollama embeddings. `text.ts` is pure (token estimation, normalization, head/tail truncation, context-length retry parsing) and unit-tested; `dimensions.ts` holds `EmbeddingDimensionError` plus `assertEmbeddingDimensions` / `isEmbeddingDimensionError` and is pure and unit-tested — a typed error rather than message-matching, because the predicate has to recognise the provider's wording while this one is ours; `index.ts` is the `"server-only"` provider that calls both and re-exports them. `constants/embeddings.ts` holds `EMBEDDING_DIMENSIONS`, the index contract every vector store must match.
 - `lib/neo4j/` — the Neo4j driver. `config.ts` reads `config.neo4j` and is pure, returning null unless the URI *and* a password are present; `client.ts` is the `"server-only"` layer holding one lazily-built `Driver` plus `isNeo4jConfigured()`, so every caller degrades rather than throws.
-- `lib/memory/` — the fact graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore` and `sweep-runner.ts` its `"server-only"` sweep driver; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same Cypher the store does. `facts.ts` (the dedupe/supersede decision), `canonicalize.ts` (entity and predicate name normalization), `merge.ts` (the merge sweep's clustering), `recall.ts` (hop decay, recency, the seed-plus-traversal blend), `text.ts` and `pipeline.ts` (the recall read, extracted out of the store so the eval and its unit tests need no database) are pure and unit-tested; `eval-cases.ts` holds the fixed probe set, and `single-flight.ts` (the keyed in-process dedupe keeping a nudge and a cron pass from extracting one capture twice) and `capture-poll.ts` (the list's poll decision over the pending-capture count) are pure and unit-tested too. `nudge.ts` is the `"server-only"` `after()`-based shim scheduling one post-response sweep at each capture write site. `llm-facts.ts` is the extractor's schema and call, and `model.ts` the guardless extraction-model factory. `graph-view.ts` assembles the four graph reads into the drawn node/edge set and `graph-layout.ts` positions it — both pure and unit-tested, and both deliberately unaware of React Flow, so the decisions worth testing (which entities survive the cap, what an edge is called, what "degree" means, where a node lands) need no browser. `constants/memory.ts` holds the merge thresholds, the recall weights and the graph-view limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
+- `lib/memory/` — the fact graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore` and `sweep-runner.ts` its `"server-only"` sweep driver; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same Cypher the store does. `facts.ts` (the dedupe/supersede decision), `canonicalize.ts` (entity and predicate name normalization), `merge.ts` (the merge sweep's clustering), `recall.ts` (hop decay, recency, the seed-plus-traversal blend), `text.ts` and `pipeline.ts` (the recall read, extracted out of the store so the eval and its unit tests need no database) are pure and unit-tested; `eval-cases.ts` holds the fixed probe set, and `single-flight.ts` (the keyed in-process dedupe keeping a nudge and a cron pass from extracting one capture twice) and `capture-poll.ts` (the list's poll decision over the pending-capture count) are pure and unit-tested too. `nudge.ts` is the `"server-only"` `after()`-based shim scheduling one post-response sweep at each capture write site. `llm-facts.ts` is the extractor's schema and call, and `model.ts` the guardless extraction-model factory. `graph-view.ts` assembles one flat fact read into the drawn node/edge set and `graph-layout.ts` is a d3-force stepper the renderer ticks per frame — both pure and unit-tested, and both deliberately unaware of the canvas, so the decisions worth testing (which satellites survive the cap, what an edge is called, how big a node is, where a node starts, what "settled" means) need no browser. `d3-force` is the one runtime dependency this layer adds. `constants/memory.ts` holds the merge thresholds, the recall weights and the graph-view limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
 - `lib/schedules/` — the scheduling subsystem. `cadence.ts` (cron and `once` next-occurrence), `retry.ts` (backoff, terminal error classes, the reaper's outcome and `isRunOpen`), `schedule-input.ts` (draft and patch parsing, and the next-run-after-patch rule), `input-form.ts` (a Zod schema into form fields, and the string-to-value coercer) and `input-schemas.ts` (the per-target input schemas) are pure and unit-tested. `registry.ts` holds the `TriggerExecutor` map every target kind registers into and registers nothing itself; `executors.ts` performs the executor imports and re-exports the registry, and is the module request-time consumers import from — importing `getExecutor` from `registry.ts` instead yields an empty registry that answers `invalid_target` for every target while the type-check and the unit suite stay green. `executor-workflow.ts` and `executor-agent.ts` are the two registered executors (`tool` is deliberately absent); `run-agent.ts` is the headless agent run the `agent` executor and the webhook service share; `dispatch.ts` runs one named run; `tick.ts` is the I/O layer that runs one pass. `lib/api/cron-guard.ts` is the `CRON_SECRET` bearer check the tick and the dispatch seam share. Execution is **at-least-once**: a claimed run holds a lease, and a run whose process died is handed back by the reaper rather than being lost. `constants/schedules.ts` holds the lease length, the retry curve and the tick's bounds. See [Scheduling](#scheduling).
 - `lib/api/` — helpers for the route layer. `rate-limit.ts` (see [Redis](#redis)), `agent-api-auth.ts` (the API-key path), `cron-guard.ts` (the `CRON_SECRET` bearer check the tick and the dispatch seam share), and `query-params.ts`, whose `boundedInt` clamps a query integer. It takes a `min` because `Number(null)` is `0` and a Mongo `.limit(0)` means *no limit* — without a lower bound an absent `?limit` returns the whole collection rather than a page.
 - `lib/redis-client.ts` — Shared ioredis connections, one per named consumer, with a per-consumer circuit breaker. `getRedisClient(name, options)` returns a discriminated result (`ready` / `unconfigured` / `circuit-open`) so each caller picks its own degradation policy. See [Redis](#redis).
@@ -232,8 +232,8 @@ on its own, which a fixed window after the save cannot do. `MEMORY_CAPTURE_POLL_
 bounds the one case it cannot see: a deployment whose sweep never runs, where the
 count would stay above zero forever. The list and the graph both read with
 `staleTime: 0`, since any cached page is a snapshot of a graph that is
-mid-change; the graph carries no poll, because it is five round trips per read
-and its tab is opened deliberately.
+mid-change; the graph carries no poll, because a re-read rebuilds a force layout
+the reader is in the middle of looking at and its tab is opened deliberately.
 
 Recall is a vector seed plus a bounded traversal, ranked in TypeScript
 (`lib/memory/recall.ts`, composed by `pipeline.ts`): the seed's cosine score and
@@ -260,10 +260,13 @@ connection, while the scripts build their own driver. Cypher cannot parameterise
 a variable-length bound, so `FACT_EXPAND_CYPHER` interpolates
 `MEMORY_RECALL_HOPS`, which is verified as a positive integer at import.
 
-Nothing writes `:Memory` nodes any more, but the graph view still draws them, so
-an existing database keeps the label's index and constraint until that view is
-reworked onto `:Fact` — a separate plan. `pnpm memory:drop-prose` removes the
-nodes and that leftover schema.
+Nothing writes `:Memory` nodes any more, and `buildNeo4jDdl` creates no index or
+constraint for the label. Legacy prose nodes still exist in live databases, and
+two scripts depend on the orphan GC sparing what they point at: the `ABOUT` arm of
+`buildOrphanGcCypher` is what stops the GC deleting the entities those nodes
+mention, and `scripts/drop-memory-nodes.ts` reaches them through that arm.
+`pnpm memory:drop-prose` is the removal path — it drops the nodes along with the
+index and constraint an older schema created for them.
 
 `pnpm db:setup:neo4j` creates the constraints and vector indexes. `pnpm
 memory:check` exercises the store against a live graph, and `pnpm memory:eval`
@@ -288,41 +291,70 @@ in `buildNeo4jDdl`.
 `GET /api/memories/graph`, which is session-scoped like every other memory route,
 and assembled by `buildMemoryGraphView` from `lib/memory/graph-view.ts`.
 
-Four reads, not one, and the order matters: `GRAPH_MEMORIES_CYPHER` picks the
-window — newest first, capped — and the other three are then scoped to that id
-set, which is what makes the drawn edges exactly those whose endpoints are drawn.
-A single pattern would return edges to memories the window excluded, and the view
-could only drop them (making the picture disagree with the degrees it reports) or
-draw an orphan. `GRAPH_MEMORY_COUNT_CYPHER` supplies the true total, because the
-truncation notice cannot be inferred from "the read returned exactly the limit" —
-that reports truncation for a user who has exactly that many memories.
+**Four node kinds and three edge kinds.** A fact is a node, and its subject,
+predicate and object are three more reached by three separate edges. `:Entity`,
+`:Predicate` and `:Value` all MERGE on a per-user key, so a satellite is genuinely
+shared across the facts that mention it and the satellites *are* the hubs —
+nothing computes communities, because the clustering is already in the data.
 
-Two ceilings, bounding different things. `MEMORY_GRAPH_MEMORY_LIMIT` (120) bounds
-the read; `MEMORY_GRAPH_NODE_LIMIT` (150) bounds what is drawn, memories plus
-entities, with entities ranked by how many kept memories link them so a cap drops
-the least-connected rather than an arbitrary slice. The node cap is a wall-clock
-bound rather than an aesthetic one: `layoutMemoryGraph` is O(n²) per iteration and
-runs synchronously in the render, so raising it means moving the layout off the
-render path first.
+**The `:User` anchor is deliberately not drawn.** It is the subject of nearly
+every personal fact, so drawing it produces a star of degree *n* that tells the
+reader nothing and collapses the layout. A fact whose subject is the anchor keeps
+its predicate and object edges and loses only the subject one. Recall's separate
+rule not to *traverse* through `:User` is untouched.
 
-The layout is hand-rolled Fruchterman–Reingold, deterministic — no `Math.random`
-anywhere, so a remount does not reshuffle the picture. Repulsion is `k²/d` and
-attraction `d²/k` against the ideal spacing `k`, which is what makes the result
-need no per-graph tuning; the two cross at `d = k`. `MEMORY_GRAPH_LAYOUT_CENTER_PULL`
-must stay far below the repulsion at a typical distance or the graph collapses to
-a point — that margin is why the value looks so small. `constants/memory.ts`
-carries the reasoning for each number, and `MEMORY_GRAPH_MEMORY_NODE_SIZE` /
-`MEMORY_GRAPH_ENTITY_NODE_SIZE` live there too because the simulation and the
-renderer have to agree on them.
+**The read is two round trips.** `GRAPH_FACTS_CYPHER` picks the window — newest
+first, capped at `MEMORY_GRAPH_FACT_LIMIT` — returning each fact with its three
+satellites flattened into one row, which is what lets a single pattern produce
+exactly the edges whose endpoints are drawn. `FACT_COUNT_CYPHER` supplies the true
+total, because the truncation notice cannot be inferred from "the read returned
+exactly the limit" — that reports truncation for a user who has exactly that many
+facts. Both hit indexes that already exist, so the drawing carries no schema of
+its own.
 
-Identity is never colour-alone. Node kind is shape and size (a bordered card is a
-memory, a pill is an entity); edge kind is line style, paired with a legend that
-names each one, with `--red` reserved for the single semantically loaded kind
-(CONTRADICTS). The hover card is also the accessibility fallback: it shows the
-full memory text a clamped node cannot, and it is the only place an edge's
-model-written `reason` is readable. `scripts/check-memory.ts` covers these four
-statements, since the store is `"server-only"` and the script is the only thing
-that executes the same Cypher.
+**Two ceilings, bounding different things.** `MEMORY_GRAPH_FACT_LIMIT` (1000)
+bounds the read; `MEMORY_GRAPH_NODE_LIMIT` (3000) bounds the drawing. The second
+is reached only when facts carry mostly unique satellites: past it the
+lowest-degree satellites are dropped, ties broken by label then id so the dropped
+set is the same on every read, and **facts are never dropped** — a fact is what the
+reader came for, and its satellites are what connect it to the rest.
+
+**The layout is a stepper the renderer drives.** `lib/memory/graph-layout.ts`
+seeds every node on a golden-angle spiral — assigned explicitly rather than left
+to d3's own initialization, so the picture is deterministic and a remount never
+reshuffles it — and returns a d3-force simulation the renderer ticks once per
+frame while `alpha` is above `MEMORY_GRAPH_ALPHA_MIN`, then paints once more and
+stops. `forceSimulation()` starts a timer of its own the moment it is
+constructed; the module stops it and never calls `restart()`, so d3 and the
+renderer cannot tick the same nodes at once. The simulation runs on the **main
+thread**: a Barnes–Hut tick at ~2000 nodes is 1–3 ms, well inside a frame, and a
+worker would add a per-frame structured clone that costs more than the tick it
+saves. Past that, the upgrade is a worker behind the same stepper interface, with
+no change to any consumer.
+
+**Identity is never colour-alone.** Node kind is shape — a rounded square is a
+fact, a circle an entity, a diamond a predicate, a smaller circle a value — and
+size, degree growing the radius, as well as colour; edge kind is line style. The
+colours are `--chart-1` through `--chart-4`, the repo's own categorical and
+colorblind-validated palette, chosen over the semantic `--red`/`--green` tokens
+because those carry error and success meaning everywhere else and must not be
+spent on a node kind. The legend, the detail card and the keyboard announcement
+each name the kind in words. The canvas reads the tokens with `getComputedStyle`
+at runtime — `ctx.fillStyle` cannot take a `var()` — through
+`hooks/use-memory-graph-palette.ts`, which re-reads on the resolved theme, so a
+cached colour from the previous theme is never drawn.
+
+**A canvas forces an accessibility contract.** There is no DOM to read, so the
+canvas carries `role="img"` and a summary label; it is focusable and walks the
+nodes in degree-descending order, capped at `MEMORY_GRAPH_KEYBOARD_LIMIT`, with
+the focused node announced through an `aria-live` region and Enter opening its
+detail card. Labels are suppressed below `MEMORY_GRAPH_LABEL_ZOOM` and for
+low-degree nodes — that is what makes thousands of nodes legible rather than grey
+mush, because the picture is dots until the reader zooms in or points at
+something. The List tab remains the full non-visual surface.
+
+**`scripts/check-memory.ts` covers both statements**, since the store is
+`"server-only"` and the script is the only thing that executes the same Cypher.
 
 ### Scheduling
 

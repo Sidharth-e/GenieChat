@@ -301,8 +301,10 @@ export function buildFactCreateCypher(
  * Orphan collection, one statement per label so each can use its own
  * `(userId)` index.
  *
- * `ABOUT` is in the pattern on purpose: the graph view reads `:Memory` entities,
- * so a GC that ignored an `ABOUT` edge would delete what the view draws.
+ * `ABOUT` is in the pattern on purpose: legacy `:Memory` nodes remain in live
+ * databases until `memory:drop-prose` removes them, an `ABOUT` edge is the only
+ * thing still referencing the entities they mention, and a GC that ignored it
+ * would delete nodes the drop script then has nothing left to reach.
  */
 export function buildOrphanGcCypher(label: "Entity" | "Predicate" | "Value"): string {
   if (!ORPHAN_LABELS.includes(label)) {
