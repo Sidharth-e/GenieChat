@@ -6,7 +6,7 @@
 
 **One genie. Every wish.**
 
-*A self-hosted AI workspace — multi-model chat, autonomous agents, retrieval-augmented knowledge and persistent graph memory, in one Next.js 16 application.*
+**Every model. Every tool. Every memory — one self-hosted platform.**
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
