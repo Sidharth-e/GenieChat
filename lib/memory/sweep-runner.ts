@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { getNeo4jDriver } from "@/lib/neo4j/client";
 import { SWEEP_WORKLIST_CYPHER } from "./cypher";
 import { MemoryGraphStore } from "./graph-store";
+import { createSingleFlight } from "./single-flight";
 import type { SweepSummary } from "./types";
 
 /**
@@ -19,6 +20,23 @@ export interface SweepPassResult {
   touched: number;
   failed: number;
   summary: SweepSummary;
+}
+
+// Module-level: the nudge and the cron pass share this store and this map, so a
+// concurrent sweep of one user joins rather than running twice.
+const store = new MemoryGraphStore();
+const sweepsInFlight = createSingleFlight<SweepSummary>();
+
+/**
+ * One user's sweep, deduped against any sweep already running for them.
+ *
+ * This is the single entry point both callers use: the nudge after a capture,
+ * and `runSweepPass` for the cron. That is what stops the two from extracting
+ * the same capture twice — the race is a doubled model call and either a
+ * duplicate current fact or a supersede churn over a fact just written.
+ */
+export function sweepUser(userId: string): Promise<SweepSummary> {
+  return sweepsInFlight.run(userId, () => store.sweep(userId));
 }
 
 /**
@@ -42,7 +60,6 @@ export async function runSweepPass(): Promise<SweepPassResult> {
     limit: MEMORY_SWEEP_USER_LIMIT,
   });
 
-  const store = new MemoryGraphStore();
   const summary: SweepSummary = {
     captures: 0,
     reconciled: 0,
@@ -57,7 +74,7 @@ export async function runSweepPass(): Promise<SweepPassResult> {
     if (!userId) continue;
 
     try {
-      const pass = await store.sweep(userId);
+      const pass = await sweepUser(userId);
       summary.captures += pass.captures;
       summary.reconciled += pass.reconciled;
       summary.merged += pass.merged;
