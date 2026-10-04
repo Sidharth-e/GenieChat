@@ -2,11 +2,7 @@ import { NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
 import { chatService } from "@/lib/langchain/chat-service";
 import { MemoryGraphStore } from "@/lib/memory/graph-store";
-import {
-  createSaveMemoryTool,
-  createEditMemoryTool,
-  createDeleteMemoryTool,
-} from "@/lib/tool/memory";
+import { createSaveMemoryTool } from "@/lib/tool/memory";
 import { convertCustomToolsToLangChain } from "@/lib/tool/custom-tool-converter";
 import { loadUserTooling, filterConnectors, type UserTooling } from "../context";
 import { handleError, api } from "@/lib/api-utils";
@@ -74,8 +70,6 @@ export function createChatMode(params: {
 
   if (memoryEnabled) {
     customToolsForAI.push(createSaveMemoryTool(userId, user.name, user.email));
-    customToolsForAI.push(createEditMemoryTool(userId));
-    customToolsForAI.push(createDeleteMemoryTool(userId));
   }
 
   // Started here for the same reason as the retrieval above — the two database

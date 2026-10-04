@@ -29,26 +29,19 @@ describe("MemoryGraphStore, unconfigured", () => {
     expect(isNeo4jConfigured()).toBe(false);
   });
 
-  it("returns an empty result from recall instead of throwing", async () => {
-    // Spec §8: "`NEO4J_URI` unset | Retrieval returns empty and logs once."
-    // Retrieval is the one path that must *not* surface the store's absence as
-    // an error — a chat turn with no memories is a worse answer, but it is an
-    // answer, and `app/api/memories/route.ts` turns a throw into a 500 where
-    // the documented behaviour is an empty list. CRUD is the opposite case and
-    // is asserted separately below.
+  it("refuses a capture, because a write that only appears to succeed is not", async () => {
+    // Spec §8: with no `NEO4J_URI` the graph is not there. A capture is a
+    // write, and the tool's "Memory saved" is a promise the node is on disk —
+    // so this must fail loudly rather than return an id for nothing.
     const store = new MemoryGraphStore();
 
-    await expect(store.searchRelevantMemories("user-1", "anything", 5)).resolves.toEqual([]);
-  });
-
-  it("still refuses CRUD, because memories are the feature", async () => {
-    // The asymmetry is deliberate and is the same spec paragraph: an empty
-    // list is the honest answer to "what do I remember about X" when the graph
-    // is gone, but writing a memory into a store that is not there must fail
-    // loudly rather than appear to succeed.
-    const store = new MemoryGraphStore();
-
-    await expect(store.getMemories("user-1")).rejects.toThrow(/not configured/);
-    await expect(store.getMemory("memory-1", "user-1")).rejects.toThrow(/not configured/);
+    await expect(
+      store.captureSentence({
+        userId: "user-1",
+        userName: "Ada",
+        userEmail: "ada@example.com",
+        text: "Ada lives in Lisbon",
+      }),
+    ).rejects.toThrow(/not configured/);
   });
 });
