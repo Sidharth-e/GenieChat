@@ -73,18 +73,20 @@ export function useMemories() {
 }
 
 /**
- * Fetches the drawn memory graph — memories plus the entities and relations
- * that connect them.
+ * Fetches the drawn memory graph — facts plus the entities, predicates and
+ * values that connect them.
  *
  * A separate query from the list rather than something derived from it, because
- * the list has no entities on it. It is not gated on a flag: the component that
- * calls it is only mounted while the graph tab is selected, so the fetch — five
- * Neo4j round trips — does not happen while the reader is still on the list.
+ * the list carries no satellites. It is not gated on a flag: the component that
+ * calls it is only mounted while the graph tab is selected, so the two Neo4j
+ * round trips do not happen while the reader is still on the list.
  *
  * `staleTime: 0` for the same reason as the list: a capture the extractor has
- * just materialized makes any cached drawing wrong. It carries no poll — the
- * graph is five round trips per read and the tab is opened deliberately, so a
- * stale-while-visible read is the trade this makes.
+ * just materialized makes any cached drawing wrong. It carries no poll. The
+ * list polls because a save stages a capture and the page cannot say when it
+ * becomes a fact, whereas the graph is a deliberate read of a picture that has
+ * to be laid out and drawn anyway — re-reading it on a timer would rebuild a
+ * force layout the reader is in the middle of looking at.
  */
 export function useMemoryGraph() {
     return useQuery<MemoryGraphView>({

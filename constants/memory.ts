@@ -361,6 +361,34 @@ export const MEMORY_GRAPH_VELOCITY_DECAY = 0.6;
 export const MEMORY_GRAPH_SEED_RADIUS_FRACTION = 0.35;
 
 /**
+ * A label is drawn on a node that is hovered or focused, on one at or above this
+ * degree, or on every node once the camera passes this zoom.
+ *
+ * The thresholds are what make thousands of nodes legible: drawing every label
+ * at full zoom-out is grey mush rather than a graph, so the picture is dots
+ * until the reader zooms in or points at something.
+ */
+export const MEMORY_GRAPH_LABEL_ZOOM = 1.1;
+export const MEMORY_GRAPH_LABEL_MIN_DEGREE = 3;
+
+/** Camera zoom bounds. The floor is where the whole corpus fits; the ceiling is
+ *  where a single fact's sentence is readable. */
+export const MEMORY_GRAPH_MIN_ZOOM = 0.1;
+export const MEMORY_GRAPH_MAX_ZOOM = 4;
+
+/** How near the pointer must be to a node to count as hovered, on top of radius. */
+export const MEMORY_GRAPH_HOVER_PADDING = 6;
+
+/**
+ * How many nodes the keyboard traversal walks before it stops.
+ *
+ * The order is degree-descending, so this is the hubs rather than an arbitrary
+ * slice — a keyboard reader cannot step through every node and would not want
+ * to. A specific low-degree node is found with the search box instead.
+ */
+export const MEMORY_GRAPH_KEYBOARD_LIMIT = 200;
+
+/**
  * Users one sweep pass touches. The worklist is users with something pending
  * rather than every user, so this bounds a drip, not a thundering herd.
  */
