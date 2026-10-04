@@ -22,7 +22,7 @@ interface ConnectorsContentProps {
   initialServers?: ConnectorConfig[];
 }
 
-export function ConnectorsContent({ initialServers = [] }: ConnectorsContentProps) {
+export function ConnectorsContent({ initialServers }: ConnectorsContentProps) {
   const {
     data: servers = [],
     isLoading,

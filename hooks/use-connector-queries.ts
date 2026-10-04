@@ -42,6 +42,13 @@ async function fetchToolsFor(serverId: string): Promise<ConnectorToolInfo[]> {
  * the list page paints without a second round trip.
  */
 export function useConnectors(initialServers?: ConnectorConfig[]) {
+    // React Query treats a provided `initialData` as fresh for `staleTime`, and
+    // refetches on mount only when the data is stale. Seeding an empty
+    // placeholder list therefore pins the page to "No connectors found" for the
+    // whole window and never reaches the API. Seed only what a caller actually
+    // read -- `undefined` leaves the query to fetch. Same guard as `useAgents`.
+    const hasInitialData = Array.isArray(initialServers);
+
     return useQuery<ConnectorConfig[]>({
         queryKey: connectorKeys.servers(),
         queryFn: async () => {
@@ -53,6 +60,7 @@ export function useConnectors(initialServers?: ConnectorConfig[]) {
         },
         initialData: initialServers,
         staleTime: 1000 * 60 * 5,
+        refetchOnMount: hasInitialData ? false : true,
     });
 }
 
