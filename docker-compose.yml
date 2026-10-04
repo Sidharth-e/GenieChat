@@ -2,7 +2,8 @@
 # Neo4j for graph memory, Garage for S3-compatible object storage,
 # docling-serve for document parsing, and the two drivers that make the app's
 # periodic work actually fire: schedule-tick for scheduled runs and memory-sweep
-# for memory extraction.
+# for memory extraction. The app also nudges a memory sweep in-process when a
+# capture is saved, so memory-sweep is the retry rather than the only mechanism.
 #
 #   docker compose up -d      # start
 #   docker compose ps         # health
