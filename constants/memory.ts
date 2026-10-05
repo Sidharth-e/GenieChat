@@ -234,6 +234,32 @@ export const MEMORY_RECALL_HOPS = 2;
 /** The per-hop weight decay: a second hop contributes, but less than the first. */
 export const MEMORY_TRAVERSAL_DECAY = 0.6;
 
+/**
+ * The anchor arm: the user's own newest facts, reached through the `:User` node
+ * that `FACT_EXPAND_CYPHER` refuses to traverse.
+ *
+ * That refusal is right — every personal fact hangs off the anchor, so an
+ * unbounded hop through it reaches the whole corpus. The cost of it was that two
+ * attributes of the same person were *unreachable* from each other: ask about a
+ * diet and the height the assistant had been told was never in front of it, so
+ * it asked for it again. This arm buys that reach back under a cap.
+ *
+ * The limit bounds **candidates**, not what reaches the prompt — `MEMORY_FACT_TOP`
+ * and the ranking decide that.
+ */
+export const MEMORY_ANCHOR_EXPAND_LIMIT = 10;
+
+/**
+ * What an anchor-reached fact weighs against a question-linked one.
+ *
+ * A shared anchor is the weakest connection the graph has: it says only that the
+ * user said both things, never that they belong together. At half weight an
+ * anchor fact scores 0.5 × 0.3 × 0.6 = 0.09 where an entity-linked hop-1 fact
+ * scores 0.18, so profile facts rank *below* the facts the question actually
+ * matched rather than tying with them. They are context, never the answer.
+ */
+export const MEMORY_ANCHOR_PATH_WEIGHT = 0.5;
+
 export const MEMORY_SEED_MIN = 15;
 
 /**

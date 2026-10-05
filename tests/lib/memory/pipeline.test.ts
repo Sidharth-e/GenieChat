@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { runRecallPipeline, type RecallDriver } from "@/lib/memory/pipeline";
 
+/**
+ * The two expansion arms are told apart by the edge pattern only their own
+ * statement carries — neither statement's text names an `EXPAND`. The traversal
+ * walks `[:SUBJECT|OBJECT*1..2]`; the anchor takes the single fixed
+ * `-[:SUBJECT]->(:User)` hop the traversal is forbidden to take.
+ */
+const ENTITY_ARM = "SUBJECT|OBJECT";
+const ANCHOR_ARM = "-[:SUBJECT]->(:User";
+
 /** A driver that answers each statement from a table, and records what was asked. */
 function fakeDriver(answers: Record<string, unknown[]>): {
   driver: RecallDriver;
@@ -63,9 +72,10 @@ describe("runRecallPipeline", () => {
         calls.push(query);
         if (query.includes(":Capture")) return rows([]);
         if (query.includes("SEARCH")) return rows(seeds);
-        // Only the traversal explodes. The predecessor read answers empty, so
-        // the failure under test is the one the name says it is.
-        if (query.includes("SUBJECT|OBJECT")) {
+        // Only the traversal explodes. The anchor arm answers empty, and the
+        // predecessor read answers empty, so the failure under test is the one
+        // the name says it is.
+        if (query.includes(ENTITY_ARM)) {
           throw new Error("expansion exploded");
         }
         return rows([]);
@@ -113,7 +123,7 @@ describe("runRecallPipeline", () => {
         if (query.includes("SEARCH")) return rows(seeds);
         // Discriminated by the traversal's own edge pattern, not by a name: the
         // statement text carries no `EXPAND`.
-        if (query.includes("SUBJECT|OBJECT")) return rows(expanded);
+        if (query.includes(ENTITY_ARM)) return rows(expanded);
         return rows([]);
       },
     };
@@ -127,6 +137,111 @@ describe("runRecallPipeline", () => {
 
     expect(result.metadata.mode).toBe("graph");
     expect(result.facts.map((f) => f.id).sort()).toEqual(["f1", "f2"]);
+  });
+
+  it("reaches the user's own profile through the anchor arm", async () => {
+    // The entity arm cannot connect two facts that share nothing but their
+    // subject — the anchor — because expansion is forbidden to traverse it.
+    // Without this arm the height never reaches the prompt and the model asks
+    // the user for what it was already told.
+    const seeds = [
+      {
+        id: "f1",
+        sourceText: "I am vegetarian",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        vectorScore: 0.9,
+      },
+    ];
+    const anchorReached = [
+      {
+        id: "f2",
+        sourceText: "I am 180 cm tall",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        hops: 1,
+        pathWeight: 0.5,
+      },
+    ];
+    const rows = (r: unknown[]) => ({
+      records: r.map((row) => ({
+        get: (f: string) => (row as Record<string, unknown>)[f],
+      })),
+    });
+    const driver: RecallDriver = {
+      async executeQuery(query: string) {
+        if (query.includes(":Capture")) return rows([]);
+        if (query.includes(ENTITY_ARM)) return rows([]); // nothing shares an entity
+        if (query.includes(ANCHOR_ARM)) return rows(anchorReached);
+        return rows(seeds);
+      },
+    };
+
+    const result = await runRecallPipeline(
+      { driver, embed: async () => [1, 0] },
+      "u1",
+      "what diet should I follow",
+      5,
+    );
+
+    expect(result.facts.map((f) => f.id).sort()).toEqual(["f1", "f2"]);
+    expect(result.metadata.mode).toBe("graph");
+  });
+
+  it("keeps the entity-linked attribution when both arms reach the same fact", async () => {
+    // Both arms can land on one fact. The anchor's link says only that the user
+    // said both things; the entity's says the question actually matched. The
+    // entity rows are merged first, and `mergeRecallCandidates` keeps the first
+    // row at a given hop count — so the fact keeps the stronger attribution
+    // rather than the anchor's weaker one.
+    const seeds = [
+      {
+        id: "f1",
+        sourceText: "I like apple products",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        vectorScore: 0.9,
+      },
+    ];
+    const rows = (r: unknown[]) => ({
+      records: r.map((row) => ({
+        get: (f: string) => (row as Record<string, unknown>)[f],
+      })),
+    });
+    const driver: RecallDriver = {
+      async executeQuery(query: string) {
+        if (query.includes(":Capture")) return rows([]);
+        if (query.includes(ENTITY_ARM)) {
+          return rows([
+            {
+              id: "f2",
+              sourceText: "entity-linked reason",
+              createdAt: "2026-01-02T00:00:00.000Z",
+              hops: 1,
+              pathWeight: 0.72,
+            },
+          ]);
+        }
+        if (query.includes(ANCHOR_ARM)) {
+          return rows([
+            {
+              id: "f2",
+              sourceText: "anchor-linked reason",
+              createdAt: "2026-01-02T00:00:00.000Z",
+              hops: 1,
+              pathWeight: 0.5,
+            },
+          ]);
+        }
+        return rows(seeds);
+      },
+    };
+
+    const result = await runRecallPipeline(
+      { driver, embed: async () => [1, 0] },
+      "u1",
+      "apple",
+      5,
+    );
+
+    expect(result.facts.find((f) => f.id === "f2")?.text).toContain("entity-linked");
   });
 
   it("returns nothing when every seed is below the relevance floor", async () => {
@@ -169,28 +284,35 @@ describe("runRecallPipeline", () => {
     expect(result.metadata.seedCount).toBe(0);
     // The floor has to gate expansion, not just the final ranking: an unrelated
     // seed that is allowed to traverse reaches a whole subgraph of unrelated
-    // facts that the ranker would then have no reason to drop.
-    expect(calls.some((q) => q.includes("SUBJECT|OBJECT"))).toBe(false);
+    // facts that the ranker would then have no reason to drop. The anchor arm is
+    // gated on the same surviving seed — without that gate an unrelated question
+    // would return the user's whole profile.
+    expect(calls.some((q) => q.includes(ENTITY_ARM))).toBe(false);
+    expect(calls.some((q) => q.includes(ANCHOR_ARM))).toBe(false);
   });
 
   it("keeps a seed that reaches the floor", async () => {
+    const seeds = [
+      {
+        id: "f1",
+        sourceText: "I really like apple products",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        vectorScore: 0.71,
+      },
+    ];
+    const rows = (r: unknown[]) => ({
+      records: r.map((row) => ({
+        get: (f: string) => (row as Record<string, unknown>)[f],
+      })),
+    });
+    // Both arms answer empty explicitly, rather than by falling through a
+    // catch-all: a fake that hands the expansion arm a seed row is a state the
+    // real graph cannot reach, and one the merge tolerates only by accident.
     const driver: RecallDriver = {
       async executeQuery(query: string) {
-        const rows = query.includes(":Capture") || query.includes("SUBJECT|OBJECT")
-          ? []
-          : [
-              {
-                id: "f1",
-                sourceText: "I really like apple products",
-                createdAt: "2026-01-01T00:00:00.000Z",
-                vectorScore: 0.71,
-              },
-            ];
-        return {
-          records: rows.map((r) => ({
-            get: (f: string) => (r as Record<string, unknown>)[f],
-          })),
-        };
+        if (query.includes(":Capture")) return rows([]);
+        if (query.includes(ENTITY_ARM) || query.includes(ANCHOR_ARM)) return rows([]);
+        return rows(seeds);
       },
     };
 

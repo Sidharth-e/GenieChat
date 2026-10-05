@@ -134,6 +134,21 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
     expect: ["apple"],
   },
   {
+    // The case the entity arm above cannot reach. Every fact here has the *user*
+    // as its subject, so the only path between them runs through the anchor —
+    // which expansion is forbidden to traverse. Without the anchor arm this
+    // returns the diet fact alone and the model, never told the user's height or
+    // weight, asks them for it.
+    name: "surfaces the user's own profile for a question that does not name it",
+    facts: [
+      { text: "I am vegetarian", subject: "user", predicate: "diet", object: "vegetarian" },
+      { text: "I am 180 cm tall", subject: "user", predicate: "has height", object: "180 cm" },
+      { text: "I weigh 75 kg", subject: "user", predicate: "has weight", object: "75 kg" },
+    ],
+    query: "what diet should I follow",
+    expect: ["vegetarian", "180 cm", "75 kg"],
+  },
+  {
     name: "returns nothing for an unrelated question",
     facts: [
       {

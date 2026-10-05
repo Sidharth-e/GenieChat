@@ -375,6 +375,29 @@ export const FACT_EXPAND_CYPHER = `
 `;
 
 /**
+ * The anchor arm: the user's own current facts, newest first, minus the seeds.
+ *
+ * It exists because `FACT_EXPAND_CYPHER` is right to refuse the anchor hop and
+ * the refusal leaves the user's facts mutually unreachable. Every fact about a
+ * person has the `:User` node as its *subject*, and two attributes share no
+ * object, so without this arm nothing connects them and a question about one
+ * never brings the other. The cap is what buys the reach without the corpus.
+ *
+ * `WHERE NOT n.id IN $seedIds` spends the cap on facts the seeds did not already
+ * name — a seed is already a candidate, and letting it fill the budget would
+ * make the arm add nothing. Ordering by `createdAt` is what reads the existing
+ * `fact_user_created` index rather than sorting the user's facts.
+ */
+export const FACT_ANCHOR_EXPAND_CYPHER = `
+  MATCH (n:Fact {userId: $userId, isCurrent: true})-[:SUBJECT]->(:User {id: $userId})
+  WHERE NOT n.id IN $seedIds
+  RETURN n.id AS id, n.sourceText AS sourceText, n.createdAt AS createdAt,
+         1 AS hops, $anchorWeight AS pathWeight
+  ORDER BY n.createdAt DESC
+  LIMIT toInteger($limit)
+`;
+
+/**
  * The most recent closed fact per recalled fact, matched on the *shared subject
  * and predicate* rather than on text similarity — the supersede rule is
  * structural, so its history is too. Ordered so the caller can take the first

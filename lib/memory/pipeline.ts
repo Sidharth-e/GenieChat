@@ -13,6 +13,8 @@
  * with a fake.
  */
 import {
+  MEMORY_ANCHOR_EXPAND_LIMIT,
+  MEMORY_ANCHOR_PATH_WEIGHT,
   MEMORY_CAPTURE_SEED_LIMIT,
   MEMORY_SEED_SCORE_FLOOR,
   memorySeedLimit,
@@ -20,12 +22,13 @@ import {
 import { logger } from "@/lib/logger";
 import {
   CAPTURE_SEED_CYPHER,
+  FACT_ANCHOR_EXPAND_CYPHER,
   FACT_EXPAND_CYPHER,
   FACT_PREDECESSOR_CYPHER,
   FACT_SEED_CYPHER,
 } from "./cypher";
 import { renderRecalledFact, toRecallCandidate } from "./facts";
-import { mergeRecallCandidates, rankRecall } from "./recall";
+import { mergeRecallCandidates, rankRecall, type RecallCandidate } from "./recall";
 import { normalizeQueryForRetrieval } from "./text";
 import type { FactRecallMode, FactRecallResult, RecalledFact } from "./types";
 
@@ -67,6 +70,34 @@ export function emptyRecallResult(
 }
 
 /**
+ * One expansion arm's rows, or none when the arm failed.
+ *
+ * A failed arm is logged and dropped rather than thrown: the seeds came from the
+ * index and they are good matches, so a traversal the graph could not answer
+ * must not discard them. Both arms share this because both return the same
+ * columns — a reached fact's id, text, timestamp, hop count and path weight.
+ */
+function expansionRows(
+  outcome: PromiseSettledResult<{ records: Array<{ get(key: string): unknown }> }>,
+  message: string,
+): RecallCandidate[] {
+  if (outcome.status === "rejected") {
+    logger.error({ err: outcome.reason }, message);
+    return [];
+  }
+  return outcome.value.records.map((record) =>
+    toRecallCandidate({
+      id: String(record.get("id")),
+      sourceText: String(record.get("sourceText") ?? ""),
+      createdAt: String(record.get("createdAt") ?? ""),
+      vectorScore: 0,
+      hops: Number(record.get("hops")),
+      pathWeight: Number(record.get("pathWeight")),
+    }),
+  );
+}
+
+/**
  * Recall for one turn.
  *
  * - No query, or no seeds, returns **empty** with a reason. It never falls back
@@ -81,6 +112,13 @@ export function emptyRecallResult(
  *   returned anyway. They came from the index and they are good matches;
  *   discarding them because the traversal hit an error throws away the half that
  *   worked.
+ * - A second arm runs beside the traversal, under `MEMORY_ANCHOR_EXPAND_LIMIT`:
+ *   the user's own facts, reached through the `:User` node `FACT_EXPAND_CYPHER`
+ *   refuses to traverse. Without it two attributes of the same person are
+ *   unreachable from each other, because they share nothing but that anchor —
+ *   so asking about one would never surface the other. It is gated on the same
+ *   surviving seed as the traversal, which is what keeps an unrelated question
+ *   returning nothing rather than the whole profile.
  *
  * Captures are seeded alongside facts so a sentence saved one second ago is
  * recallable before any model has read it.
@@ -143,34 +181,39 @@ export async function runRecallPipeline(
     return emptyRecallResult();
   }
 
-  let expandedCandidates: typeof factCandidates = [];
+  let expandedCandidates: RecallCandidate[] = [];
   let mode: FactRecallMode = "vector";
 
   if (factCandidates.length > 0) {
-    try {
-      const expanded = await deps.driver.executeQuery(FACT_EXPAND_CYPHER, {
+    const seedIds = factCandidates.map((candidate) => candidate.id);
+    // The two arms are independent — neither is a consequence of the other — so
+    // they run together rather than in sequence. Each degrades to nothing on its
+    // own failure, which is what keeps a traversal the graph could not answer
+    // from discarding the seeds that already arrived.
+    const [byGraph, byAnchor] = await Promise.allSettled([
+      deps.driver.executeQuery(FACT_EXPAND_CYPHER, {
         userId,
-        seedIds: factCandidates.map((candidate) => candidate.id),
+        seedIds,
         expansionLimit: seedLimit,
-      });
-      expandedCandidates = expanded.records.map((record) =>
-        toRecallCandidate({
-          id: String(record.get("id")),
-          sourceText: String(record.get("sourceText") ?? ""),
-          createdAt: String(record.get("createdAt") ?? ""),
-          vectorScore: 0,
-          hops: Number(record.get("hops")),
-          pathWeight: Number(record.get("pathWeight")),
-        }),
-      );
-      mode = "graph";
-    } catch (error) {
-      // Seeds survived seed-level work; throw away only the traversal.
-      logger.error(
-        { err: error },
-        "Memory expansion failed; returning the seeds unexpanded",
-      );
-    }
+      }),
+      deps.driver.executeQuery(FACT_ANCHOR_EXPAND_CYPHER, {
+        userId,
+        seedIds,
+        anchorWeight: MEMORY_ANCHOR_PATH_WEIGHT,
+        limit: MEMORY_ANCHOR_EXPAND_LIMIT,
+      }),
+    ]);
+
+    // Entity-linked rows first: `mergeRecallCandidates` keeps the first row it
+    // sees at a given hop count, so a fact both arms reach keeps the
+    // question-linked attribution rather than the anchor's weaker one.
+    expandedCandidates = [
+      ...expansionRows(byGraph, "Memory expansion failed; returning the seeds unexpanded"),
+      ...expansionRows(byAnchor, "Memory anchor expansion failed; returning the seeds unexpanded"),
+    ];
+    // The mode reports which half *contributed*, not which one was attempted: an
+    // expansion that ran and returned nothing did not use the graph.
+    if (expandedCandidates.length > 0) mode = "graph";
   }
 
   const merged = mergeRecallCandidates(factCandidates, expandedCandidates);
