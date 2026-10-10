@@ -10,6 +10,7 @@ export const STORAGE_BUCKETS = {
   reports: "reports",
   agentDocuments: "agent-documents",
   generatedImages: "generated-images",
+  generatedVideos: "generated-videos",
   artifacts: "artifacts",
 } as const;
 

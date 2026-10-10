@@ -1,4 +1,4 @@
-import { Image, FileCode, BarChart3, GitBranch, Component, ScanLine, File } from "lucide-react";
+import { Image, Video, FileCode, BarChart3, GitBranch, Component, ScanLine, File } from "lucide-react";
 import type { ArtifactType } from "@/lib/artifacts/types";
 
 /**
@@ -21,6 +21,11 @@ export const ARTIFACT_TYPE_CONFIG: Record<ArtifactType, ArtifactTypeConfig> = {
   image: {
     icon: Image,
     label: "Image",
+    iconColorClass: "text-[var(--purple)]",
+  },
+  video: {
+    icon: Video,
+    label: "Video",
     iconColorClass: "text-[var(--purple)]",
   },
   file: {

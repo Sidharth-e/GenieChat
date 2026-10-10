@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   XCircle,
   Image as ImageIcon,
+  Clapperboard,
   ExternalLink,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -182,6 +183,17 @@ const TOOL_CONFIGS: Partial<Record<string, ToolConfig>> = {
     label: () => "Edited an image",
     activeSummaryLabel: "editing an image",
     summaryLabel: "edited an image",
+  },
+  // Video is the longest-running tool there is, so this row is the one a reader
+  // stares at longest — the generic "Running generate video…" fallback is not
+  // good enough when the wait is minutes.
+  generate_video: {
+    icon: Clapperboard,
+    accent: "violet",
+    activeLabel: () => "Generating video…",
+    label: () => "Generated a video",
+    activeSummaryLabel: "generating a video",
+    summaryLabel: "generated a video",
   },
   generate_mermaid: {
     icon: GitBranch,

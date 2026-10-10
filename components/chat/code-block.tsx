@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { warmDarkTheme, warmLightTheme } from "@/constants/theme";
 import { MermaidStreamingSkeleton } from "@/components/chat/mermaid";
+import { VideoBlock } from "@/components/chat/video-block";
 import { useTheme } from "next-themes";
 import { useCanvasStore } from "@/lib/stores/canvas-store";
 import { cn } from "@/lib/utils";
@@ -168,6 +169,18 @@ export function CodeBlock({
   if (language === "scancode" || language === "barcode") {
     return (
       <ScancodeRenderer
+        content={String(children).replace(/\n$/, "")}
+        isStreaming={isStreaming}
+      />
+    );
+  }
+
+  // A generated clip. Imported statically, unlike the renderers above: a
+  // `<video>` needs no browser measurement, so there is nothing for a lazy
+  // chunk to buy and a loading placeholder would only flash.
+  if (language === "video") {
+    return (
+      <VideoBlock
         content={String(children).replace(/\n$/, "")}
         isStreaming={isStreaming}
       />

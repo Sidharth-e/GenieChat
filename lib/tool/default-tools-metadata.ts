@@ -18,12 +18,12 @@ export interface ToolMetadata {
  * returns an error payload the node reports as a successful output. Offering it
  * to a workflow advertises a tool that can only appear to work.
  *
- * `generate_image` is absent for a different reason: it resolves and would
- * produce an image, but it delivers that image through the artifact envelope and
- * a markdown image, and a workflow run does neither — it never reads the
- * envelope and has no conversation to render into. The picture would be paid for
- * and then dropped. It stays available to the chat and agent surfaces, which do
- * both.
+ * `generate_image` and `generate_video` are absent for a different reason: both
+ * resolve and would produce their media, but they deliver it through the
+ * artifact envelope and a markdown image or fence, and a workflow run does
+ * neither — it never reads the envelope and has no conversation to render into.
+ * The picture or clip would be paid for and then dropped. They stay available to
+ * the chat and agent surfaces, which do both.
  */
 export const RESOLVABLE_DEFAULT_TOOLS: readonly string[] = [
   "web_search",
@@ -61,5 +61,9 @@ export const DEFAULT_TOOLS_METADATA: ToolMetadata[] = [
     {
         name: "generate_image",
         description: "Generate an image from a text prompt and render it in the conversation.",
+    },
+    {
+        name: "generate_video",
+        description: "Generate a short video clip from a text prompt and render it in the conversation. Slow — the provider runs generation as a job.",
     },
 ];

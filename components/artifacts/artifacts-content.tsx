@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 const TYPE_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "All" },
   { value: "image", label: "Images" },
+  { value: "video", label: "Videos" },
   { value: "chart", label: "Charts" },
   { value: "mermaid", label: "Diagrams" },
   { value: "canvas", label: "Canvas" },

@@ -9,9 +9,12 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { Message, ConnectorConfig } from "../types";
 import defaultToolsMap, {
   createCodeSandboxTool,
-  createGenerateImageTool,
   webSearch,
 } from "../tool/default-tools";
+import {
+  createGenerateImageTool,
+  createGenerateVideoTool,
+} from "../tool/generation-tools";
 import { createMCPClient } from "./langchain-mcp";
 import { getModel } from "./model-factory";
 import {
@@ -88,15 +91,16 @@ export class ChatService {
       reasoningEffort: params.reasoningEffort,
     });
 
-    // `knowledge_base_search` and `generate_image` have left `defaultTools` for
-    // per-request factories, so neither is a `defaultToolsMap` key any more and a
-    // custom tool shadowing one would go unnoticed. This set is what keeps their
-    // names reserved, and it stays until custom tools can be owner-scoped too.
-    // `knowledge_base_search` is kept off the chat surface as well — it searches
-    // one agent's documents, and chat has no agent.
+    // `knowledge_base_search`, `generate_image` and `generate_video` have left
+    // `defaultTools` for per-request factories, so none is a `defaultToolsMap`
+    // key any more and a custom tool shadowing one would go unnoticed. This set
+    // is what keeps their names reserved, and it stays until custom tools can be
+    // owner-scoped too. `knowledge_base_search` is kept off the chat surface as
+    // well — it searches one agent's documents, and chat has no agent.
     const reservedToolNames = new Set([
       "knowledge_base_search",
       "generate_image",
+      "generate_video",
     ]);
     const chatCustomTools = (params.customTools ?? []).filter(
       (t) => !reservedToolNames.has(t.name),
@@ -112,10 +116,17 @@ export class ChatService {
           params.userContext.threadId,
         )
       : null;
+    const activeVideoTool = params.userContext?.userId
+      ? createGenerateVideoTool(
+          params.userContext.userId,
+          params.userContext.threadId,
+        )
+      : null;
     const defaultToolsForChat = [
       webSearch,
       activeCodeSandbox,
       ...(activeImageTool ? [activeImageTool] : []),
+      ...(activeVideoTool ? [activeVideoTool] : []),
     ];
 
     // Built outside the `try` below, because the streaming `catch` reaches for

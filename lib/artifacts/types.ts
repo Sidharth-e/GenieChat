@@ -1,5 +1,6 @@
 export type ArtifactType =
   | "image"
+  | "video"
   | "file"
   | "chart"
   | "mermaid"

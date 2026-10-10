@@ -3,14 +3,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import * as z from "zod";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
-import { STORAGE_BUCKETS } from "@/constants/storage";
-import {
-  DEFAULT_IMAGE_MODEL,
-  IMAGE_ASPECT_RATIOS,
-} from "@/constants/generation";
-import { storageDownloadUrl } from "@/lib/artifacts/display-url";
-import { keyForUser } from "@/lib/storage/ref";
-import { generateId } from "@/lib/utils";
+import { createGenerateImageTool, createGenerateVideoTool } from "./generation-tools";
 
 const EXA_TIMEOUT_MS = 60_000;
 
@@ -244,118 +237,6 @@ export const createCodeSandboxTool = (userId?: string, chatId?: string) =>
 
 export const codeSandbox = createCodeSandboxTool();
 
-/**
- * Generates an image and stores it, returning the markdown that renders it.
- *
- * The tool uploads its own bytes rather than handing them to the artifact
- * envelope: an image is megabytes of base64, and the envelope is both streamed
- * to the client and persisted in the message, so routing the bytes through it
- * would bloat the wire and the thread document alike. What travels instead is
- * the ref, and the reply carries a markdown image pointing at the proxy URL —
- * which presigns afresh on every read, so the picture survives the TTL on any
- * one signature.
- */
-export const createGenerateImageTool = (userId?: string, chatId?: string) =>
-  tool(
-    async (input) => {
-      if (!userId) {
-        return JSON.stringify({
-          error: "Image generation needs an authenticated user.",
-        });
-      }
-
-      const model = input.model?.trim() || DEFAULT_IMAGE_MODEL;
-
-      try {
-        const [
-          { generateImage, extensionForMediaType, mediaTypeForExtension, markdownImageFor },
-          { putObject },
-        ] = await Promise.all([
-          import("@/lib/generation"),
-          import("@/lib/storage"),
-        ]);
-
-        const result = await generateImage({
-          model,
-          prompt: input.prompt,
-          aspectRatio: input.aspect_ratio,
-        });
-
-        // The API can return several; one image per call is what the tool
-        // advertises, so the first is the answer and the rest are ignored.
-        const image = result.images[0];
-        const ext = extensionForMediaType(image.mediaType);
-        const uploaded = await putObject(
-          STORAGE_BUCKETS.generatedImages,
-          keyForUser(userId, "image", `${generateId()}.${ext}`),
-          Buffer.from(image.base64, "base64"),
-          image.mediaType || mediaTypeForExtension(ext),
-        );
-
-        if (uploaded.status !== "OK") {
-          logger.error({ err: uploaded }, "Failed to store a generated image");
-          return JSON.stringify({
-            error: "The image was generated but could not be stored.",
-          });
-        }
-
-        const url = storageDownloadUrl(uploaded.response);
-
-        return JSON.stringify({
-          success: true,
-          url,
-          model,
-          format: ext,
-          aspect_ratio: input.aspect_ratio ?? "auto",
-          markdown: markdownImageFor(input.prompt, url),
-          note: "Include the markdown field verbatim in your reply so the image renders for the user.",
-          _artifact: {
-            type: "image",
-            title: input.prompt.slice(0, 120),
-            url: uploaded.response,
-            metadata: {
-              model,
-              format: ext,
-              aspectRatio: input.aspect_ratio ?? null,
-              costUsd: result.costUsd ?? null,
-            },
-          },
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error({ err: error, model }, "Image generation failed");
-        return JSON.stringify({
-          error: `Failed to generate the image: ${message}`,
-        });
-      }
-    },
-    {
-      name: "generate_image",
-      description:
-        "Generate an image from a text prompt and post it into the conversation. Use this whenever the user asks for a picture, illustration, artwork, logo concept or photo. The result carries a `markdown` field holding the image; include that markdown verbatim in your reply so the image is shown.",
-      schema: z.object({
-        prompt: z
-          .string()
-          .min(1)
-          .describe(
-            "What to draw, described fully — subject, style, composition and lighting — rather than a filename.",
-          ),
-        aspect_ratio: z
-          .enum(IMAGE_ASPECT_RATIOS)
-          .optional()
-          .describe(
-            "Optional aspect ratio. Omit unless the request implies a shape, so the model's default stands.",
-          ),
-        model: z
-          .string()
-          .optional()
-          .describe(
-            "Optional image-model slug overriding the default. Set this only when the user names a specific model.",
-          ),
-      }),
-    },
-  );
-
 export const defaultTools = [webSearch, codeSandbox];
 
 const defaultToolsMap: Record<string, StructuredTool> = {
@@ -364,7 +245,7 @@ const defaultToolsMap: Record<string, StructuredTool> = {
 };
 
 /**
- * The single place a `default:`-prefixed tool name becomes a tool. Three of them
+ * The single place a `default:`-prefixed tool name becomes a tool. Four of them
  * need the caller's identity, so the name alone is not enough.
  */
 export function resolveDefaultTool(
@@ -378,10 +259,14 @@ export function resolveDefaultTool(
   if (name === "code_sandbox") {
     return userId ? createCodeSandboxTool(userId, chatId) : codeSandbox;
   }
-  // No user-less fallback, unlike the sandbox: a generated image has to be
-  // stored under an owner, so a tool that cannot name one could only fail.
+  // No user-less fallback for either generation tool, unlike the sandbox: a
+  // generated picture or clip has to be stored under an owner, so a tool that
+  // cannot name one could only fail.
   if (name === "generate_image") {
     return userId ? createGenerateImageTool(userId, chatId) : undefined;
+  }
+  if (name === "generate_video") {
+    return userId ? createGenerateVideoTool(userId, chatId) : undefined;
   }
   return defaultToolsMap[name];
 }

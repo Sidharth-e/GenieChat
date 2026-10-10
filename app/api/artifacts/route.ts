@@ -10,10 +10,12 @@ import { ArtifactType } from "@/lib/artifacts/types";
 
 const VALID_TYPES: ArtifactType[] = [
   "image",
+  "video",
   "file",
   "chart",
   "mermaid",
   "canvas",
+  "scancode",
   "code_sandbox",
 ];
 

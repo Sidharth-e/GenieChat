@@ -148,16 +148,6 @@ export const config = {
     nodeEnv: env.NODE_ENV,
     isProduction: env.NODE_ENV === "production",
   },
-  defaultToolConfig: {
-    mermaid: {
-      model: "gemini-3-flash-preview",
-      temperature: 0.1,
-    },
-    chart: {
-      model: "gemini-3-flash-preview",
-      temperature: 0.1,
-    },
-  },
   chat: {
     defaultChatSystemPrompt: defaultSystemPrompt,
     threadTitlePrompt: threadTitlePrompt,
@@ -167,6 +157,49 @@ export const config = {
   },
   deepResearch: {
     model: env.DEEP_RESEARCH_MODEL || "gemini-3-flash-preview",
+  },
+
+  generation: {
+    // One curated default each rather than a picker: the OpenRouter catalogue is
+    // large and its slugs churn, and its models differ mainly in capability —
+    // reference images, output format, resolution tiers — not in taste, which is
+    // what a user-facing selector would be for. Each tool still takes a `model`
+    // argument, so the model can override when the request names one.
+    defaultImageModel: "google/gemini-3.1-flash-image",
+    defaultVideoModel: "google/veo-3.1",
+
+    // Deliberately short, and separate lists because the endpoints accept
+    // different sets — video admits `3:2`, `2:3` and the two ultrawides that
+    // images do not. Providers clamp a requested ratio to their own subset rather
+    // than rejecting it, so a longer list would advertise ratios some models
+    // cannot honour, and the model reads this list as its options.
+    imageAspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+    videoAspectRatios: [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3",
+      "21:9",
+      "9:21",
+    ],
+
+    // Image generation outruns a chat completion — a large prompt on a capable
+    // model is tens of seconds, and the provider fans out to a backend — so this
+    // sits well above the embedding client's 60s.
+    imageTimeoutMs: 180_000,
+
+    // The video job's three clocks, which are not interchangeable. Video
+    // generation is asynchronous, so one timeout cannot express it: a *poll* is a
+    // fast request, the *interval* between polls has to be long enough not to
+    // hammer the provider, and the *wait* is how long the whole job is worth
+    // holding a tool call open for. Collapsing them into one number would either
+    // give each poll a five-minute budget or abandon a job still in flight.
+    videoTimeoutMs: 60_000,
+    videoPollIntervalMs: 15_000,
+    videoMaxWaitMs: 300_000,
   },
 } as const;
 

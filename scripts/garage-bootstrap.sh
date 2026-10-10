@@ -10,7 +10,7 @@
 #   docker compose exec garage /garage bucket list
 set -uo pipefail
 
-BUCKETS="chat-documents chat-images reports agent-documents generated-images artifacts"
+BUCKETS="chat-documents chat-images reports agent-documents generated-images generated-videos artifacts"
 
 # The key `garage server --default-access-key` imports is named "default access
 # key" (`garage key list` shows it), and `garage bucket allow --key` matches a

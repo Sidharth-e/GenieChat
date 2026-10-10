@@ -260,7 +260,7 @@ Every variable is defined and validated in [`lib/env.ts`](lib/env.ts) — the ap
 | `postgres` | `pgvector/pgvector:pg17` | 5433 | Knowledge RAG vector store |
 | `neo4j` | `neo4j:2026.08-community` | 7687 / 7474 | Memory graph |
 | `garage` | `dxflrs/garage:v2.4.1` | 3900 | S3-compatible object storage |
-| `garage-bootstrap` | local | — | Creates and grants the six buckets |
+| `garage-bootstrap` | local | — | Creates and grants the seven buckets |
 | `docling` | local build | 5001 | Document parsing |
 | `schedule-tick` | `curlimages/curl` | — | Calls `/api/schedules/tick` every minute |
 

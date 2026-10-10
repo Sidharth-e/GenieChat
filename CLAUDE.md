@@ -63,7 +63,8 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/docling/` — document parsing on the self-hosted `docling-serve` sidecar. `response.ts` maps a conversion response to `ConvertedDocument` and is pure and unit-tested; `client.ts` is the `"server-only"` layer that performs the HTTP call; `index.ts` re-exports the public surface. `constants/docling.ts` holds the per-request `document_timeout` and the TableFormer mode. See [Document Parsing (Docling)](#document-parsing-docling).
 - `lib/postgres/` — PostgreSQL + pgvector, the knowledge-RAG store. `config.ts` reads `config.postgres` and is pure; `client.ts` is the `"server-only"` layer holding one lazily-built `Pool`; `vector.ts` holds `toVectorLiteral()` and is pure and unit-tested. `lib/knowledge/` sits on top: `chunking.ts`, `ranking.ts` and `embed.ts` are pure and unit-tested, `index.ts` is the writer, `search.ts` the hybrid retriever, `documents.ts` and `citation-services.ts` the document and citation ports. `embed.ts` holds the embed-before-transaction loop and the policy that separates a width mismatch (rethrow — the index is broken) from an outage (store the chunk vectorless). See [Knowledge RAG (Postgres + pgvector)](#knowledge-rag-postgres--pgvector).
 - `lib/embeddings/` — Ollama embeddings. `text.ts` is pure (token estimation, normalization, head/tail truncation, context-length retry parsing) and unit-tested; `dimensions.ts` holds `EmbeddingDimensionError` plus `assertEmbeddingDimensions` / `isEmbeddingDimensionError` and is pure and unit-tested — a typed error rather than message-matching, because the predicate has to recognise the provider's wording while this one is ours; `index.ts` is the `"server-only"` provider that calls both and re-exports them. `constants/embeddings.ts` holds `EMBEDDING_DIMENSIONS`, the index contract every vector store must match.
-- `lib/generation/` — image generation on OpenRouter. `response.ts` parses the images response, drops the entries that carry no bytes, and names the file extension a media type implies — pure and unit-tested, and one `IMAGE_FORMATS` table rather than two maps so a type and its extension cannot drift; `markdown.ts` builds the reply's image markdown and is pure and unit-tested; `client.ts` is the `"server-only"` provider that POSTs and re-exports both. `constants/generation.ts` holds `DEFAULT_IMAGE_MODEL`, the request timeout and the aspect ratios the tool offers. See [Image Generation (OpenRouter)](#image-generation-openrouter).
+- `lib/generation/` — image and video generation on OpenRouter. `response.ts` parses the images response, drops the entries that carry no bytes, and names the file extension a media type implies — pure and unit-tested, and one `IMAGE_FORMATS` table rather than two maps so a type and its extension cannot drift; `markdown.ts` builds the reply's image markdown and is pure and unit-tested; `video.ts` parses the asynchronous video job's submission, status and outcome and is pure and unit-tested too; `client.ts` is the `"server-only"` provider that POSTs and re-exports them all, and holds **two** axios instances from one factory, because an image request *is* the generation while a video poll is a fast request inside a long loop. The video *fence* is deliberately not here — `lib/video.ts` owns it — since this module is `"server-only"` and the renderer runs in the browser. Its settings are not a `constants/` file: `config.generation` (`lib/config.ts`) holds both default models, the three video clocks (request timeout, poll interval, overall wait) and each tool's aspect ratios, the same way `config.chat` and `config.deepResearch` hold theirs. See [Media Generation (OpenRouter)](#media-generation-openrouter).
+- `lib/video.ts` — the ```` ```video ```` fence's pure protocol, unit-tested: `videoFenceMarkdown` writes one and `parseVideoFence` reads one, both sides of a format the server tool and the browser renderer have to agree on. Deliberately outside `lib/generation/`, which is `"server-only"`; the body is JSON because the title comes from the user's prompt and arbitrary text must not be able to break out of the container. See [Media Generation (OpenRouter)](#media-generation-openrouter).
 - `lib/neo4j/` — the Neo4j driver. `config.ts` reads `config.neo4j` and is pure, returning null unless the URI *and* a password are present; `client.ts` is the `"server-only"` layer holding one lazily-built `Driver` plus `isNeo4jConfigured()`, so every caller degrades rather than throws.
 - `lib/memory/` — the fact graph, and the only memory store. `graph-store.ts` is the `"server-only"` `MemoryGraphStore` and `sweep-runner.ts` its `"server-only"` sweep driver; `cypher.ts` holds every statement, out of the store so `scripts/check-memory.ts` can run the same Cypher the store does. `facts.ts` (the dedupe/supersede decision), `canonicalize.ts` (entity and predicate name normalization), `merge.ts` (the merge sweep's clustering), `recall.ts` (hop decay, recency, the seed-plus-path blend), `text.ts` and `pipeline.ts` (the recall read and its two expansion arms, extracted out of the store so the eval and its unit tests need no database) are pure and unit-tested; `eval-cases.ts` holds the fixed probe set, and `single-flight.ts` (the keyed in-process dedupe keeping a nudge and a cron pass from extracting one capture twice) and `capture-poll.ts` (the list's poll decision over the pending-capture count) are pure and unit-tested too. `nudge.ts` is the `"server-only"` `after()`-based shim scheduling one post-response sweep at each capture write site. `llm-facts.ts` is the extractor's schema and call, and `model.ts` the guardless extraction-model factory. `graph-view.ts` assembles one flat fact read into the drawn node/edge set and `graph-layout.ts` is a d3-force stepper the renderer ticks per frame — both pure and unit-tested, and both deliberately unaware of the canvas, so the decisions worth testing (which satellites survive the cap, what an edge is called, how big a node is, where a node starts, what "settled" means) need no browser. `d3-force` is the one runtime dependency this layer adds. `constants/memory.ts` holds the merge thresholds, the recall weights and the graph-view limits. See [Memory Graph (Neo4j)](#memory-graph-neo4j) and [Memory Graph View](#memory-graph-view).
 - `lib/schedules/` — the scheduling subsystem. `cadence.ts` (cron and `once` next-occurrence), `retry.ts` (backoff, terminal error classes, the reaper's outcome and `isRunOpen`), `schedule-input.ts` (draft and patch parsing, and the next-run-after-patch rule), `input-form.ts` (a Zod schema into form fields, and the string-to-value coercer) and `input-schemas.ts` (the per-target input schemas) are pure and unit-tested. `registry.ts` holds the `TriggerExecutor` map every target kind registers into and registers nothing itself; `executors.ts` performs the executor imports and re-exports the registry, and is the module request-time consumers import from — importing `getExecutor` from `registry.ts` instead yields an empty registry that answers `invalid_target` for every target while the type-check and the unit suite stay green. `executor-workflow.ts` and `executor-agent.ts` are the two registered executors (`tool` is deliberately absent); `run-agent.ts` is the headless agent run the `agent` executor and the webhook service share; `dispatch.ts` runs one named run; `tick.ts` is the I/O layer that runs one pass. `lib/api/cron-guard.ts` is the `CRON_SECRET` bearer check the tick and the dispatch seam share. Execution is **at-least-once**: a claimed run holds a lease, and a run whose process died is handed back by the reaper rather than being lost. `constants/schedules.ts` holds the lease length, the retry curve and the tick's bounds. See [Scheduling](#scheduling).
@@ -78,10 +79,10 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
   - `multi-agent-service.ts` — multi-agent orchestration (LangGraph supervisor).
   - `workflow-execution-service.ts` — runs automated workflow steps.
 - `lib/auth/` — NextAuth.js config with the GitHub provider, role resolution from the `GITHUB_*_USERNAMES` allowlists (`role-resolution.ts`), and no token refresh — the session carries no provider tokens.
-- `lib/tool/` — Tool system: `default-tools.ts` (built-in tools, and `resolveDefaultTool` — the one place a `default:`-prefixed name becomes a tool), `custom-tool-converter.ts` (user-defined tools). Three of the built-ins need the caller's identity, so they are factories rather than module-level singletons: `createKnowledgeBaseSearchTool` searches one owner's documents, and `createCodeSandboxTool` and `createGenerateImageTool` take the user and thread the request named. See [Image Generation (OpenRouter)](#image-generation-openrouter).
+- `lib/tool/` — Tool system: `default-tools.ts` (built-in tools, and `resolveDefaultTool` — the one place a `default:`-prefixed name becomes a tool), `generation-tools.ts` (the image and video tools, split out because both are per-request factories sharing one delivery path — generate, upload the bytes, return the ref and the markdown that renders it), `custom-tool-converter.ts` (user-defined tools). Four of the built-ins need the caller's identity, so they are factories rather than module-level singletons: `createKnowledgeBaseSearchTool` searches one owner's documents, and `createCodeSandboxTool`, `createGenerateImageTool` and `createGenerateVideoTool` take the user and thread the request named. See [Media Generation (OpenRouter)](#media-generation-openrouter).
 - `lib/stores/` — Zustand client-side stores (agents, threads, chat settings, sidebar, workflows, etc.).
 - `lib/ai-actions/` — Server actions for agents, prompts, and tools.
-- `lib/artifacts/` — the Artifacts store's writers. `save.ts` holds `saveToolArtifact`, which every type but one reaches through a tool-result envelope; `scancode.ts` is the exception, saving from the message text instead. That envelope has two shapes — a payload to upload, or a `StoredArtifact` carrying a `url` the producer already wrote — discriminated by the presence of `url`, so a producer holding bytes too large to put on the wire (see [Image Generation (OpenRouter)](#image-generation-openrouter)) reaches the same write path as one that hands them over. See [Scan Codes (```scancode)](#scan-codes-scancode).
+- `lib/artifacts/` — the Artifacts store's writers. `save.ts` holds `saveToolArtifact`, which every type but one reaches through a tool-result envelope; `scancode.ts` is the exception, saving from the message text instead. That envelope has two shapes — a payload to upload, or a `StoredArtifact` carrying a `url` the producer already wrote — discriminated by the presence of `url`, so a producer holding bytes too large to put on the wire (see [Media Generation (OpenRouter)](#media-generation-openrouter)) reaches the same write path as one that hands them over. See [Scan Codes (```scancode)](#scan-codes-scancode).
 - `lib/stats.ts` — the home screen's usage totals. `windowStartIso` and the `summarize*` functions are pure and unit-tested; the reads live on the stores owning each collection (`ChatHistoryStore.getUsageOverview`, `ArtifactStore.countArtifacts`), and all three are index-backed. `GET /api/stats` is session-scoped and returns the caller's own numbers alone, so it needs no RBAC gate. Agent counts are deliberately *not* in the payload — the home screen already loads the agent list for the composer's `@`-mention lookup. The token sum spans both `message` and `ai_usage` discriminators, because they share the `history` collection and summing one would undercount.
 - `lib/conversation.ts` — pure helpers shared by the four conversation surfaces: last-assistant detection, the standalone loading-message builder and its predicate. Unit-tested; see [Conversation Surfaces](#conversation-surfaces).
 - `lib/image-view.ts` — the image preview's pan and zoom arithmetic, and the zoom limits. A view is a scale about the frame's centre plus a translation, so it is the one transform `translate(x, y) scale(scale)`; `zoomImageAt` moves the picture so whatever the pointer is on stays under it, and both it and `panImage` bound the translation so the picture's own edge cannot pass the frame's. Pure and unit-tested — the preview component measures the two boxes and hands them over, so none of this needs a browser.
@@ -136,15 +137,15 @@ the model as a single ambiguous choice.
 
 **The built-in defaults follow the same split.** Agent, multi-agent and swarm
 bind the tools their agent records name, resolved through `resolveDefaultTool`.
-Default chat binds `web_search`, `code_sandbox` and `generate_image` outright —
-it has no agent record to scope them with. `generate_image` is bound only where
-there is a user id to own the result and pay the provider, and its name is
-reserved against the user's own tools along with `knowledge_base_search`, whose
-per-request factories have left `defaultToolsMap` and so are no longer covered by
-the duplicate-name check that reads its keys. `generate_image` is deliberately
-absent from `RESOLVABLE_DEFAULT_TOOLS`: a workflow step never reads the artifact
-envelope and has no conversation to render into, so the picture would be paid for
-and dropped.
+Default chat binds `web_search`, `code_sandbox`, `generate_image` and
+`generate_video` outright — it has no agent record to scope them with. The two
+generation tools are bound only where there is a user id to own the result and
+pay the provider, and their names are reserved against the user's own tools along
+with `knowledge_base_search`, whose per-request factories have left
+`defaultToolsMap` and so are no longer covered by the duplicate-name check that
+reads its keys. Neither generation tool is in `RESOLVABLE_DEFAULT_TOOLS`: a
+workflow step never reads the artifact envelope and has no conversation to render
+into, so the picture — or clip — would be paid for and dropped.
 
 See [Conversation Surfaces](#conversation-surfaces) for the four surfaces that
 render a conversation.
@@ -167,53 +168,92 @@ One `REDIS_URL` connection string feeds both Redis consumers — rate limiting (
 
 ### Object Storage (Garage)
 
-Chat attachments, generated images, agent documents and deep-research reports live in self-hosted Garage behind the S3 API. Documents store a canonical `s3://bucket/key` ref rather than a durable URL, and every read presigns a fresh URL from that ref — so a shared link expires (`STORAGE_TTL` in `constants/storage.ts`), and a rotated key invalidates every outstanding presigned URL while the stored reference itself stays intact. See [Server-Side Core](#server-side-core-lib) for the module layout.
+Chat attachments, generated images and videos, agent documents and deep-research reports live in self-hosted Garage behind the S3 API. Documents store a canonical `s3://bucket/key` ref rather than a durable URL, and every read presigns a fresh URL from that ref — so a shared link expires (`STORAGE_TTL` in `constants/storage.ts`), and a rotated key invalidates every outstanding presigned URL while the stored reference itself stays intact. See [Server-Side Core](#server-side-core-lib) for the module layout.
 
-`docker compose up -d` starts a single-node Garage alongside Redis (`docker-compose.yml`). The six buckets — `chat-documents`, `chat-images`, `reports`, `agent-documents`, `generated-images` and `artifacts` — are ensured and granted to the application key by `scripts/garage-bootstrap.sh`, run by the `garage-bootstrap` compose service; it is idempotent and verifies the grant count rather than trusting `bucket list`. **A running Garage does not pick up a bucket added to that list later** — the service only runs at `compose up` — so a bucket added since the last bootstrap has to be created by re-running the service, or every write to it fails with `NoSuchBucket`. Garage's S3 API port (3900) is bound to all interfaces because **the browser, not only the app, fetches presigned URLs**; the web UI and admin API stay loopback-only.
+`docker compose up -d` starts a single-node Garage alongside Redis (`docker-compose.yml`). The seven buckets — `chat-documents`, `chat-images`, `reports`, `agent-documents`, `generated-images`, `generated-videos` and `artifacts` — are ensured and granted to the application key by `scripts/garage-bootstrap.sh`, run by the `garage-bootstrap` compose service; it is idempotent and verifies the grant count rather than trusting `bucket list`. **A running Garage does not pick up a bucket added to that list later** — the service only runs at `compose up` — so a bucket added since the last bootstrap has to be created by re-running the service, or every write to it fails with `NoSuchBucket`. Garage's S3 API port (3900) is bound to all interfaces because **the browser, not only the app, fetches presigned URLs**; the web UI and admin API stay loopback-only.
 
 `garage.toml` ships a development-only fixed `rpc_secret`, and **any deployment beyond local development must generate its own** — the committed value is safe here only because the RPC port is unpublished locally. In production Garage must likewise be reachable by the **browser**, not only the Web App, for the same presigned-URL reason; `S3_PUBLIC_ENDPOINT` is how those two addresses are told apart.
 
-### Image Generation (OpenRouter)
+### Media Generation (OpenRouter)
 
-`generate_image` is a built-in tool rather than a surface of its own: the model
-calls it inside an ordinary conversation, and the picture appears in the reply.
-There is no model picker and no separate chat — a selector would put a
-model-catalogue decision in front of a user who asked for a picture, and the
-tool's optional `model` argument is the escape hatch for the one case that needs
-one, a user who names a model. Everything else uses `DEFAULT_IMAGE_MODEL`
-(`constants/generation.ts`).
+`generate_image` and `generate_video` are built-in tools rather than surfaces of
+their own: the model calls one inside an ordinary conversation, and the picture
+or clip appears in the reply. There is no model picker and no separate chat — a
+selector would put a model-catalogue decision in front of a user who asked for a
+picture, and each tool's optional `model` argument is the escape hatch for the
+one case that needs one, a user who names a model. Everything else uses
+`config.generation.defaultImageModel` or `.defaultVideoModel`, and each tool's
+`aspect_ratio` enum is built from `config.generation.imageAspectRatios` /
+`.videoAspectRatios`. Both tools live in `lib/tool/generation-tools.ts` rather
+than `default-tools.ts`, because both are per-request factories and they share
+one delivery path.
 
-**The tool uploads its own bytes and returns a ref, not the image.** The result
+**Both tools upload their own bytes and return a ref, not the media.** The result
 of a tool call is both streamed to the client and persisted in the thread
-document, and an image is megabytes of base64; routing the bytes through the
-artifact envelope would put them on the wire and in Mongo twice. So the tool
-decodes, uploads to Garage under `generated-images` on a `userId`-scoped key, and
-returns the `s3://` ref plus the markdown that renders it. `putObject` gained an
-optional content type for this: an object stored without one comes back from
-Garage as `binary/octet-stream`, leaving the browser to guess at bytes whose
-format the provider declared.
+document, and an image is megabytes of base64 — a video more; routing the bytes
+through the artifact envelope would put them on the wire and in Mongo twice. So
+each tool decodes or buffers, uploads to Garage under `generated-images` or
+`generated-videos` on a `userId`-scoped key, and returns the `s3://` ref plus the
+markdown that renders it. `putObject` gained an optional content type for this:
+an object stored without one comes back from Garage as `binary/octet-stream`,
+leaving the browser to guess at bytes whose format the provider declared. A video
+is named `.mp4` from the provider's declared type rather than through a table of
+extensions — the endpoint emits mp4 for every model behind it, and a suffix the
+player cannot read is worse than none.
 
 **The reply's markdown points at the download proxy, not at a presigned URL.** A
 presigned URL expires, and the reply outlives any one signature, so the markdown
 carries `/api/storage/download?ref=…` — which presigns afresh on every read and
-checks ownership before it does. The alt text is built by `markdownImageFor`
-(`lib/generation/markdown.ts`) rather than by the model: a prompt containing `]`
-or a newline would otherwise truncate the markdown the model is told to echo
-verbatim, and a broken image is worse than a boring caption.
+checks ownership before it does. The image's alt text is built by
+`markdownImageFor` (`lib/generation/markdown.ts`) rather than by the model: a
+prompt containing `]` or a newline would otherwise truncate the markdown the
+model is told to echo verbatim, and a broken image is worse than a boring
+caption.
 
-Rendering needs nothing new. The markdown `img` handler in
+**Image rendering needs nothing new; video does.** The markdown `img` handler in
 `components/common/markdown-renderer.tsx` already draws a generated image through
 `ImageBlock`, so the picture and the artifact card come from the same markdown
-every other image in a reply does.
+every other image in a reply does. Markdown has no video syntax, so a clip
+travels in a ```` ```video ```` fence — the same idiom as a chart or a scan code —
+whose pure protocol lives in `lib/video.ts` and is read by
+`components/chat/video-block.tsx`, dispatched from `components/chat/code-block.tsx`
+and imported statically because a `<video>` needs no browser measurement, so a
+lazy chunk would only buy a loading placeholder that flashes. The fence body is
+JSON rather than a bare URL for the same reason the alt text is escaped: the
+title comes from the user's prompt. `lib/video.ts` sits outside `lib/generation/`
+because that module is `"server-only"` and the renderer runs in the browser — the
+tool and the renderer have to agree on the format without the client importing
+the provider.
 
-The tool is chat's alone and the model owns its own record: it is bound per
-request (`chat-service.ts`), and it is not in `RESOLVABLE_DEFAULT_TOOLS`, so a
-workflow or agent step cannot reach it — see [MCP Tool Binding](#mcp-tool-binding).
+**Video is a job polled inside the tool call.** OpenRouter's video endpoint is
+asynchronous — `POST /api/v1/videos` answers `202` with a job id, and the bytes
+are only reachable once a poll reports `completed` and offers a content URL — so
+`generateVideo` (`lib/generation/client.ts`) submits, then polls until the job
+finishes, then fetches the content. The whole job is held inside one tool call,
+which is the shape the chat stream needs but not the shape the provider offers;
+the alternative, a durable job record the client resumes, was considered and
+declined. **The costs are real and accepted:** the tool card shows a frozen
+"Generating" for the duration (the stream's token union has no progress event, so
+there is nothing to render until `tool_end`), there is no cancel, and a job
+abandoned past the wait budget is lost — nothing holds it for a later reader.
 
-**Video is not implemented.** OpenRouter's video endpoint is an asynchronous job
-rather than a call — submit, poll for the job, fetch the content — which needs a
-job record, a poll, a `video` artifact type and a player, so it layers on behind
-the same tool shape when it is built.
+**Three clocks, not one.** A single timeout cannot express an asynchronous job:
+`config.generation.videoTimeoutMs` bounds one *request* (a poll is fast, so a
+stalled one should not hold the loop for the image budget),
+`config.generation.videoPollIntervalMs` sets the *interval* between polls so the
+provider is not hammered, and `config.generation.videoMaxWaitMs` is how long the
+whole job is worth holding a tool call open for. `lib/generation/client.ts` is
+therefore two axios instances built from one factory — the image client's timeout
+*is* its generation. A job past the wait budget throws an error naming the job
+id, so a timeout reads as "still rendering" rather than as a broken tool.
+`parseVideoJob` maps an unrecognised status to `unknown` and `videoJobOutcome`
+keeps waiting on it — waiting is the safe direction, since the budget bounds the
+loop either way.
+
+The two tools are chat's alone and the model owns its own record: they are bound
+per request (`chat-service.ts`), and neither is in `RESOLVABLE_DEFAULT_TOOLS`, so
+a workflow or agent step cannot reach them — see
+[MCP Tool Binding](#mcp-tool-binding).
 
 ### Knowledge RAG (Postgres + pgvector)
 

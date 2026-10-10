@@ -97,51 +97,23 @@ describe("resolveDefaultTool", () => {
   });
 });
 
-describe("generate_image", () => {
+// The generation tools live in `generation-tools.ts` and are tested there; what
+// belongs here is that the resolver routes their names to them.
+describe("generation tool resolution", () => {
   it("returns undefined without a user id, since the result needs an owner", async () => {
     const { resolveDefaultTool } = await import("@/lib/tool/default-tools");
     expect(resolveDefaultTool("generate_image")).toBeUndefined();
+    expect(resolveDefaultTool("generate_video")).toBeUndefined();
   });
 
-  it("builds the tool when a user id is available", async () => {
-    const { resolveDefaultTool, createGenerateImageTool } = await import(
-      "@/lib/tool/default-tools"
-    );
+  it("builds each of them when a user id is available", async () => {
+    const { resolveDefaultTool } = await import("@/lib/tool/default-tools");
     expect(resolveDefaultTool("generate_image", "user-1")?.name).toBe(
       "generate_image",
     );
-    expect(createGenerateImageTool("user-1", "chat-1").name).toBe(
-      "generate_image",
+    expect(resolveDefaultTool("generate_video", "user-1", "chat-1")?.name).toBe(
+      "generate_video",
     );
-  });
-
-  it("requires a prompt and accepts an optional ratio and model", async () => {
-    const { createGenerateImageTool } = await import(
-      "@/lib/tool/default-tools"
-    );
-    const tool = createGenerateImageTool("user-1");
-
-    expect(tool.schema.safeParse({ prompt: "a fox" }).success).toBe(true);
-    expect(
-      tool.schema.safeParse({
-        prompt: "a fox",
-        aspect_ratio: "16:9",
-        model: "black-forest-labs/flux-3-image",
-      }).success,
-    ).toBe(true);
-    expect(tool.schema.safeParse({}).success).toBe(false);
-    expect(tool.schema.safeParse({ prompt: "" }).success).toBe(false);
-  });
-
-  it("rejects an aspect ratio it does not offer", async () => {
-    const { createGenerateImageTool } = await import(
-      "@/lib/tool/default-tools"
-    );
-    const tool = createGenerateImageTool("user-1");
-
-    expect(
-      tool.schema.safeParse({ prompt: "a fox", aspect_ratio: "5:7" }).success,
-    ).toBe(false);
   });
 });
 
