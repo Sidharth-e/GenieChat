@@ -176,16 +176,31 @@ export const createUseSkillTool = (
   );
 };
 
+/**
+ * The container is keyed by this, so the thread is what decides it: every turn
+ * of one conversation has to land in the container the turn before it wrote to,
+ * or a file one turn produced is gone by the next. The model's `session_id`
+ * cannot carry that — it is optional, and the model has no thread id to hand —
+ * so it is consulted only where there is no thread to scope to. A blank thread
+ * is no thread: an empty key names no container, and returning it here would
+ * discard the fallback that is the only session those surfaces have.
+ */
+export const sandboxSessionId = (
+  chatId: string | undefined,
+  requestedSessionId: string | undefined,
+): string | undefined => chatId || requestedSessionId;
+
 export const createCodeSandboxTool = (userId?: string, chatId?: string) =>
   tool(
     async (input) => {
       const { executeInContainer } = await import("./code-sandbox");
+      const sessionId = sandboxSessionId(chatId, input.session_id);
       const result = await executeInContainer({
         code: input.code,
         language: input.language,
-        sessionId: input.session_id,
+        sessionId,
         userId,
-        chatId: chatId || input.session_id,
+        chatId: sessionId,
       });
 
       return JSON.stringify({

@@ -228,6 +228,7 @@ export class MultiAgentService {
         allConnectorTools: StructuredToolInterface[],
         customToolsLookup?: Map<string, StructuredToolInterface>,
         userId?: string,
+        threadId?: string,
     ) {
         let resolved: StructuredToolInterface[] = [];
         if (allowed) {
@@ -247,7 +248,7 @@ export class MultiAgentService {
             const defaults = allowed
                 .filter(t => t.startsWith('default:'))
                 .map(t => t.split(':')[1])
-                .map(name => resolveDefaultTool(name, userId))
+                .map(name => resolveDefaultTool(name, userId, threadId))
                 .filter(
                     (t): t is NonNullable<typeof t> => t !== undefined,
                 );
@@ -274,7 +275,7 @@ export class MultiAgentService {
 
         for (const toolName of alwaysEnabledToolNames) {
             if (resolved.some(t => t.name === toolName)) continue;
-            const staticTool = resolveDefaultTool(toolName, userId);
+            const staticTool = resolveDefaultTool(toolName, userId, threadId);
             if (staticTool) {
                 resolved.push(staticTool);
                 continue;
@@ -338,6 +339,7 @@ export class MultiAgentService {
                     allConnectorTools,
                     params.customToolsLookup,
                     params.userContext?.userId,
+                    params.userContext?.threadId,
                 );
                 const subModel = getModel(sa.modelId || params.modelId, {
                     temperature: sa.temperature ?? params.modelOptions?.temperature,

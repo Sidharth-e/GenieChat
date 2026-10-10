@@ -76,6 +76,17 @@ describe("resolveDefaultTool", () => {
     expect(resolveDefaultTool("nope")).toBeUndefined();
   });
 
+  it("builds code_sandbox for a thread so the sandbox session can be the thread", async () => {
+    const { resolveDefaultTool, createCodeSandboxTool } = await import(
+      "@/lib/tool/default-tools"
+    );
+    const threadId = "0192f3a4-7b21-7c3d-9e4f-5a6b7c8d9e0f";
+    expect(resolveDefaultTool("code_sandbox", "user-1", threadId)?.name).toBe(
+      "code_sandbox",
+    );
+    expect(createCodeSandboxTool("user-1", threadId).name).toBe("code_sandbox");
+  });
+
   it("resolves every name it advertises as resolvable", async () => {
     const { resolveDefaultTool, RESOLVABLE_DEFAULT_TOOLS } = await import(
       "@/lib/tool/default-tools"
@@ -83,5 +94,28 @@ describe("resolveDefaultTool", () => {
     for (const name of RESOLVABLE_DEFAULT_TOOLS) {
       expect(resolveDefaultTool(name, "user-1"), name).toBeDefined();
     }
+  });
+});
+
+describe("sandboxSessionId", () => {
+  it("scopes the container to the thread, not to the session id the model asked for", async () => {
+    const { sandboxSessionId } = await import("@/lib/tool/default-tools");
+    const threadId = "0192f3a4-7b21-7c3d-9e4f-5a6b7c8d9e0f";
+    expect(sandboxSessionId(threadId, "invented-by-the-model")).toBe(threadId);
+  });
+
+  it("falls back to the model's session id where there is no thread to scope to", async () => {
+    const { sandboxSessionId } = await import("@/lib/tool/default-tools");
+    expect(sandboxSessionId(undefined, "sess-1")).toBe("sess-1");
+  });
+
+  it("names no session when neither the thread nor the model supplied one", async () => {
+    const { sandboxSessionId } = await import("@/lib/tool/default-tools");
+    expect(sandboxSessionId(undefined, undefined)).toBeUndefined();
+  });
+
+  it("treats a blank thread as no thread, keeping the model's session id usable", async () => {
+    const { sandboxSessionId } = await import("@/lib/tool/default-tools");
+    expect(sandboxSessionId("", "sess-1")).toBe("sess-1");
   });
 });

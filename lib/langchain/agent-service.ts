@@ -102,7 +102,13 @@ export class AgentService {
         const defaultToolsToLoad = params.allowedTools
           .filter((t) => t.startsWith("default:"))
           .map((t) => t.split(":")[1])
-          .map((name) => resolveDefaultTool(name, params.userContext?.userId))
+          .map((name) =>
+            resolveDefaultTool(
+              name,
+              params.userContext?.userId,
+              params.userContext?.threadId,
+            ),
+          )
           .filter((t): t is NonNullable<typeof t> => t !== undefined);
 
         if (defaultToolsToLoad.length > 0) {
@@ -135,7 +141,11 @@ export class AgentService {
 
       for (const toolName of alwaysEnabledToolNames) {
         if (tools.some((t) => t.name === toolName)) continue;
-        const resolved = resolveDefaultTool(toolName, params.userContext?.userId);
+        const resolved = resolveDefaultTool(
+          toolName,
+          params.userContext?.userId,
+          params.userContext?.threadId,
+        );
         if (resolved) {
           logger.info(`Auto-loading always-enabled tool: ${toolName}`);
           tools.push(resolved);

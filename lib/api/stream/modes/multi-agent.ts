@@ -145,6 +145,7 @@ export async function buildMultiAgentMode(params: {
         name: user.name,
         email: user.email,
         timezone,
+        threadId: context.threadId,
       },
       customToolsLookup,
       subAgents: fullSubAgents,

@@ -80,6 +80,7 @@ export function buildAgentMode(params: {
         name: user.name,
         email: user.email,
         timezone,
+        threadId: context.threadId,
       },
     })) {
       switch (event.type) {
