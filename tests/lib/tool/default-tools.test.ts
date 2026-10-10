@@ -97,6 +97,54 @@ describe("resolveDefaultTool", () => {
   });
 });
 
+describe("generate_image", () => {
+  it("returns undefined without a user id, since the result needs an owner", async () => {
+    const { resolveDefaultTool } = await import("@/lib/tool/default-tools");
+    expect(resolveDefaultTool("generate_image")).toBeUndefined();
+  });
+
+  it("builds the tool when a user id is available", async () => {
+    const { resolveDefaultTool, createGenerateImageTool } = await import(
+      "@/lib/tool/default-tools"
+    );
+    expect(resolveDefaultTool("generate_image", "user-1")?.name).toBe(
+      "generate_image",
+    );
+    expect(createGenerateImageTool("user-1", "chat-1").name).toBe(
+      "generate_image",
+    );
+  });
+
+  it("requires a prompt and accepts an optional ratio and model", async () => {
+    const { createGenerateImageTool } = await import(
+      "@/lib/tool/default-tools"
+    );
+    const tool = createGenerateImageTool("user-1");
+
+    expect(tool.schema.safeParse({ prompt: "a fox" }).success).toBe(true);
+    expect(
+      tool.schema.safeParse({
+        prompt: "a fox",
+        aspect_ratio: "16:9",
+        model: "black-forest-labs/flux-3-image",
+      }).success,
+    ).toBe(true);
+    expect(tool.schema.safeParse({}).success).toBe(false);
+    expect(tool.schema.safeParse({ prompt: "" }).success).toBe(false);
+  });
+
+  it("rejects an aspect ratio it does not offer", async () => {
+    const { createGenerateImageTool } = await import(
+      "@/lib/tool/default-tools"
+    );
+    const tool = createGenerateImageTool("user-1");
+
+    expect(
+      tool.schema.safeParse({ prompt: "a fox", aspect_ratio: "5:7" }).success,
+    ).toBe(false);
+  });
+});
+
 describe("sandboxSessionId", () => {
   it("scopes the container to the thread, not to the session id the model asked for", async () => {
     const { sandboxSessionId } = await import("@/lib/tool/default-tools");

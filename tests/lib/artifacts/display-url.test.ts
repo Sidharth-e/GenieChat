@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { resolveArtifactDisplayUrl } from "@/lib/artifacts/display-url";
+import {
+  resolveArtifactDisplayUrl,
+  storageDownloadUrl,
+} from "@/lib/artifacts/display-url";
+
+/**
+ * The tool that stores a generated image writes this URL into the reply's
+ * markdown, so it is read out of a persisted message long after it was built —
+ * it has to be the resigning proxy, never a signature with an expiry.
+ */
+describe("storageDownloadUrl", () => {
+  it("points at the download proxy with the ref percent-encoded", () => {
+    expect(storageDownloadUrl("s3://generated-images/u1/image/a.png")).toBe(
+      "/api/storage/download?ref=s3%3A%2F%2Fgenerated-images%2Fu1%2Fimage%2Fa.png",
+    );
+  });
+});
 
 /**
  * The card and the list row each render whatever this returns, so the allowlist

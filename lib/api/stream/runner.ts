@@ -3,7 +3,7 @@ import { store } from "@/lib/store";
 import { StreamPipeline } from "@/lib/api/stream-pipeline";
 import { saveToolArtifact } from "@/lib/artifacts/save";
 import { saveScancodeArtifacts } from "@/lib/artifacts/scancode";
-import type { ArtifactPayload } from "@/lib/artifacts/types";
+import type { ArtifactEnvelope } from "@/lib/artifacts/types";
 import { createTokenBuffer, SSE_HEADERS } from "./envelope";
 import {
   fallbackUsage,
@@ -150,7 +150,7 @@ export async function runTokenStream(params: {
       });
 
       const artifact = (raw: unknown) => {
-        saveToolArtifact(context.user.id, raw as ArtifactPayload, context.threadId).catch(
+        saveToolArtifact(context.user.id, raw as ArtifactEnvelope, context.threadId).catch(
           () => {},
         );
       };

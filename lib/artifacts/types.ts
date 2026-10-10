@@ -36,3 +36,26 @@ export interface ArtifactPayload {
   ext: string;
   metadata?: Record<string, unknown>;
 }
+
+/**
+ * An artifact whose bytes are already in object storage.
+ *
+ * The upload variant carries its bytes through the tool result, which is both
+ * streamed to the client and persisted in the message — fine for a chart config
+ * or a scancode's SVG, ruinous for a multi-megabyte image. A producer that holds
+ * binary uploads it itself and hands back only the ref.
+ */
+export interface StoredArtifact {
+  type: ArtifactType;
+  title: string;
+  /** The `s3://` ref the producer already wrote. */
+  url: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * What a tool result may carry in `_artifact` / `_artifacts`. Discriminated by
+ * `url` (already stored) versus `content` (still to upload), which is the
+ * branch `saveToolArtifact` takes.
+ */
+export type ArtifactEnvelope = ArtifactPayload | StoredArtifact;

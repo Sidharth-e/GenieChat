@@ -17,6 +17,13 @@ export interface ToolMetadata {
  * model to supply an `agentId`, which a workflow run has no context for, so it
  * returns an error payload the node reports as a successful output. Offering it
  * to a workflow advertises a tool that can only appear to work.
+ *
+ * `generate_image` is absent for a different reason: it resolves and would
+ * produce an image, but it delivers that image through the artifact envelope and
+ * a markdown image, and a workflow run does neither — it never reads the
+ * envelope and has no conversation to render into. The picture would be paid for
+ * and then dropped. It stays available to the chat and agent surfaces, which do
+ * both.
  */
 export const RESOLVABLE_DEFAULT_TOOLS: readonly string[] = [
   "web_search",
@@ -50,5 +57,9 @@ export const DEFAULT_TOOLS_METADATA: ToolMetadata[] = [
     {
         name: "code_sandbox",
         description: "Execute Python code or bash commands inside a stateful, sandboxed Linux container for computation, data analysis, and file operations.",
+    },
+    {
+        name: "generate_image",
+        description: "Generate an image from a text prompt and render it in the conversation.",
     },
 ];

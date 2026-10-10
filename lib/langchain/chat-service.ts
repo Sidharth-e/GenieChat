@@ -9,6 +9,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { Message, ConnectorConfig } from "../types";
 import defaultToolsMap, {
   createCodeSandboxTool,
+  createGenerateImageTool,
   webSearch,
 } from "../tool/default-tools";
 import { createMCPClient } from "./langchain-mcp";
@@ -87,18 +88,35 @@ export class ChatService {
       reasoningEffort: params.reasoningEffort,
     });
 
-    // `knowledge_base_search` has left `defaultTools` for a per-request factory,
-    // so it is no longer a `defaultToolsMap` key and a custom tool that shadows
-    // it would now go unnoticed. This set is what keeps the name reserved, and
-    // it stays until custom tools can be owner-scoped too.
-    const agentOnlyTools = new Set(["knowledge_base_search"]);
+    // `knowledge_base_search` and `generate_image` have left `defaultTools` for
+    // per-request factories, so neither is a `defaultToolsMap` key any more and a
+    // custom tool shadowing one would go unnoticed. This set is what keeps their
+    // names reserved, and it stays until custom tools can be owner-scoped too.
+    // `knowledge_base_search` is kept off the chat surface as well — it searches
+    // one agent's documents, and chat has no agent.
+    const reservedToolNames = new Set([
+      "knowledge_base_search",
+      "generate_image",
+    ]);
     const chatCustomTools = (params.customTools ?? []).filter(
-      (t) => !agentOnlyTools.has(t.name),
+      (t) => !reservedToolNames.has(t.name),
     );
     const activeCodeSandbox = params.userContext?.userId
       ? createCodeSandboxTool(params.userContext.userId, params.userContext.threadId)
       : defaultToolsMap.code_sandbox;
-    const defaultToolsForChat = [webSearch, activeCodeSandbox];
+    // Bound, like the sandbox, only where there is a user to own the result and
+    // pay the provider — a generation with no owner cannot be stored.
+    const activeImageTool = params.userContext?.userId
+      ? createGenerateImageTool(
+          params.userContext.userId,
+          params.userContext.threadId,
+        )
+      : null;
+    const defaultToolsForChat = [
+      webSearch,
+      activeCodeSandbox,
+      ...(activeImageTool ? [activeImageTool] : []),
+    ];
 
     // Built outside the `try` below, because the streaming `catch` reaches for
     // this array when it falls back to `invoke`.

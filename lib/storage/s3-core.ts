@@ -124,12 +124,24 @@ export const putObject = async (
   bucket: StorageBucket,
   key: string,
   body: Buffer,
+  /**
+   * Optional on purpose: most objects here are text artifacts whose type the
+   * reader never consults, and requiring a caller to name one would be
+   * inventing a value. An image has to carry its own, or Garage stores it as
+   * `binary/octet-stream` and the browser is left to sniff it.
+   */
+  contentType?: string,
 ): Promise<ServerActionResponse<StorageRef>> => {
   if (!clients.internal) return NOT_CONFIGURED;
 
   try {
     await clients.internal.send(
-      new PutObjectCommand({ Bucket: bucket, Key: key, Body: body }),
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+        ...(contentType ? { ContentType: contentType } : {}),
+      }),
     );
 
     logger.info(`[Storage] Uploaded s3://${bucket}/${key}`);

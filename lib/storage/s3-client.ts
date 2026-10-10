@@ -35,8 +35,9 @@ export const putObject = (
   bucket: StorageBucket,
   key: string,
   body: Buffer,
+  contentType?: string,
 ): Promise<ServerActionResponse<StorageRef>> =>
-  putObjectCore(clients, bucket, key, body);
+  putObjectCore(clients, bucket, key, body, contentType);
 
 export const deleteObject = (
   ref: StorageRef,

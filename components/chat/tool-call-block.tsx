@@ -52,13 +52,17 @@ interface ToolCallGroupProps {
   isAutoRouter?: boolean;
 }
 
+/**
+ * A generated image's own summary — the picture itself renders from the
+ * markdown the reply carries, so this is only the caption under the tool call:
+ * which model drew it, at what shape and in what format.
+ */
 interface ParsedImageResult {
   success?: boolean;
-  image_url?: string;
-  image_base64?: string;
+  url?: string;
+  model?: string;
   format?: string;
-  revised_prompt?: string;
-  size?: string;
+  aspect_ratio?: string;
 }
 
 interface ArtifactPreviewInfo {
@@ -396,7 +400,7 @@ function parseKBResult(result: string) {
 function parseImageResult(result: string): ParsedImageResult | null {
   try {
     const p = JSON.parse(result);
-    if (p.success && (p.image_url || p.image_base64)) return p;
+    if (p.success && p.url) return p;
   } catch {}
   return null;
 }
@@ -888,10 +892,10 @@ function ToolRow({
         {imageResult && (
           <div className="mb-2 flex items-center gap-1.5 text-xs text-primary/60">
             <ImageIcon className="h-3 w-3 shrink-0" />
-            <span>
-              {imageResult.size}
-              {imageResult.format ? ` · ${imageResult.format}` : ""}
-              {imageResult.image_url ? " · stored" : ""}
+            <span className="truncate">
+              {[imageResult.model, imageResult.aspect_ratio, imageResult.format]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           </div>
         )}

@@ -22,14 +22,23 @@ export interface ArtifactDisplayUrl {
  * Shared by the grid card and the list row so the two views cannot disagree
  * about what is renderable.
  */
+/**
+ * The in-app URL that serves a stored ref.
+ *
+ * The ownership-checking proxy, which presigns on demand — so a URL built from a
+ * ref outlives any single signature, which is what makes it safe to write into a
+ * message that will be re-read tomorrow.
+ */
+export function storageDownloadUrl(ref: string): string {
+  return `/api/storage/download?ref=${encodeURIComponent(ref)}`;
+}
+
 export function resolveArtifactDisplayUrl(
   storedUrl: string,
 ): ArtifactDisplayUrl {
   const isRef = isStorageRef(storedUrl);
   return {
-    url: isRef
-      ? `/api/storage/download?ref=${encodeURIComponent(storedUrl)}`
-      : storedUrl,
+    url: isRef ? storageDownloadUrl(storedUrl) : storedUrl,
     usable: isRef || /^https?:\/\//.test(storedUrl),
   };
 }
