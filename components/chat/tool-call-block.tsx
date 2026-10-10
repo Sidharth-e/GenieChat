@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { MessageContent } from "@/components/common/message-content";
+import { CodeBlock } from "@/components/chat/code-block";
 import { useCanvasStore } from "@/lib/stores/canvas-store";
 import { useParams } from "next/navigation";
 import { formatModelName } from "@/lib/langchain/model-config";
@@ -400,6 +401,50 @@ function parseImageResult(result: string): ParsedImageResult | null {
   return null;
 }
 
+interface ParsedSandboxArgs {
+  code: string;
+  language: "python" | "bash";
+}
+
+interface ParsedSandboxResult {
+  stdout: string;
+  stderr: string;
+  exitCode?: number;
+  /** Filenames only — the stored result carries presigned URLs, which expire. */
+  files: string[];
+}
+
+function parseSandboxArgs(
+  args: Record<string, unknown>,
+): ParsedSandboxArgs | null {
+  if (typeof args.code !== "string" || !args.code) return null;
+  return {
+    code: args.code,
+    language: args.language === "bash" ? "bash" : "python",
+  };
+}
+
+function parseSandboxResult(result: string): ParsedSandboxResult | null {
+  try {
+    const p = JSON.parse(result) as Record<string, unknown>;
+    if (!p || typeof p !== "object") return null;
+    const stdout = typeof p.stdout === "string" ? p.stdout : "";
+    const stderr = typeof p.stderr === "string" ? p.stderr : "";
+    const exitCode = typeof p.exit_code === "number" ? p.exit_code : undefined;
+    if (!stdout && !stderr && exitCode === undefined) return null;
+    const files = (Array.isArray(p.files) ? p.files : [])
+      .map((f) =>
+        f && typeof f === "object"
+          ? (f as { filename?: unknown }).filename
+          : null,
+      )
+      .filter((name): name is string => typeof name === "string");
+    return { stdout, stderr, exitCode, files };
+  } catch {
+    return null;
+  }
+}
+
 // ── Artifact Preview Card ────────────────────────────────────────────────────
 
 function ArtifactPreviewCard({ artifact }: { artifact: ArtifactPreviewInfo }) {
@@ -720,6 +765,18 @@ function ToolRow({
       ? parseImageResult(toolCall.result!)
       : null;
 
+  // The sandbox's own JSON envelope is what the model reads, not what a reader
+  // can skim: the code arrives with its newlines escaped and the output as a
+  // quoted string, so both halves are parsed back into something legible.
+  const sandboxArgs =
+    detailOpen && toolCall.name === "code_sandbox"
+      ? parseSandboxArgs(toolCall.arguments ?? {})
+      : null;
+  const sandboxResult =
+    detailOpen && toolCall.name === "code_sandbox" && hasResult
+      ? parseSandboxResult(toolCall.result!)
+      : null;
+
   return (
     <div className="flex">
       {/* ── Timeline spine ── */}
@@ -842,34 +899,88 @@ function ToolRow({
         {/* ── Detail panel (click to expand) ── */}
         {detailOpen && hasResult && (
           <div className="mb-2 space-y-1.5">
-            <div className="rounded-md border border-border/20 bg-secondary/10 p-2 overflow-x-auto">
-              <div className="text-[10px] font-medium text-text-secondary/50 uppercase tracking-wider mb-1">
-                Input
+            {sandboxArgs ? (
+              <CodeBlock className={`language-${sandboxArgs.language}`}>
+                {sandboxArgs.code}
+              </CodeBlock>
+            ) : (
+              <div className="rounded-md border border-border/20 bg-secondary/10 p-2 overflow-x-auto">
+                <div className="text-[10px] font-medium text-text-secondary/50 uppercase tracking-wider mb-1">
+                  Input
+                </div>
+                <pre className="text-xs text-foreground/50 font-mono whitespace-pre-wrap break-all">
+                  {JSON.stringify(toolCall.arguments, null, 2)}
+                </pre>
               </div>
-              <pre className="text-xs text-foreground/50 font-mono whitespace-pre-wrap break-all">
-                {JSON.stringify(toolCall.arguments, null, 2)}
-              </pre>
-            </div>
-            <div
-              className={cn(
-                "rounded-md border p-2 overflow-x-auto",
-                isError
-                  ? "border-red-900/30 bg-red-950/15"
-                  : "border-border/20 bg-secondary/10",
-              )}
-            >
-              <div className="text-[10px] font-medium text-text-secondary/50 uppercase tracking-wider mb-1">
-                Result
+            )}
+
+            {sandboxResult ? (
+              <div className="rounded-md bg-muted px-5 py-2.5 overflow-x-auto">
+                {sandboxResult.stdout && (
+                  <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground/60">
+                    {sandboxResult.stdout}
+                  </pre>
+                )}
+                {sandboxResult.stderr && (
+                  <pre className="text-xs font-mono whitespace-pre-wrap break-all text-red-400">
+                    {sandboxResult.stderr}
+                  </pre>
+                )}
+                {!sandboxResult.stdout && !sandboxResult.stderr && (
+                  <p className="text-xs font-mono text-text-secondary/50">
+                    No output
+                  </p>
+                )}
+                {(sandboxResult.files.length > 0 ||
+                  sandboxResult.exitCode !== undefined) && (
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 mt-1.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {sandboxResult.files.map((name, i) => (
+                        <span
+                          key={`${name}-${i}`}
+                          className="px-1.5 py-0.5 rounded-xs bg-card-bg text-[10px] font-mono text-text-secondary/70"
+                        >
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                    {sandboxResult.exitCode !== undefined && (
+                      <span
+                        className={cn(
+                          "text-[10px] font-mono tabular-nums",
+                          sandboxResult.exitCode === 0
+                            ? "text-text-secondary/40"
+                            : "text-red-400",
+                        )}
+                      >
+                        exit {sandboxResult.exitCode}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
-              <pre
+            ) : (
+              <div
                 className={cn(
-                  "text-xs font-mono whitespace-pre-wrap break-all",
-                  isError ? "text-red-400" : "text-foreground/50",
+                  "rounded-md border p-2 overflow-x-auto",
+                  isError
+                    ? "border-red-900/30 bg-red-950/15"
+                    : "border-border/20 bg-secondary/10",
                 )}
               >
-                {toolCall.result}
-              </pre>
-            </div>
+                <div className="text-[10px] font-medium text-text-secondary/50 uppercase tracking-wider mb-1">
+                  Result
+                </div>
+                <pre
+                  className={cn(
+                    "text-xs font-mono whitespace-pre-wrap break-all",
+                    isError ? "text-red-400" : "text-foreground/50",
+                  )}
+                >
+                  {toolCall.result}
+                </pre>
+              </div>
+            )}
           </div>
         )}
       </div>

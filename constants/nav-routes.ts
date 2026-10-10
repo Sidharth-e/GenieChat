@@ -1,7 +1,6 @@
 import {
   LayoutGrid,
   Cpu,
-  Plug,
   GitMerge,
   History,
   Zap,
@@ -9,7 +8,6 @@ import {
   CalendarClock,
   Webhook,
   FileBox,
-  Brain,
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
@@ -31,7 +29,7 @@ export function isNavItemActive(pathname: string, href: string): boolean {
 
 export const RAIL_ITEMS: NavItem[] = [
   { href: HOME_ROUTE, icon: LayoutGrid, label: "Home" },
-    { href: "/schedules", icon: CalendarClock, label: "Schedules" },
+  { href: "/schedules", icon: CalendarClock, label: "Schedules" },
   { href: "/agents", icon: Cpu, label: "Agents" },
   { href: "/workflow", icon: GitMerge, label: "Workflows" },
   { href: "/artifacts", icon: FileBox, label: "Artifacts" },
@@ -49,7 +47,6 @@ export const BUILD_ITEMS: NavItem[] = [
   { href: "/tools", icon: Wrench, label: "Tools" },
   { href: "/webhooks", icon: Webhook, label: "Webhooks" },
 ];
-
 
 export const ADMIN_NAV_ITEM: NavItem = {
   href: "/admin",

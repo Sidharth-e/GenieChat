@@ -7,7 +7,6 @@ import {
   RAIL_ITEMS,
   RAIL_HISTORY_ITEM,
   BUILD_ITEMS,
-  LIBRARY_ITEMS,
 } from "@/constants/nav-routes";
 
 describe("getThreadRoute", () => {
@@ -54,16 +53,21 @@ describe("HOME_ROUTE", () => {
 });
 
 describe("rail config", () => {
-  it("has the four core destinations", () => {
-    expect(RAIL_ITEMS.map((i) => i.label)).toEqual(["Home", "Agents", "Connectors", "Workflows"]);
+  it("lists the core destinations", () => {
+    expect(RAIL_ITEMS.map((i) => i.label)).toEqual([
+      "Home",
+      "Schedules",
+      "Agents",
+      "Workflows",
+      "Artifacts",
+    ]);
     expect(RAIL_HISTORY_ITEM.label).toBe("History");
   });
   it("gives every destination a distinct route", () => {
-    const hrefs = [...RAIL_ITEMS, RAIL_HISTORY_ITEM, ...BUILD_ITEMS, ...LIBRARY_ITEMS].map((i) => i.href);
+    const hrefs = [...RAIL_ITEMS, RAIL_HISTORY_ITEM, ...BUILD_ITEMS].map((i) => i.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
-  it("flyout groups hold the secondary routes", () => {
-    expect(BUILD_ITEMS.map((i) => i.href)).toEqual(["/auto", "/tools", "/schedules", "/webhooks"]);
-    expect(LIBRARY_ITEMS.map((i) => i.href)).toEqual(["/artifacts", "/memories"]);
+  it("holds the remaining secondary routes in the build flyout", () => {
+    expect(BUILD_ITEMS.map((i) => i.href)).toEqual(["/auto", "/tools", "/webhooks"]);
   });
 });
