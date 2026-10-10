@@ -48,7 +48,7 @@ async function main() {
     if (!ok) failures += 1;
   };
 
-  // Reports which of the five buckets it had to create, so a missing-bucket
+  // Reports which of the seven buckets it had to create, so a missing-bucket
   // problem is diagnosed here rather than on a user's first upload.
   const buckets = await ensureBuckets(clients);
   report(

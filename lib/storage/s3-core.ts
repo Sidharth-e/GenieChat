@@ -314,7 +314,7 @@ export const presignGet = async (
 };
 
 /**
- * Creates any of the five buckets that are missing.
+ * Creates any of the seven buckets that are missing.
  *
  * Deliberately **not** called at application boot. Storage is an optional
  * dependency that degrades rather than blocking startup, and a boot-time
