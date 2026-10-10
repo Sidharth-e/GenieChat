@@ -81,6 +81,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - `lib/stores/` — Zustand client-side stores (agents, threads, chat settings, sidebar, workflows, etc.).
 - `lib/ai-actions/` — Server actions for agents, prompts, and tools.
 - `lib/artifacts/` — the Artifacts store's writers. `save.ts` holds `saveToolArtifact`, which every type but one reaches through a tool-result envelope; `scancode.ts` is the exception, saving from the message text instead. See [Scan Codes (```scancode)](#scan-codes-scancode).
+- `lib/stats.ts` — the home screen's usage totals. `windowStartIso` and the `summarize*` functions are pure and unit-tested; the reads live on the stores owning each collection (`ChatHistoryStore.getUsageOverview`, `ArtifactStore.countArtifacts`), and all three are index-backed. `GET /api/stats` is session-scoped and returns the caller's own numbers alone, so it needs no RBAC gate. Agent counts are deliberately *not* in the payload — the home screen already loads the agent list for the composer's `@`-mention lookup. The token sum spans both `message` and `ai_usage` discriminators, because they share the `history` collection and summing one would undercount.
 - `lib/conversation.ts` — pure helpers shared by the four conversation surfaces: last-assistant detection, the standalone loading-message builder and its predicate. Unit-tested; see [Conversation Surfaces](#conversation-surfaces).
 
 ### Client-Side Patterns

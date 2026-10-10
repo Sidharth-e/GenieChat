@@ -15,8 +15,11 @@ import type { DeepResearchDepth } from "@/lib/deep-research";
 import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
 import { generateId } from "@/lib/utils";
 import { ArenaModelSelector } from "./arena-model-selector";
+import { HomeStatTile } from "./home-stat-tile";
 import { useAgents } from "@/hooks/use-agents-queries";
-import { useThreads, useRecentThreads } from "@/hooks/use-threads-queries";
+import { useRecentThreads } from "@/hooks/use-threads-queries";
+import { useHomeStats } from "@/hooks/use-stats-queries";
+import { formatChartValue } from "@/lib/chart";
 import { getThreadRoute } from "@/constants/nav-routes";
 import { formatRelativeTime } from "@/lib/relative-time";
 
@@ -48,7 +51,7 @@ export function HomeChatInterface() {
     false;
 
   const { data: agents = [] } = useAgents();
-  const { data: threads } = useThreads();
+  const { data: stats } = useHomeStats();
   const { data: recentThreads } = useRecentThreads(5);
   const isArenaMode = useArenaStore((state) => state.isArenaMode);
   const arenaSelectedModels = useArenaStore((state) => state.selectedModels);
@@ -61,6 +64,25 @@ export function HomeChatInterface() {
   const user = useAuthStore((state) => state.user);
   const userName = user?.name ? user.name.split(" ")[0] : "";
   const greeting = getGreeting();
+
+  // The canvas action points at the composer rather than at a route: "new
+  // canvas" *is* this screen, and the composer is the only thing to focus.
+  const focusComposer = () => {
+    const textarea =
+      document.querySelector<HTMLTextAreaElement>(".composer textarea") ||
+      document.querySelector<HTMLTextAreaElement>("textarea");
+    textarea?.focus();
+  };
+
+  // Agent totals come from the list the composer already loads for `@`-mentions,
+  // rather than from `/api/stats` -- a second query for a number already in hand.
+  const onlineAgents = agents.filter((a) => a.active).length;
+  const tokensUsed = stats
+    ? stats.tokens.prompt + stats.tokens.completion
+    : undefined;
+  // One placeholder for every tile, so a pending fetch reads the same way
+  // wherever it lands instead of as a zero that looks like real data.
+  const pending = "—";
 
   const handleSubmit = async (attachments: ChatAttachment[] = []) => {
     if ((!input.trim() && attachments.length === 0) || isLoading) return;
@@ -154,10 +176,11 @@ export function HomeChatInterface() {
               <div className="h-3 w-28 bg-card-border rounded-xs mb-4" />
               <div className="h-12 w-96 bg-card-border rounded-xs" />
             </header>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-14">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-14">
               <div className="h-28 border border-card-border bg-card-bg rounded-sm" />
               <div className="h-28 border border-card-border bg-card-bg rounded-sm" />
-              <div className="h-28 border border-dashed border-card-border rounded-sm" />
+              <div className="h-28 border border-card-border bg-card-bg rounded-sm" />
+              <div className="h-28 border border-card-border bg-card-bg rounded-sm" />
             </div>
             <div className="w-full">
               <div className="h-4 w-36 bg-card-border rounded-xs mb-4" />
@@ -194,53 +217,62 @@ export function HomeChatInterface() {
             </h1>
           </header>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-14">
-            <div className="border border-card-border p-6 bg-card-bg flex flex-col group hover:border-tertiary/40 transition-colors rounded-sm">
-              <span className="font-mono text-[10px] text-tertiary/40 uppercase tracking-wider mb-2">
-                Agent Fleet
-              </span>
-              <span className="font-serif text-3xl text-foreground">
-                {agents.filter((a) => a.active).length}{" "}
-                <span className="font-sans text-sm text-[var(--green)] inline-flex items-center gap-1.5 ml-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse" />{" "}
-                  Online
-                </span>
-              </span>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-14">
+            <HomeStatTile
+              label="Tokens Used"
+              value={tokensUsed === undefined ? pending : formatChartValue(tokensUsed)}
+              detail={
+                stats ? `${formatChartValue(stats.threads.messages)} messages` : undefined
+              }
+            />
 
-            <div className="border border-card-border p-6 bg-card-bg flex flex-col group hover:border-tertiary/40 transition-colors rounded-sm">
-              <span className="font-mono text-[10px] text-tertiary/40 uppercase tracking-wider mb-2">
-                Workspaces
-              </span>
-              <span className="font-serif text-3xl text-foreground">
-                {threads?.length ?? "—"}{" "}
-                <span className="font-sans text-sm text-tertiary/40 ml-1">
-                  conversations
-                </span>
-              </span>
-            </div>
+            <HomeStatTile
+              label="Workspaces"
+              value={stats?.threads.total ?? pending}
+              detail={
+                stats ? `${stats.threads.activeThisWeek} active this week` : undefined
+              }
+            />
 
-            <button
-              type="button"
-              onClick={() => {
-                const textarea =
-                  document.querySelector<HTMLTextAreaElement>(".composer textarea") ||
-                  document.querySelector<HTMLTextAreaElement>("textarea");
-                textarea?.focus();
-              }}
-              className="border border-dashed border-card-border p-6 flex flex-col items-center justify-center hover:border-tertiary/60 transition-colors group cursor-pointer text-tertiary/50 hover:text-foreground rounded-sm"
-            >
-              <Plus className="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
-              <span className="font-sans text-sm font-medium">
-                Initialize New Canvas
-              </span>
-            </button>
+            <HomeStatTile
+              label="Agents"
+              value={
+                <>
+                  {onlineAgents}{" "}
+                  <span className="font-sans text-sm text-[var(--green)] inline-flex items-center gap-1.5 ml-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse" />{" "}
+                    Online
+                  </span>
+                </>
+              }
+              detail={`of ${agents.length} total`}
+            />
+
+            <HomeStatTile
+              label="Artifacts"
+              value={stats?.artifacts.total ?? pending}
+              detail={
+                stats ? `${stats.artifacts.thisWeek} this week` : undefined
+              }
+            />
           </div>
 
           <div className="w-full">
-            <h3 className="font-sans text-sm font-medium border-b border-card-border pb-3 mb-4 text-foreground">
-              Recent Workspaces
-            </h3>
+            <div className="flex items-center justify-between border-b border-card-border pb-3 mb-4">
+              <h3 className="font-sans text-sm font-medium text-foreground">
+                Recent Workspaces
+              </h3>
+              <button
+                type="button"
+                onClick={focusComposer}
+                className="border border-dashed border-card-border px-3 py-1.5 flex items-center gap-1.5 hover:border-tertiary/60 transition-colors group cursor-pointer text-tertiary/50 hover:text-foreground rounded-sm"
+              >
+                <Plus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                <span className="font-sans text-xs font-medium">
+                  Initialize New Canvas
+                </span>
+              </button>
+            </div>
             <div className="flex flex-col gap-2">
               {recentThreads && recentThreads.length > 0 ? (
                 recentThreads.slice(0, 5).map((thread) => (
@@ -249,13 +281,15 @@ export function HomeChatInterface() {
                     onClick={() => router.push(getThreadRoute(thread))}
                     className="group flex items-center justify-between p-3 hover:bg-tertiary/5 cursor-pointer rounded-sm transition-colors"
                   >
-                    <div className="flex items-center gap-4">
-                      <FileText className="w-4 h-4 text-tertiary/40" />
-                      <span className="font-sans text-sm text-foreground">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <FileText className="w-4 h-4 text-tertiary/40 shrink-0" />
+                      <span className="font-sans text-sm text-foreground truncate">
                         {thread.title || "New Chat"}
                       </span>
                     </div>
-                    <span className="font-mono text-[10px] text-tertiary/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="font-mono text-[10px] text-tertiary/40 shrink-0 ml-4">
+                      {thread.messageCount ?? 0}{" "}
+                      {thread.messageCount === 1 ? "msg" : "msgs"} ·{" "}
                       {formatRelativeTime(thread.lastMessageAt)}
                     </span>
                   </div>

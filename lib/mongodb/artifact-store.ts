@@ -142,6 +142,21 @@ export class ArtifactStore {
     return hashes;
   }
 
+  /**
+   * How many artifacts this user owns, optionally only those stored since
+   * `since`.
+   *
+   * A count rather than `getArtifacts(...).length`: that signs a presigned URL
+   * per row, so counting by listing would do one storage round trip per
+   * artifact to produce a number that discards every one of them.
+   */
+  async countArtifacts(userId: string, since?: string): Promise<number> {
+    return this.artifactsCollection.countDocuments({
+      userId,
+      ...(since ? { createdAt: { $gte: since } } : {}),
+    });
+  }
+
   async getArtifact(
     userId: string,
     artifactId: string,

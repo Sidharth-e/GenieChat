@@ -663,6 +663,30 @@ export interface AiUsage {
   createdAt: string;
 }
 
+/**
+ * The home screen's usage totals, scoped to one user.
+ *
+ * `tokens` covers chat completions *and* AI actions, because both write their
+ * counts into the same `history` collection under different `type`
+ * discriminators. Summing messages alone would undercount.
+ */
+export interface HomeStats {
+  threads: {
+    total: number;
+    /** The sum of every thread's own `messageCount`, not a count of documents. */
+    messages: number;
+    activeThisWeek: number;
+  };
+  tokens: {
+    prompt: number;
+    completion: number;
+  };
+  artifacts: {
+    total: number;
+    thisWeek: number;
+  };
+}
+
 // Conversation shell contract
 
 /**

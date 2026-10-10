@@ -4,6 +4,14 @@ import { getThreadCollection, getHistoryCollection } from "./client";
 import { Thread, Message, MessageVersion, ThreadType, ArenaMetadata } from "../types";
 import { generateId } from "../utils";
 import {
+  summarizeThreadUsage,
+  summarizeTokenUsage,
+  ThreadUsageRow,
+  ThreadUsageSummary,
+  TokenUsageRow,
+  TokenUsageSummary,
+} from "../stats";
+import {
   WithMongoId,
   ThreadDocument,
   MessageDocument,
@@ -295,6 +303,70 @@ export class ChatHistoryStore {
     const docs = await (hasLimit ? cursor.limit(limit!) : cursor).toArray();
 
     return docs.map((doc) => hydrateDocument(doc));
+  }
+
+  /**
+   * The home screen's thread and token totals for one user.
+   *
+   * Three index-backed reads rather than one: `threads` and `history` are
+   * separate collections, so no single aggregation can span them. They run
+   * together because none depends on another.
+   *
+   * The message total is the sum of each thread's own `messageCount`, which
+   * `addMessage` maintains -- so counting messages never reads `history` at
+   * all, and the token read stays the only one that does.
+   *
+   * `windowStart` is passed in rather than computed here so the date arithmetic
+   * stays in `lib/stats.ts` with its unit tests.
+   */
+  async getUsageOverview(
+    userId: string,
+    windowStart: string,
+  ): Promise<{
+    threads: ThreadUsageSummary;
+    tokens: TokenUsageSummary;
+    activeThisWeek: number;
+  }> {
+    const [threadRows, tokenRows, activeThisWeek] = await Promise.all([
+      this.threadCollection
+        .aggregate<ThreadUsageRow>([
+          { $match: { userId, type: "thread" } },
+          {
+            $group: {
+              _id: null,
+              threads: { $sum: 1 },
+              messages: { $sum: "$messageCount" },
+            },
+          },
+        ])
+        .toArray(),
+      // Both discriminators, because they share this collection: a chat
+      // completion writes a `message`, an AI action writes `ai_usage`, and both
+      // carry `tokens`. Summing one would undercount the user's real total.
+      this.historyCollection
+        .aggregate<TokenUsageRow>([
+          { $match: { userId, type: { $in: ["message", "ai_usage"] } } },
+          {
+            $group: {
+              _id: null,
+              prompt: { $sum: "$tokens.prompt" },
+              completion: { $sum: "$tokens.completion" },
+            },
+          },
+        ])
+        .toArray(),
+      this.threadCollection.countDocuments({
+        userId,
+        type: "thread",
+        lastMessageAt: { $gte: windowStart },
+      }),
+    ]);
+
+    return {
+      threads: summarizeThreadUsage(threadRows),
+      tokens: summarizeTokenUsage(tokenRows),
+      activeThisWeek,
+    };
   }
 
   async updateThread(
