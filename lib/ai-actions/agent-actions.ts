@@ -3,6 +3,7 @@
 import { logger } from "@/lib/logger";
 import { generateResponseWithUsage, UserContext } from "@/lib/langchain/langchain-utility";
 import { getModel } from "@/lib/langchain/model-factory";
+import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import { getSessionUser } from "@/lib/auth/get-session-user";
 import { logActionUsage } from "./log-action-usage";
 
@@ -62,7 +63,7 @@ export async function generateAgentAction(
             email: sessionUser.email,
         } : undefined;
 
-        const generationModel = getModel("gemini-3-flash-preview");
+        const generationModel = getModel(DEFAULT_MODEL_ID);
         const includeTools = options?.includeTools ?? false;
         const toolOptions = options?.toolOptions ?? [];
         const includeModel = options?.includeModel ?? false;
@@ -81,7 +82,7 @@ export async function generateAgentAction(
             "tools": ["default:web_search", "my-connector:search_docs"]`
             : "";
         const modelOutputGuidance = includeModel
-            ? `"modelId": "gemini-3-flash-preview"`
+            ? `"modelId": "${DEFAULT_MODEL_ID}"`
             : `"modelId": ""`;
         const subAgentsOutputGuidance = includeSubAgents
             ? `,
@@ -157,7 +158,7 @@ export async function generateAgentAction(
 
         const startTime = Date.now();
         const { content: responseText, tokens } = await generateResponseWithUsage(metaSystemPrompt, userRequest, generationModel, userContext);
-        logger.info({ userId: sessionUser?.id, action: "generateAgentAction", model: "gemini-3-flash-preview", tokens }, "[Action] LLM usage");
+        logger.info({ userId: sessionUser?.id, action: "generateAgentAction", model: DEFAULT_MODEL_ID, tokens }, "[Action] LLM usage");
         logActionUsage(sessionUser?.id, "generateAgentAction", tokens, Date.now() - startTime, responseText).catch(() => {});
         const cleanedResponse = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
 
@@ -247,7 +248,7 @@ export async function generateSystemPromptAction(promptQuery: string, currentSys
         } : undefined;
 
         // Use a fast model for generation
-        const generationModel = getModel("gemini-3-flash-preview");
+        const generationModel = getModel(DEFAULT_MODEL_ID);
         
         const metaSystemPrompt = `You are an expert AI prompt engineer. Your goal is to create or refine a system instruction (system prompt) for an AI agent based on the user's request.
         
@@ -260,7 +261,7 @@ export async function generateSystemPromptAction(promptQuery: string, currentSys
         
         const startTime = Date.now();
         const { content: response, tokens } = await generateResponseWithUsage(metaSystemPrompt, userRequest, generationModel, userContext);
-        logger.info({ userId: sessionUser?.id, action: "generateSystemPromptAction", model: "gemini-3-flash-preview", tokens }, "[Action] LLM usage");
+        logger.info({ userId: sessionUser?.id, action: "generateSystemPromptAction", model: DEFAULT_MODEL_ID, tokens }, "[Action] LLM usage");
         logActionUsage(sessionUser?.id, "generateSystemPromptAction", tokens, Date.now() - startTime, response).catch(() => {});
 
         return response;

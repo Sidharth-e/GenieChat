@@ -331,7 +331,8 @@ GenieChat/
 │   ├── artifacts/       # Artifact writers
 │   ├── auth/            # NextAuth config and role resolution
 │   ├── docling/         # Document parsing
-│   ├── embeddings/      # Ollama embeddings
+│   ├── embeddings/      # OpenRouter embeddings (knowledge RAG + memory graph)
+│   ├── generation/      # OpenRouter image and video generation
 │   ├── knowledge/       # RAG — chunking, ranking, indexing, search
 │   ├── langchain/       # Model factory, chat/agent/multi-agent/workflow services
 │   ├── memory/          # Neo4j memory graph, extraction, recall, view

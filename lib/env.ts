@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { DEFAULT_EMBEDDING_MODEL } from "@/constants/embeddings";
 
 /**
  * Validates environment variables at runtime.
@@ -129,7 +130,7 @@ const envSchema = z
     OPENROUTER_API_KEY: z.string().optional(),
     OPENROUTER_EMBEDDING_MODEL: z
       .string()
-      .default("nvidia/nemotron-3-embed-1b:free"),
+      .default(DEFAULT_EMBEDDING_MODEL),
 
     // Auth
     GITHUB_CLIENT_ID: z.string().trim().optional(),

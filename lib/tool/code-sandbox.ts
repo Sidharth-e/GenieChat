@@ -4,12 +4,9 @@ import { z } from "zod";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 
-const OPENROUTER_TIMEOUT_MS = 180_000;
-const RUNNER_MODEL = "openai/gpt-4o-mini";
-
 const openRouterClient: AxiosInstance = axios.create({
   baseURL: "https://openrouter.ai/api/v1",
-  timeout: OPENROUTER_TIMEOUT_MS,
+  timeout: config.openrouter.sandboxTimeoutMs,
   headers: {
     "Content-Type": "application/json",
   },
@@ -144,7 +141,7 @@ export async function executeInContainer(
       };
 
   const payload: Record<string, unknown> = {
-    model: RUNNER_MODEL,
+    model: config.openrouter.sandboxModel,
     input: prompt,
     tools: [
       {

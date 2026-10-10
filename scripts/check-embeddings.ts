@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance } from "axios";
 import { z } from "zod";
-import { EMBEDDING_DIMENSIONS } from "../constants/embeddings";
+import { EMBEDDING_DIMENSIONS, DEFAULT_EMBEDDING_MODEL } from "../constants/embeddings";
 import {
   normalizeTextForEmbedding,
   truncateByEstimatedTokenBudget,
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   }
 
   const model =
-    process.env.OPENROUTER_EMBEDDING_MODEL ?? "nvidia/nemotron-3-embed-1b:free";
+    process.env.OPENROUTER_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
 
   const client: AxiosInstance = axios.create({
     baseURL: "https://openrouter.ai/api/v1",

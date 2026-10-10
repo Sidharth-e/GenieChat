@@ -3,6 +3,7 @@
 import { logger } from "@/lib/logger";
 import { generateResponseWithUsage, UserContext } from "@/lib/langchain/langchain-utility";
 import { getModel } from "@/lib/langchain/model-factory";
+import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import { getSessionUser } from "@/lib/auth/get-session-user";
 import { logActionUsage } from "./log-action-usage";
 
@@ -23,7 +24,7 @@ export async function generatePromptTemplateAction(promptQuery: string): Promise
         } : undefined;
 
         // Use a fast model for generation
-        const generationModel = getModel("gemini-3-flash-preview");
+        const generationModel = getModel(DEFAULT_MODEL_ID);
 
         const metaSystemPrompt = `You are an expert AI prompt engineer. Your goal is to create a high-quality prompt template and suggest relevant categories/tags based on the user's request.
 
@@ -43,7 +44,7 @@ export async function generatePromptTemplateAction(promptQuery: string): Promise
 
         const startTime = Date.now();
         const { content: responseText, tokens } = await generateResponseWithUsage(metaSystemPrompt, userRequest, generationModel, userContext);
-        logger.info({ userId: sessionUser?.id, action: "generatePromptTemplateAction", model: "gemini-3-flash-preview", tokens }, "[Action] LLM usage");
+        logger.info({ userId: sessionUser?.id, action: "generatePromptTemplateAction", model: DEFAULT_MODEL_ID, tokens }, "[Action] LLM usage");
         logActionUsage(sessionUser?.id, "generatePromptTemplateAction", tokens, Date.now() - startTime, responseText).catch(() => {});
 
         // Clean up response if it accidentally includes markdown code blocks

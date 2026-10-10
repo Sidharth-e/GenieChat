@@ -10,6 +10,7 @@ import { authenticateApiKey, hasAgentAccess } from "@/lib/api/agent-api-auth";
 import { api, handleError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { config } from "@/lib/config";
+import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import { convertCustomToolToLangChain } from "@/lib/tool/custom-tool-converter";
 import { resolveConnectorSecrets } from "@/lib/connectors/resolve-connector-secrets";
 import { ConnectorConfig, Message, ToolSecret } from "@/lib/types";
@@ -254,7 +255,7 @@ export async function POST(req: NextRequest) {
     // Build common params for agentService.streamAgent
     const streamParams = {
       messages: internalMessages,
-      modelId: agent.modelId || "gemini-3-flash-preview",
+      modelId: agent.modelId || DEFAULT_MODEL_ID,
       systemPrompt: effectiveSystemPrompt,
       connectors,
       allowedTools: agent.tools,
@@ -335,7 +336,7 @@ export async function POST(req: NextRequest) {
               apiKey.userName,
               apiKey.userEmail,
               agentId,
-              agent.modelId || "gemini-3-flash-preview",
+              agent.modelId || DEFAULT_MODEL_ID,
               userText,
               savedContent,
             );
@@ -405,7 +406,7 @@ export async function POST(req: NextRequest) {
       apiKey.userName,
       apiKey.userEmail,
       agentId,
-      agent.modelId || "gemini-3-flash-preview",
+      agent.modelId || DEFAULT_MODEL_ID,
       userText,
       fullContent,
     );

@@ -23,11 +23,9 @@ export {
   isEmbeddingDimensionError,
 } from "./dimensions";
 
-const OPENROUTER_TIMEOUT_MS = 60_000;
-
 export const openRouterEmbeddingClient: AxiosInstance = axios.create({
   baseURL: "https://openrouter.ai/api/v1",
-  timeout: OPENROUTER_TIMEOUT_MS,
+  timeout: config.openrouter.embeddingTimeoutMs,
   headers: {
     "Content-Type": "application/json",
   },

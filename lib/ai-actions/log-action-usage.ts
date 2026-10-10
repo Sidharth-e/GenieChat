@@ -1,6 +1,7 @@
 "use server";
 
 import { logger } from "@/lib/logger";
+import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import { AiUsageStore } from "@/lib/mongodb/ai-usage-store";
 import { isDatabaseConfigured } from "@/lib/mongodb/client";
 
@@ -17,7 +18,7 @@ export async function logActionUsage(
       userId,
       action,
       source: "action",
-      model: "gemini-3-flash-preview",
+      model: DEFAULT_MODEL_ID,
       tokens,
       durationMs,
       response,

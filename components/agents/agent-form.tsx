@@ -32,7 +32,7 @@ import {
   type AgentModelOption,
   type AgentToolOption,
 } from "@/lib/ai-actions/agent-actions";
-import { AVAILABLE_MODELS } from "@/lib/langchain/model-config";
+import { AVAILABLE_MODELS, DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import { AgentGeneratorDialog } from "./agent-generator-dialog";
 import { DEFAULT_TOOLS_METADATA } from "@/lib/tool/default-tools-metadata";
 
@@ -91,7 +91,7 @@ export function AgentForm({
   );
   const [tools, setTools] = useState<string[]>(initialData?.tools || []);
   const [model, setModel] = useState<string>(
-    initialData?.modelId || "gemini-3-flash-preview",
+    initialData?.modelId || DEFAULT_MODEL_ID,
   );
   const [temperature, setTemperature] = useState<number>(
     initialData?.temperature ?? 0.7,
@@ -190,7 +190,7 @@ export function AgentForm({
       setDescription(initialData.description || "");
       setSystemPrompt(initialData.systemPrompt || "");
       setTools(initialData.tools || []);
-      setModel(initialData.modelId || "gemini-3-flash-preview");
+      setModel(initialData.modelId || DEFAULT_MODEL_ID);
       setTemperature(initialData.temperature ?? 0.7);
       setTopP(initialData.topP ?? 1);
 

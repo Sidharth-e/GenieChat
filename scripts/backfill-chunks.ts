@@ -6,7 +6,7 @@ import {
   DELETE_CHUNKS_FOR_OWNER_SQL,
   INSERT_CHUNK_SQL,
 } from "../constants/knowledge";
-import { EMBEDDING_DIMENSIONS } from "../constants/embeddings";
+import { EMBEDDING_DIMENSIONS, DEFAULT_EMBEDDING_MODEL } from "../constants/embeddings";
 import { chunkDocumentWithOverlap } from "../lib/knowledge/chunking";
 import {
   buildBackfillPageQuery,
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const model =
-    process.env.OPENROUTER_EMBEDDING_MODEL ?? "nvidia/nemotron-3-embed-1b:free";
+    process.env.OPENROUTER_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
 
   const openRouterClient: AxiosInstance = axios.create({
     baseURL: "https://openrouter.ai/api/v1",

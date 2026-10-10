@@ -3,6 +3,7 @@
 import { logger } from "@/lib/logger";
 import { generateResponseWithUsage, UserContext } from "@/lib/langchain/langchain-utility";
 import { getModel } from "@/lib/langchain/model-factory";
+import { DEFAULT_MODEL_ID } from "@/lib/langchain/model-config";
 import { getSessionUser } from "@/lib/auth/get-session-user";
 import { CustomToolParameter } from "@/lib/types";
 import { logActionUsage } from "./log-action-usage";
@@ -29,7 +30,7 @@ export async function generateToolAction(toolDescription: string): Promise<Gener
             email: sessionUser.email,
         } : undefined;
 
-        const generationModel = getModel("gemini-3-flash-preview");
+        const generationModel = getModel(DEFAULT_MODEL_ID);
         
         const metaSystemPrompt = `You are an expert AI tool developer. Your goal is to create a Javascript tool configuration based on the user's description.
         
@@ -59,7 +60,7 @@ export async function generateToolAction(toolDescription: string): Promise<Gener
         
         const startTime = Date.now();
         const { content: responseText, tokens } = await generateResponseWithUsage(metaSystemPrompt, userRequest, generationModel, userContext);
-        logger.info({ userId: sessionUser?.id, action: "generateToolAction", model: "gemini-3-flash-preview", tokens }, "[Action] LLM usage");
+        logger.info({ userId: sessionUser?.id, action: "generateToolAction", model: DEFAULT_MODEL_ID, tokens }, "[Action] LLM usage");
         logActionUsage(sessionUser?.id, "generateToolAction", tokens, Date.now() - startTime, responseText).catch(() => {});
 
         // Clean up response

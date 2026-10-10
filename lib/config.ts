@@ -6,6 +6,7 @@ import "server-only";
  */
 
 import { defaultSystemPrompt, threadTitlePrompt } from "@/constants/prompt";
+import { DEFAULT_MODEL_ID } from "./langchain/model-config";
 import { env } from "./env";
 
 export const config = {
@@ -97,6 +98,14 @@ export const config = {
   openrouter: {
     apiKey: env.OPENROUTER_API_KEY,
     embeddingModel: env.OPENROUTER_EMBEDDING_MODEL,
+    // One embedding request is a small, fast call — it is the loop of them over
+    // a document's chunks that takes the time, not any single one.
+    embeddingTimeoutMs: 60_000,
+    // The model the code-sandbox tool drives, and how long one shell call may
+    // take. Deliberately not in `AVAILABLE_MODELS`: it is never user-selectable,
+    // only the engine behind that one tool's calls.
+    sandboxModel: "openai/gpt-4o-mini",
+    sandboxTimeoutMs: 180_000,
   },
 
   ollama: {
@@ -156,7 +165,9 @@ export const config = {
     defaultChatTemperature: 0.8,
   },
   deepResearch: {
-    model: env.DEEP_RESEARCH_MODEL || "gemini-3-flash-preview",
+    // Falls back to the app-wide default rather than repeating the id, so the
+    // fallback cannot be a model `AVAILABLE_MODELS` no longer carries.
+    model: env.DEEP_RESEARCH_MODEL || DEFAULT_MODEL_ID,
   },
 
   generation: {
