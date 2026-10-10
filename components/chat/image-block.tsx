@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Download, X, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,11 @@ function ImagePreviewDialog({
   onClose: () => void;
 }) {
   const [scale, setScale] = React.useState(1);
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   React.useEffect(() => {
     if (!open) {
@@ -41,12 +47,17 @@ function ImagePreviewDialog({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   const handleZoomIn = () => setScale((s) => Math.min(s + 0.25, 3));
   const handleZoomOut = () => setScale((s) => Math.max(s - 0.25, 0.5));
 
-  return (
+  // Portalled to `body`, not rendered in place: this dialog is reached from an
+  // image inside a message, and that image sits in a `<p>`. A `<div>` cannot be
+  // a descendant of one, so rendering it here is invalid HTML that React
+  // reports as a hydration error. `mounted` keeps the portal off the server
+  // render, where `document` does not exist.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="fixed inset-0 bg-black/80 backdrop-blur-sm"
@@ -109,7 +120,8 @@ function ImagePreviewDialog({
           onClick={(e) => e.stopPropagation()}
         />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
