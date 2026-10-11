@@ -10,6 +10,11 @@ import {
   resolveAutoRoute,
   type RoutedMessage,
 } from "@/lib/langchain/model-config";
+import {
+  GOOGLE_MODELS,
+  OLLAMA_MODELS,
+  OPENROUTER_MODELS,
+} from "@/lib/langchain/models";
 
 describe("getModelMaxInputChars", () => {
   it("returns the standard limit for llama3.2 (100_000)", () => {
@@ -95,6 +100,39 @@ describe("AVAILABLE_MODELS", () => {
     const jev = openrouterModels.find((m) => m.id === JEV_ROUTER_MODEL_ID);
     expect(jev?.model).toBe("typesafe/jev-router");
     expect(jev?.supportsStreaming).toBe(true);
+  });
+});
+
+describe("AVAILABLE_MODELS assembly", () => {
+  it("is the per-provider lists concatenated, in provider order", () => {
+    // Settings falls back to `AVAILABLE_MODELS[0]` and the Arena seeds itself from
+    // `.slice(0, MIN_ARENA_MODELS)`, so the assembled order is contract rather than
+    // an accident of how the lists happened to be spread into one array.
+    expect(AVAILABLE_MODELS).toEqual([
+      ...GOOGLE_MODELS,
+      ...OLLAMA_MODELS,
+      ...OPENROUTER_MODELS,
+    ]);
+  });
+
+  it("keeps every model under the provider its own module declares", () => {
+    for (const model of GOOGLE_MODELS) {
+      expect(model.provider, `${model.id} is filed under google`).toBe("google");
+    }
+    for (const model of OLLAMA_MODELS) {
+      expect(model.provider, `${model.id} is filed under ollama`).toBe("ollama");
+    }
+    for (const model of OPENROUTER_MODELS) {
+      expect(model.provider, `${model.id} is filed under openrouter`).toBe("openrouter");
+    }
+  });
+
+  it("routes through the router entry the openrouter list itself carries", () => {
+    // The id and the entry it names have to move together: the router is only a
+    // router because `isAutoRouterModel` sees the id in the list it is drawn from.
+    const router = OPENROUTER_MODELS.find((m) => m.id === JEV_ROUTER_MODEL_ID);
+    expect(router).toBeDefined();
+    expect(router?.model).toBe("typesafe/jev-router");
   });
 });
 

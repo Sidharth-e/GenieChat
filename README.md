@@ -303,7 +303,7 @@ Ports are chosen to avoid clashing with personal instances — MongoDB on `27018
 
 ## Supported Models
 
-Model definitions live in [`lib/langchain/model-config.ts`](lib/langchain/model-config.ts).
+Model definitions live in [`lib/langchain/models/`](lib/langchain/models/) — one list per provider ([`google.ts`](lib/langchain/models/google.ts), [`ollama.ts`](lib/langchain/models/ollama.ts), [`openrouter.ts`](lib/langchain/models/openrouter.ts)), assembled into `AVAILABLE_MODELS` by [`index.ts`](lib/langchain/models/index.ts) and re-exported from [`lib/langchain/model-config.ts`](lib/langchain/model-config.ts).
 
 | Provider | Models |
 | --- | --- |
