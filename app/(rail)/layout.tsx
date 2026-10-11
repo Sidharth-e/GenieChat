@@ -1,11 +1,9 @@
-"use client";
+import { RailShell } from "@/components/layout/rail-shell";
 
-import { MainShell } from "@/components/layout/main-shell";
-
-export default function MainLayout({
+export default function RailLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <MainShell>{children}</MainShell>;
+  return <RailShell>{children}</RailShell>;
 }

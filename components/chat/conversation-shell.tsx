@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { MessageItem } from "./message-item";
+import { Header } from "./header";
 import { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -67,10 +68,10 @@ interface ConversationShellProps {
 }
 
 /**
- * The chat render tree shared by all four surfaces: scroll area, message list,
- * loading indicator and composer block. What differs between surfaces is passed
- * in — naming, slots, overlay, layout and handlers — so the list and composer
- * markup exist exactly once.
+ * The chat render tree shared by all four surfaces: the header, the scroll area,
+ * the message list, the loading indicator and the composer block. What differs
+ * between surfaces is passed in — naming, slots, overlay, layout and handlers —
+ * so the list and composer markup exist exactly once.
  */
 export function ConversationShell({
   messages,
@@ -94,6 +95,7 @@ export function ConversationShell({
 }: ConversationShellProps) {
   const content = (
     <>
+      <Header />
       <main
         ref={scrollRef}
         className={cn(

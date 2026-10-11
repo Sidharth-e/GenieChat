@@ -318,8 +318,8 @@ Embeddings run through Ollama and index at **2048 dimensions** ([`constants/embe
 ```
 GenieChat/
 ├── app/
-│   ├── (main)/          # Authenticated pages: chat, agents, tools, memories, schedules …
-│   ├── (forms)/         # Form-based CRUD routes (agents, tools, connectors, webhooks, workflows, schedules)
+│   ├── (rail)/          # App frame with the nav rail: chat, agents, tools, memories, schedules …
+│   ├── (fullscreen)/    # Editor forms, edge to edge with no rail (agents, tools, connectors, webhooks, workflows, schedules)
 │   ├── api/             # Route handlers — chat streaming, agents, workflows, arena, storage …
 │   ├── login/           # GitHub sign-in
 │   └── preview/         # Standalone views

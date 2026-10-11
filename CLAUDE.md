@@ -47,8 +47,8 @@ Package manager is **pnpm** (v11.1.2, `node-linker=hoisted`). Node >= 20 require
 
 ### Route Groups (App Router)
 
-- `app/(main)/` — authenticated pages: chat, agent-chat, multi-agent-chat, swarm-chat, auto, agents, tools, connectors, webhooks, artifacts, memories, workflow, workspace, admin, settings
-- `app/(forms)/` — form-based CRUD pages: agents, tools, connectors, webhooks, workflow (separate layout, no chat sidebar)
+- `app/(rail)/` — pages that render inside `RailShell` (`components/layout/rail-shell.tsx`): the nav rail, the content column, and the two chat inspector panels docked beside it. Holds chat, agent-chat, multi-agent-chat, swarm-chat, auto, agents, tools, connectors, webhooks, artifacts, memories, workflow, schedules, admin, settings
+- `app/(fullscreen)/` — editor forms, rendered edge to edge with no rail: agents, tools, connectors, webhooks, workflow, schedules. The group's layout is its own frame rather than a shared shell component, because a rail-less group needs nothing but a definite height to resolve `h-full` against
 - `app/api/` — API routes for chat streaming, agents, workflows, arena, secrets, storage, etc.
 - `app/login/` — login page
 - `app/preview/` — standalone views
@@ -94,7 +94,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 - **Data fetching**: TanStack React Query. Custom hooks in `hooks/` (`use-*-queries.ts` pattern) wrap API calls with query/mutation logic.
 - **Chat hooks**: `hooks/use-chat.ts` (standard), `hooks/use-agent-chat.ts` (agent), `hooks/use-multi-agent-chat.ts` (multi-agent), `hooks/use-arena-chat.ts` (arena mode) — the four stream hooks described in [Conversation Surfaces](#conversation-surfaces).
 - **Navigation**: Permanent 64px icon rail (`components/layout/nav-rail.tsx`) with flyout groups. Machine State panel (`components/chat/machine-state-panel.tsx`) provides inspector panel on conversation routes.
-- **List-page frame**: every list page is composed through `components/common/content-layout.tsx` — one title row carrying the action button and the search field, then a borderless filter strip, then the content. It is full-bleed by default (the rail to the right edge), so a form-shaped page has to opt back into the centred column with `width="bounded"` (only `app/(main)/auto/page.tsx` does). The filter strip comes from `components/common/content-filter-pills.tsx`, generic over the page's own tab union, so tab styling is not re-invented per page.
+- **List-page frame**: every list page is composed through `components/common/content-layout.tsx` — one title row carrying the action button and the search field, then a borderless filter strip, then the content. It is full-bleed by default (the rail to the right edge), so a form-shaped page has to opt back into the centred column with `width="bounded"` (only `app/(rail)/auto/page.tsx` does). The filter strip comes from `components/common/content-filter-pills.tsx`, generic over the page's own tab union, so tab styling is not re-invented per page.
 - **UI components**: `components/ui/` (primitives via Radix UI + CVA), domain components organized by feature (`components/chat/`, `components/agents/`, `components/workflow/`, etc.).
 - **Rich text**: BlockNote editor for rich text input, React Markdown for message rendering (with remark-gfm, remark-math, rehype-katex, mermaid, syntax highlighting).
 - **Styling**: Editorial monochrome system (cold neutral tokens in `globals.css`, neutral `--accent`), Newsreader serif, Inter sans, JetBrains Mono, near-square radii (`--radius: 4px`). Tailwind CSS v4 with `tailwind-merge` and `clsx`. Theme system via `next-themes` with custom `ThemeProvider`.
@@ -104,7 +104,7 @@ Prompts are the exception to the page-per-entity rule: they have no route of the
 
 Four routes render a conversation — `/chat/[id]` (plus `components/chat/new-chat-page.tsx` for `/chat/new`), `/agent-chat/[agentId]/[threadId]`, `/multi-agent-chat/[agentId]/[threadId]` and `/swarm-chat/[threadId]`. They share one render tree and one set of effects rather than four copies of each:
 
-- `components/chat/conversation-shell.tsx` — the `ConversationShell` render tree: scroll area, `MessageItem` list, standalone loading indicator, composer block. Two layouts (`plain`, `sidePanel`) and three slots (`slotBeforeMessages`, `slotAfterMessages`, `overlay`). Its `ConversationHandlers` are all optional, and an absent handler is what makes `MessageItem` omit the corresponding affordance — which is how swarm renders exactly the same list with no regenerate, edit, version or feedback controls.
+- `components/chat/conversation-shell.tsx` — the `ConversationShell` render tree: the chat `Header`, scroll area, `MessageItem` list, standalone loading indicator, composer block. The header is owned here rather than by a layout, because this is the component that knows it renders a conversation. Two layouts (`plain`, `sidePanel`) and three slots (`slotBeforeMessages`, `slotAfterMessages`, `overlay`). Its `ConversationHandlers` are all optional, and an absent handler is what makes `MessageItem` omit the corresponding affordance — which is how swarm renders exactly the same list with no regenerate, edit, version or feedback controls.
 - `hooks/use-conversation-shell.ts` — the `useConversationShell` effects: auto-scroll, agent names, last-assistant detection, the loading message, regenerate and edit-submit, the optimistic thread record, and the pending-message handoff. Each surface supplies only what differs: `threadDefaults`, `dispatchPending`, `onPendingLatched`, and the gates below.
 - `lib/conversation.ts` — the pure parts, unit-tested.
 
@@ -587,7 +587,7 @@ reaches the agent through the same helper rather than keeping a second copy.
 
 **The UI is three surfaces over that API.** `/schedules` is the list, built on
 `ContentLayout` + `ContentFilterPills` like every other list page. The editor is
-`app/(forms)/schedules/new` and `app/(forms)/schedules/[id]/edit`, and its live
+`app/(fullscreen)/schedules/new` and `app/(fullscreen)/schedules/[id]/edit`, and its live
 "next runs" preview is `cadencePreview` — which validates before it enumerates,
 and that is what lets it run on every keystroke of an expression the user has not
 finished typing without throwing. `TargetSchedules` puts a target's own schedules
@@ -720,6 +720,6 @@ This project uses **Next.js 16**, which has breaking changes from earlier versio
   - Follow existing folder structure. Never create new folders unless absolutely required.
   - Before creating a component, check if a reusable one already exists in `components/`. If it does, use it. Only create new ones when nothing fits.
   - Components live in `components/`, API routes in `app/api/`, services in `lib/`, constants in `constants/`, types in `lib/types.ts`. Enforce this separation at all times.
-  - Page files (`app/(main)/*/page.tsx`, `app/(forms)/*/page.tsx`) must only import and compose — never define components inline. Extract all components to `components/`.
+  - Page files (`app/(rail)/*/page.tsx`, `app/(fullscreen)/*/page.tsx`) must only import and compose — never define components inline. Extract all components to `components/`.
   - Always clean up unused code: dead imports, unused variables, stale functions, orphaned files. Do this proactively on every change — even if the mess predates your edit, fix it immediately.
   - If you encounter any violation of the above (inline component in a page, misplaced file, unused import, etc.), correct it on the spot regardless of whether it was part of the original task.
