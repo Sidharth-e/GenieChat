@@ -2,7 +2,7 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { ChatInput } from "./chat-input";
 import {
   useChatSettings,
@@ -64,15 +64,6 @@ export function HomeChatInterface() {
   const user = useAuthStore((state) => state.user);
   const userName = user?.name ? user.name.split(" ")[0] : "";
   const greeting = getGreeting();
-
-  // The canvas action points at the composer rather than at a route: "new
-  // canvas" *is* this screen, and the composer is the only thing to focus.
-  const focusComposer = () => {
-    const textarea =
-      document.querySelector<HTMLTextAreaElement>(".composer textarea") ||
-      document.querySelector<HTMLTextAreaElement>("textarea");
-    textarea?.focus();
-  };
 
   // Agent totals come from the list the composer already loads for `@`-mentions,
   // rather than from `/api/stats` -- a second query for a number already in hand.
@@ -258,20 +249,10 @@ export function HomeChatInterface() {
           </div>
 
           <div className="w-full">
-            <div className="flex items-center justify-between border-b border-card-border pb-3 mb-4">
+            <div className="border-b border-card-border pb-3 mb-4">
               <h3 className="font-sans text-sm font-medium text-foreground">
                 Recent Workspaces
               </h3>
-              <button
-                type="button"
-                onClick={focusComposer}
-                className="border border-dashed border-card-border px-3 py-1.5 flex items-center gap-1.5 hover:border-tertiary/60 transition-colors group cursor-pointer text-tertiary/50 hover:text-foreground rounded-sm"
-              >
-                <Plus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-                <span className="font-sans text-xs font-medium">
-                  Initialize New Canvas
-                </span>
-              </button>
             </div>
             <div className="flex flex-col gap-2">
               {recentThreads && recentThreads.length > 0 ? (
